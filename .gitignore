@@ -1,0 +1,32 @@
+# Java / Maven
+backend/target/
+backend/.mvn/
+**/target/
+**/bin/
+*.class
+*.log
+*.jar
+*.war
+*.ear
+
+# Local build tool artifacts
+apache-maven-3.9.9/
+apache-maven-3.9.9-bin.zip
+
+# IDE and editors
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment / local config
+.env
+.env.*
+
+# Git
+.git/
