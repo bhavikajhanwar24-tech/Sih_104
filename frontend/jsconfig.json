@@ -1,0 +1,21 @@
+{
+  // checkJs: true → VS Code / Cursor type-check JSDoc in the editor only.
+  // Nothing is compiled and no build step is added — most of TypeScript's
+  // contract safety for zero build cost (see P0.3).
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

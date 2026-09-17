@@ -30,3 +30,25 @@ Thumbs.db
 
 # Git
 .git/
+
+# ML engine
+ml-engine/.venv/
+ml-engine/models/
+ml-engine/__pycache__/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Audio / datasets / model weights
+*.wav
+*.mp3
+*.flac
+datasets/
+*.onnx
+*.pt
+
+# Local debug dumps
+frontend/err.txt
+*.err.txt
+

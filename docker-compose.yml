@@ -1,0 +1,30 @@
+# SentinelVoice — four-plane stack (stubs; implementations land in later phases)
+# Services: asterisk (media) → ml-engine (inference) → backend (decision) → frontend (presentation)
+
+services:
+  asterisk:
+    # Implemented in Phase 7 (P7.1 — Asterisk in Docker + softphones)
+    build: ./gateway/asterisk
+    network_mode: host
+
+  ml-engine:
+    # Implemented in Phase 2 (P2.1 — FastAPI scaffold + ring buffer)
+    build: ./ml-engine
+    ports:
+      - "8000:8000"
+
+  backend:
+    # Implemented in Phase 1 (Decision Plane); Docker image packaging in Phase 14
+    build: ./backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ml-engine
+
+  frontend:
+    # Implemented in Phase 3 / Phase 6 (WebRTC capture + analyst console)
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

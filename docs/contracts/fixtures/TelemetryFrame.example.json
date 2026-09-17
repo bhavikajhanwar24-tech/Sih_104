@@ -1,0 +1,78 @@
+{
+  "schema": "sentinelvoice.TelemetryFrame/1",
+  "sessionId": "call-9012",
+  "seq": 47,
+  "tsEpochMs": 1726584902150,
+  "callElapsedMs": 24000,
+  "risk": {
+    "instantaneous": 0.88,
+    "smoothed": 0.81,
+    "trend": "RISING",
+    "state": "SCORED"
+  },
+  "families": {
+    "voice": { "score": 0.71, "weight": 0.24, "contribution": 0.170, "available": true },
+    "channel": { "score": 0.66, "weight": 0.08, "contribution": 0.053, "available": true },
+    "prosody": { "score": 0.74, "weight": 0.13, "contribution": 0.096, "available": true },
+    "linguistic": { "score": 0.91, "weight": 0.25, "contribution": 0.228, "available": true },
+    "transaction": { "score": 0.95, "weight": 0.18, "contribution": 0.171, "available": true },
+    "relationship": { "score": 0.87, "weight": 0.12, "contribution": 0.104, "available": true }
+  },
+  "corroboration": {
+    "familiesAboveThreshold": ["linguistic", "transaction", "relationship", "voice"],
+    "independentFamiliesRequired": 2,
+    "satisfied": true
+  },
+  "intervention": {
+    "level": "LEVEL_4_AUTO_HOLD",
+    "previousLevel": "LEVEL_3_STEP_UP_MFA",
+    "changedAtMs": 23500,
+    "dwellRemainingMs": 2500,
+    "manualOverride": null,
+    "actionsFired": ["TXN_APPROVE_LOCKED", "OOB_MFA_SENT", "CALL_HELD", "SUPERVISOR_BRIDGED"]
+  },
+  "identity": {
+    "cli": "+91-22-4000-1234",
+    "cliTrunk": "EXTERNAL_SIP",
+    "directoryMatch": null,
+    "claimedIdentity": "Rajesh Kumar",
+    "claimedRole": "CFO",
+    "directoryRecordForClaim": { "employeeId": "EMP-10492", "role": "Chief Financial Officer" },
+    "cliVsClaimMismatch": true,
+    "voicePassport": { "enrolled": true, "cosine": 0.41, "verdict": "IMPERSONATION_SYNTHETIC" },
+    "presenceConflict": { "expected": "London (calendar)", "observed": "SIP trunk / APAC" }
+  },
+  "topReasons": [
+    {
+      "code": "CLI_CLAIM_MISMATCH",
+      "severity": "CRITICAL",
+      "text": "Caller claims CFO; call arrives on unregistered external SIP trunk"
+    },
+    {
+      "code": "VOICEPRINT_FAIL",
+      "severity": "CRITICAL",
+      "text": "Cosine 0.41 vs enrolled 0.91 baseline"
+    },
+    {
+      "code": "POLICY_VIOLATION",
+      "severity": "HIGH",
+      "text": "₹50,00,000 verbal wire request; verbal authority limit is ₹0"
+    },
+    {
+      "code": "NO_BREATH",
+      "severity": "MEDIUM",
+      "text": "0 breath events in 24 s of speech (expected 8–20/min)"
+    },
+    {
+      "code": "SECRECY_DEMAND",
+      "severity": "HIGH",
+      "text": "Isolation language detected"
+    }
+  ],
+  "transcriptDelta": {
+    "tsMs": 23400,
+    "text": "…turant transfer kar do, kisi ko mat batana…",
+    "flags": ["URGENCY", "SECRECY"]
+  },
+  "auditHash": "9f2c…a71b"
+}

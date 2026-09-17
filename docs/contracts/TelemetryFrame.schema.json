@@ -1,0 +1,464 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/TelemetryFrame.schema.json",
+  "title": "TelemetryFrame",
+  "description": "Decision Plane → React via STOMP /topic/telemetry/{sessionId}. Context §8.2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "sessionId",
+    "seq",
+    "tsEpochMs",
+    "callElapsedMs",
+    "risk",
+    "families",
+    "corroboration",
+    "intervention",
+    "identity",
+    "topReasons",
+    "transcriptDelta",
+    "auditHash"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.TelemetryFrame/1"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tsEpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "callElapsedMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "risk": {
+      "$ref": "#/$defs/Risk"
+    },
+    "families": {
+      "$ref": "#/$defs/Families"
+    },
+    "corroboration": {
+      "$ref": "#/$defs/Corroboration"
+    },
+    "intervention": {
+      "$ref": "#/$defs/Intervention"
+    },
+    "identity": {
+      "$ref": "#/$defs/Identity"
+    },
+    "topReasons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Reason"
+      }
+    },
+    "transcriptDelta": {
+      "$ref": "#/$defs/TranscriptDelta"
+    },
+    "auditHash": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "Risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instantaneous",
+        "smoothed",
+        "trend",
+        "state"
+      ],
+      "properties": {
+        "instantaneous": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "smoothed": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "trend": {
+          "$ref": "#/$defs/Trend"
+        },
+        "state": {
+          "$ref": "#/$defs/RiskState"
+        }
+      }
+    },
+    "FamilyScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "score",
+        "weight",
+        "contribution",
+        "available"
+      ],
+      "properties": {
+        "score": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "weight": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "contribution": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Families": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice",
+        "channel",
+        "prosody",
+        "linguistic",
+        "transaction",
+        "relationship"
+      ],
+      "properties": {
+        "voice": {
+          "$ref": "#/$defs/FamilyScore"
+        },
+        "channel": {
+          "$ref": "#/$defs/FamilyScore"
+        },
+        "prosody": {
+          "$ref": "#/$defs/FamilyScore"
+        },
+        "linguistic": {
+          "$ref": "#/$defs/FamilyScore"
+        },
+        "transaction": {
+          "$ref": "#/$defs/FamilyScore"
+        },
+        "relationship": {
+          "$ref": "#/$defs/FamilyScore"
+        }
+      }
+    },
+    "Corroboration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "familiesAboveThreshold",
+        "independentFamiliesRequired",
+        "satisfied"
+      ],
+      "properties": {
+        "familiesAboveThreshold": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "independentFamiliesRequired": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "satisfied": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Intervention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "previousLevel",
+        "changedAtMs",
+        "dwellRemainingMs",
+        "manualOverride",
+        "actionsFired"
+      ],
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/InterventionLevel"
+        },
+        "previousLevel": {
+          "$ref": "#/$defs/InterventionLevel"
+        },
+        "changedAtMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dwellRemainingMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "manualOverride": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "analystId",
+                "reason",
+                "targetLevel"
+              ],
+              "properties": {
+                "analystId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 10
+                },
+                "targetLevel": {
+                  "$ref": "#/$defs/InterventionLevel"
+                }
+              }
+            }
+          ]
+        },
+        "actionsFired": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "VoicePassport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enrolled",
+        "cosine",
+        "verdict"
+      ],
+      "properties": {
+        "enrolled": {
+          "type": "boolean"
+        },
+        "cosine": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "verdict": {
+          "$ref": "#/$defs/IdentityVerdict"
+        }
+      }
+    },
+    "DirectoryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "employeeId",
+        "role"
+      ],
+      "properties": {
+        "employeeId": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      }
+    },
+    "PresenceConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "observed"
+      ],
+      "properties": {
+        "expected": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "string"
+        }
+      }
+    },
+    "Identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cli",
+        "cliTrunk",
+        "directoryMatch",
+        "claimedIdentity",
+        "claimedRole",
+        "directoryRecordForClaim",
+        "cliVsClaimMismatch",
+        "voicePassport",
+        "presenceConflict"
+      ],
+      "properties": {
+        "cli": {
+          "type": "string"
+        },
+        "cliTrunk": {
+          "type": "string"
+        },
+        "directoryMatch": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "claimedIdentity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claimedRole": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "directoryRecordForClaim": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/DirectoryRecord"
+            }
+          ]
+        },
+        "cliVsClaimMismatch": {
+          "type": "boolean"
+        },
+        "voicePassport": {
+          "$ref": "#/$defs/VoicePassport"
+        },
+        "presenceConflict": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/PresenceConflict"
+            }
+          ]
+        }
+      }
+    },
+    "Reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "text"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/ReasonSeverity"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "TranscriptDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tsMs",
+        "text",
+        "flags"
+      ],
+      "properties": {
+        "tsMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

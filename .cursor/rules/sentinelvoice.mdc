@@ -1,0 +1,45 @@
+---
+description: SentinelVoice project-wide rules
+alwaysApply: true
+---
+
+# SentinelVoice — Project Rules
+
+## Architecture (non-negotiable)
+- FOUR PLANES: Media (audio capture) → Inference (Python/FastAPI) → Decision (Java/Spring) → Presentation (React).
+- **Java NEVER handles raw PCM audio.** Java receives only FeatureFrame JSON (floats + enums).
+- Raw audio exists ONLY in ml-engine, ONLY in a bounded ring buffer (<=8s), and is overwritten in place.
+- Never write audio to disk, to a database, to a log line, or to any network destination other than
+  the in-process feature extractor.
+
+## Contracts
+- `docs/contracts/*.schema.json` are FROZEN. Never change a contract to make code compile.
+  If a field is missing, say so and stop — do not invent fields.
+- `frontend/src/contracts/contracts.d.ts` (JSDoc/ambient types for editor hints only) and
+  `frontend/src/contracts/validators.js` (Ajv runtime validators) are GENERATED from those
+  schemas. Do not hand-edit either. Run `scripts/gen-contracts.sh` to regenerate.
+
+## Java (backend/)
+- Java 21, Spring Boot 3.3.4, constructor injection only, no field `@Autowired`.
+- Records for DTOs, classes for entities. No Lombok.
+- Every service is injected somewhere. If you create a service, wire it. No orphaned beans.
+- Every state change that affects a risk decision MUST append to the audit ledger.
+- Never hardcode a risk value, threshold, or weight in a controller or service body.
+  All tunables live in `application.yml` under `sentinelvoice.*` and bind via @ConfigurationProperties.
+
+## Python (ml-engine/)
+- Python 3.11, FastAPI, type hints on every public function, numpy for DSP.
+- Fast path budget: 120ms per 500ms window. Slow path runs async and never blocks the fast path.
+- Every feature module exposes: `extract(audio: np.ndarray, sr: int, profile: ChannelProfile) -> dict`
+  and MUST return `{"available": False}` rather than raising when the channel can't support it.
+
+## React (frontend/)
+- React 18 + TypeScript + Vite + Tailwind. Functional components + hooks.
+- No localStorage/sessionStorage.
+- All telemetry flows through the `useTelemetrySocket` hook. Components never open their own sockets.
+
+## Style
+- Small, reviewable diffs. Change only what the task asks for.
+- Do not add features that were not requested.
+- If the task is ambiguous or the existing code conflicts with these rules, STOP and ask.
+- Write tests for pure logic (fusion math, FSM transitions, hash chaining, DSP feature functions).

@@ -1,0 +1,9 @@
+# Cursor indexing exclusions - keep the agent focused on source
+backend/target/
+node_modules/
+ml-engine/models/
+ml-engine/.venv/
+**/*.wav
+**/*.mp3
+datasets/
+.git/

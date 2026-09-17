@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/CrossChannelEvent.schema.json",
+  "title": "CrossChannelEvent",
+  "description": "Email/SMS/auth/web precursor event correlated to a call target. Context §8.3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "channel",
+    "targetEmployeeId",
+    "occurredAtEpochMs",
+    "severity",
+    "indicator",
+    "description"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.CrossChannelEvent/1"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "EMAIL",
+        "SMS",
+        "AUTH",
+        "WEB"
+      ]
+    },
+    "targetEmployeeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurredAtEpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "severity": {
+      "$ref": "#/$defs/ReasonSeverity"
+    },
+    "indicator": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Sender, sending domain, URL, or number."
+    },
+    "campaignId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}
