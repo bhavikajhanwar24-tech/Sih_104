@@ -1,0 +1,44 @@
+# Tamil social-engineering lexicon (romanised + common Tamil script forms).
+
+entries:
+  # --- URGENCY ---
+  - {pattern: "உடனே", weight: 0.85, category: urgency}
+  - {pattern: "சீக்கிரம்", weight: 0.78, category: urgency}
+  - {pattern: "இப்போதே", weight: 0.82, category: urgency}
+  - {pattern: "udane", weight: 0.80, category: urgency}
+  - {pattern: "seekiram", weight: 0.75, category: urgency}
+  - {pattern: "ippo", weight: 0.55, category: urgency}
+  - {pattern: "ippove", weight: 0.80, category: urgency}
+  - {pattern: "immediately", weight: 0.70, category: urgency}
+  - {pattern: "delay pannaathinga", weight: 0.82, category: urgency}
+
+  # --- SECRECY ---
+  - {pattern: "யாரிடமும் சொல்லாதீர்கள்", weight: 0.98, category: secrecy}
+  - {pattern: "managerkitta sollathinga", weight: 0.98, category: secrecy}
+  - {pattern: "yarukkum sollathinga", weight: 0.96, category: secrecy}
+  - {pattern: "sollathinga", weight: 0.85, category: secrecy}
+  - {pattern: "confidential", weight: 0.70, category: secrecy}
+  - {pattern: "secret ah vechikonga", weight: 0.92, category: secrecy}
+  - {pattern: "verbal approval only", weight: 0.95, category: secrecy}
+  - {pattern: "யாருக்கும் தெரியக்கூடாது", weight: 0.96, category: secrecy}
+
+  # --- AUTHORITY ---
+  - {pattern: "நான் CEO", weight: 0.90, category: authority}
+  - {pattern: "naan ceo", weight: 0.90, category: authority}
+  - {pattern: "naan cfo", weight: 0.90, category: authority}
+  - {pattern: "\\bcbi\\b", weight: 0.90, category: authority}
+  - {pattern: "\\brbi\\b", weight: 0.82, category: authority}
+  - {pattern: "police", weight: 0.55, category: authority}
+  - {pattern: "digital arrest", weight: 0.95, category: authority}
+  - {pattern: "arrest warrant", weight: 0.90, category: authority}
+  - {pattern: "income tax", weight: 0.75, category: authority}
+
+  # --- COERCION ---
+  - {pattern: "நீங்கள் பொறுப்பாவீர்கள்", weight: 0.92, category: coercion}
+  - {pattern: "neenga poruppaaveenga", weight: 0.90, category: coercion}
+  - {pattern: "account freeze", weight: 0.88, category: coercion}
+  - {pattern: "arrest", weight: 0.70, category: coercion}
+  - {pattern: "police station", weight: 0.80, category: coercion}
+  - {pattern: "hospital", weight: 0.28, category: coercion}
+  - {pattern: "bail", weight: 0.65, category: coercion}
+  - {pattern: "musibat", weight: 0.75, category: coercion}

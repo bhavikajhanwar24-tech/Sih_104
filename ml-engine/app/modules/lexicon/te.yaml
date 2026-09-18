@@ -1,0 +1,42 @@
+# Telugu social-engineering lexicon (script + romanised).
+
+entries:
+  # --- URGENCY ---
+  - {pattern: "వెంటనే", weight: 0.85, category: urgency}
+  - {pattern: "ఇప్పుడే", weight: 0.82, category: urgency}
+  - {pattern: "త్వరగా", weight: 0.75, category: urgency}
+  - {pattern: "ventane", weight: 0.82, category: urgency}
+  - {pattern: "ippude", weight: 0.80, category: urgency}
+  - {pattern: "twarga", weight: 0.72, category: urgency}
+  - {pattern: "immediately", weight: 0.70, category: urgency}
+  - {pattern: "delay cheyakandi", weight: 0.82, category: urgency}
+
+  # --- SECRECY ---
+  - {pattern: "ఎవ్వరికీ చెప్పవద్దు", weight: 0.98, category: secrecy}
+  - {pattern: "evvariki cheppavaddu", weight: 0.98, category: secrecy}
+  - {pattern: "manager ki cheppavaddu", weight: 0.98, category: secrecy}
+  - {pattern: "cheppavaddu", weight: 0.85, category: secrecy}
+  - {pattern: "confidential", weight: 0.70, category: secrecy}
+  - {pattern: "verbal approval only", weight: 0.95, category: secrecy}
+  - {pattern: "secret ga unchandi", weight: 0.90, category: secrecy}
+
+  # --- AUTHORITY ---
+  - {pattern: "నేను CEO", weight: 0.90, category: authority}
+  - {pattern: "nenu ceo", weight: 0.90, category: authority}
+  - {pattern: "nenu cfo", weight: 0.90, category: authority}
+  - {pattern: "\\bcbi\\b", weight: 0.90, category: authority}
+  - {pattern: "\\brbi\\b", weight: 0.82, category: authority}
+  - {pattern: "police", weight: 0.55, category: authority}
+  - {pattern: "digital arrest", weight: 0.95, category: authority}
+  - {pattern: "arrest warrant", weight: 0.90, category: authority}
+  - {pattern: "income tax", weight: 0.75, category: authority}
+
+  # --- COERCION ---
+  - {pattern: "మీరు బాధ్యులు", weight: 0.90, category: coercion}
+  - {pattern: "meeru baadhyulu", weight: 0.88, category: coercion}
+  - {pattern: "account freeze", weight: 0.88, category: coercion}
+  - {pattern: "arrest", weight: 0.70, category: coercion}
+  - {pattern: "police station", weight: 0.80, category: coercion}
+  - {pattern: "hospital", weight: 0.28, category: coercion}
+  - {pattern: "bail", weight: 0.65, category: coercion}
+  - {pattern: "musibat", weight: 0.75, category: coercion}

@@ -36,7 +36,7 @@ test:
 	@echo "TODO: run all test suites (backend + ml-engine + frontend)"
 
 eval:
-	@echo "TODO: run the ML benchmark suite (ml-engine/benchmarks)"
+	cd ml-engine && python -m benchmarks.run_eval --limit 40 --synthetic --seed 42 --train-epochs 2
 
 demo:
 	@echo "TODO: seed scenarios and start everything (preflight + up + seed)"

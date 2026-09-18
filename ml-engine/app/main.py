@@ -89,6 +89,19 @@ async def lifespan(_app: FastAPI):
         except Exception:
             logger.exception("asr_warmup_failed — linguistic ASR unavailable until fixed")
 
+    try:
+        from app.modules import intent as intent_mod
+
+        iinfo = intent_mod.warmup()
+        logger.info(
+            "intent_warmup lexicon_entries=%s semantic_ready=%s secrecy_threshold=%s",
+            iinfo.get("lexicon_entries"),
+            iinfo.get("semantic_ready"),
+            iinfo.get("secrecy_threshold"),
+        )
+    except Exception:
+        logger.exception("intent_warmup_failed — lexicon/semantic intent unavailable")
+
     if settings.emit_enabled:
         _emitter_task = asyncio.create_task(emitter.run(), name="feature-emitter")
         logger.info("lifespan_start emit_enabled=true url=%s", emitter.url)

@@ -600,8 +600,8 @@ def linguistic_from_state(
 ) -> dict[str, Any]:
     """Build a FeatureFrame ``linguistic`` block from the latest ASR snapshot.
 
-    Intent scores are zero placeholders until P10.2; ASR surfaces language,
-    redactedSnippet (rolling), and redactedDelta (new text since last emission).
+    Intent scores come from the P10.2 hybrid lexicon + semantic scorer. ASR
+    surfaces language, redactedSnippet (rolling), and redactedDelta.
     """
     if not state.last_available and not state.last_snippet_redacted:
         return {"available": False}
@@ -611,19 +611,31 @@ def linguistic_from_state(
     if state.last_updated_monotonic > 0:
         age_ms = max(0, int((now - state.last_updated_monotonic) * 1000.0))
 
-    return {
-        "available": True,
-        "ageMs": age_ms,
-        "language": state.last_language_label or "und",
+    snippet = state.last_snippet_redacted or ""
+    intent_fields: dict[str, Any] = {
         "urgency": 0.0,
         "secrecy": 0.0,
         "authorityInvocation": 0.0,
         "emotionalCoercion": 0.0,
         "askDetected": False,
-        # Empty strings (not null) so exclude_none dumps still satisfy the schema.
         "claimedIdentity": "",
         "claimedRole": "",
-        "redactedSnippet": state.last_snippet_redacted or "",
+    }
+    if snippet.strip():
+        try:
+            from app.modules import intent as intent_mod
+
+            scored = intent_mod.score_text(snippet, use_semantic=True)
+            intent_fields = scored.to_linguistic_fields()
+        except Exception:
+            logger.exception("intent_score_failed — publishing ASR text without scores")
+
+    return {
+        "available": True,
+        "ageMs": age_ms,
+        "language": state.last_language_label or "und",
+        **intent_fields,
+        "redactedSnippet": snippet,
         # Delta since last slow-path emission (redacted). Optional on the wire.
         "redactedDelta": state.last_delta_redacted or "",
     }

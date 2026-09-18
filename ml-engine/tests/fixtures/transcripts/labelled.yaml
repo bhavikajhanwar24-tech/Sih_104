@@ -1,0 +1,180 @@
+# Labelled transcript fixtures for P10.2 intent tests.
+# label: fraudulent | benign
+# expect_fired: categories that must fire (score >= threshold)
+# expect_low: categories that must stay below the given ceiling
+
+- id: fraud_en_cfo_wire
+  label: fraudulent
+  lang: en
+  text: >
+    This is the CFO. Transfer fifty lakhs to the vendor account immediately.
+    Don't tell your manager — verbal approval only. Keep this between us.
+  expect_fired: [urgency, secrecy, authority]
+  expect_ask_amount: 5000000
+
+- id: fraud_en_cbi_digital_arrest
+  label: fraudulent
+  lang: en
+  text: >
+    This is CBI. There is a digital arrest warrant. Your account will be frozen
+    unless you send the money right now. Do not tell anyone.
+  expect_fired: [urgency, secrecy, authority, coercion]
+
+- id: fraud_en_rbi_bypass
+  label: fraudulent
+  lang: en
+  text: >
+    From the Reserve Bank compliance desk — bypass the normal process and
+    don't check with compliance. Wire 50,00,000 before close of business.
+  expect_fired: [urgency, secrecy, authority]
+  expect_ask_amount: 5000000
+
+- id: fraud_en_ceo_secrecy
+  label: fraudulent
+  lang: en
+  text: >
+    I am the CEO. Move the funds within 15 minutes. Nobody else should know,
+    don't involve the branch manager.
+  expect_fired: [urgency, secrecy, authority]
+
+- id: fraud_hi_devanagari
+  label: fraudulent
+  lang: hi
+  text: >
+    मैं सीईओ बोल रहा हूँ। तुरंत पचास लाख भेजो। किसी को मत बताना, मैनेजर को मत बोलना।
+  expect_fired: [urgency, secrecy, authority]
+  expect_ask_amount: 5000000
+
+- id: fraud_hi_roman_cfo
+  label: fraudulent
+  lang: hi_roman
+  text: >
+    Main CFO bol raha hoon. Turant 50 lakh transfer karo, abhi ke abhi.
+    Kisi ko mat batana, manager ko mat bolna, sirf verbal approval.
+  expect_fired: [urgency, secrecy, authority]
+  expect_ask_amount: 5000000
+
+- id: fraud_hinglish_grandparent
+  label: fraudulent
+  lang: hinglish
+  text: >
+    Beta suno, accident ho gaya, aspatal mein hoon, musibat hai.
+    Jaldi bail ke paise bhejo warna police station case ban jayega.
+    Account freeze ho jayega agar deri ki.
+  expect_fired: [urgency, coercion]
+
+- id: fraud_ta_secrecy
+  label: fraudulent
+  lang: ta
+  text: >
+    Naan CEO. Udane 50 lakh anuppunga. Yarukkum sollathinga,
+    managerkitta sollathinga, verbal approval only.
+  expect_fired: [urgency, secrecy, authority]
+  expect_ask_amount: 5000000
+
+- id: fraud_te_authority
+  label: fraudulent
+  lang: te
+  text: >
+    Nenu CFO. Ventane money transfer cheyandi. Evvariki cheppavaddu,
+    manager ki cheppavaddu. Digital arrest warrant undi.
+  expect_fired: [urgency, secrecy, authority]
+
+- id: fraud_en_income_tax
+  label: fraudulent
+  lang: en
+  text: >
+    Income tax department here. Court case pending. You will be held responsible
+    if you delay. Send 5 million now and keep this confidential.
+  expect_fired: [urgency, secrecy, authority, coercion]
+  expect_ask_amount: 5000000
+
+- id: benign_en_airport_card
+  label: benign
+  lang: en
+  text: >
+    My card is blocked and I'm stranded at the airport, please help urgently.
+    I need to pay for a hotel tonight. Can you unlock my debit card?
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_medical_bill
+  label: benign
+  lang: en
+  text: >
+    Doctor said surgery is urgent. Please process my medical claim as soon as
+    possible so we can schedule within the week. Thank you for your help.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_payroll
+  label: benign
+  lang: en
+  text: >
+    Hi payroll team, salaries need to go out before close of business today.
+    The usual NEFT batch is fine — loop in finance if anything looks off.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_flight
+  label: benign
+  lang: en
+  text: >
+    My flight was cancelled. I urgently need the travel desk to rebook me.
+    Happy to wait on hold, just please help when you can.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_hi_roman_bill
+  label: benign
+  lang: hi_roman
+  text: >
+    Bhai electricity bill due hai, jaldi payment karwana hai warna late fee
+    lagega. Normal UPI se kar dena, koi tension nahi.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_otp_self
+  label: benign
+  lang: en
+  text: >
+    I am locked out of netbanking after three wrong attempts. Please reset
+    access urgently so I can check my own balance. I can visit the branch.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_vendor_invoice
+  label: benign
+  lang: en
+  text: >
+    Reminder that invoice 4412 is due today. Kindly release payment when
+    approved through the usual maker-checker flow. No rush beyond SLA.
+  expect_fired: []
+  expect_low: {secrecy: 0.2, authority: 0.25, coercion: 0.25}
+
+- id: benign_ta_help
+  label: benign
+  lang: ta
+  text: >
+    Enoda ATM card work aagala, airport la irukken. Seekiram help pannunga
+    please, hotel book panna vendum.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_family_hospital
+  label: benign
+  lang: en
+  text: >
+    Dad is in hospital after a fall. I urgently need to withdraw from my own
+    savings account for the deposit. I will come with ID documents.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}
+
+- id: benign_en_market_close_legit
+  label: benign
+  lang: en
+  text: >
+    Can we finalize the FX booking before the market closes? Standard desk
+    procedure, compliance already copied on the email thread.
+  expect_fired: [urgency]
+  expect_low: {secrecy: 0.2, authority: 0.25}

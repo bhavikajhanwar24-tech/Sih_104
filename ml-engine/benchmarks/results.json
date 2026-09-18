@@ -1,0 +1,1350 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "generated_at_utc": "2026-09-18T18:33:34Z",
+    "git_commit": "91dafd902acbfe1630f620db69a23243bd9a4826",
+    "seed": 42,
+    "harness_version": "1",
+    "synthetic": true,
+    "limit": 40
+  },
+  "models": [
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "checkpoint": "ml-engine\\models\\antispoof\\baseline_no_codec_aug.pt",
+      "calibration": "sigmoid-fallback"
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "checkpoint": "ml-engine\\models\\antispoof\\codec_aug.pt",
+      "calibration": "sigmoid-fallback"
+    }
+  ],
+  "datasets": [
+    {
+      "dataset_id": "asvspoof2019_la_eval",
+      "version": "synthetic@asvspoof2019_la_eval",
+      "n": 40,
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "channel_condition": "amr_nb_12k2"
+    },
+    {
+      "dataset_id": "asvspoof2021_df_eval",
+      "version": "synthetic@asvspoof2021_df_eval",
+      "n": 40,
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "channel_condition": "amr_nb_12k2"
+    },
+    {
+      "dataset_id": "in_the_wild",
+      "version": "synthetic@in_the_wild",
+      "n": 40,
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "channel_condition": "amr_nb_12k2"
+    },
+    {
+      "dataset_id": "codec_degraded",
+      "version": "synthetic@codec_degraded",
+      "n": 40,
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "channel_condition": "amr_nb_12k2"
+    }
+  ],
+  "cells": [
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.0,
+        "eer_threshold": -0.376386,
+        "min_tdcf": 0.0,
+        "min_tdcf_threshold": -0.376386,
+        "auc": 1.0,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.3688011169433594,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.0,
+            "threshold": -0.37343692779541016,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.0,
+            "threshold": -0.3761027455329895,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.462643,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.0,
+        "eer_threshold": -0.326224,
+        "min_tdcf": 0.0,
+        "min_tdcf_threshold": -0.326224,
+        "auc": 1.0,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.3116613030433655,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.0,
+            "threshold": -0.3171458840370178,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.0,
+            "threshold": -0.3208138942718506,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.420381,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.0,
+        "eer_threshold": -0.376386,
+        "min_tdcf": 0.0,
+        "min_tdcf_threshold": -0.376386,
+        "auc": 1.0,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.3688011169433594,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.0,
+            "threshold": -0.37343692779541016,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.0,
+            "threshold": -0.3761027455329895,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.462643,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.0,
+        "eer_threshold": -0.326224,
+        "min_tdcf": 0.0,
+        "min_tdcf_threshold": -0.326224,
+        "auc": 1.0,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.3116613030433655,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.0,
+            "threshold": -0.3171458840370178,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.0,
+            "threshold": -0.3208138942718506,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.420381,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.313552,
+        "min_tdcf": 0.85,
+        "min_tdcf_threshold": -0.278336,
+        "auc": 0.915,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.31341272592544556,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.2,
+            "threshold": -0.31564342975616455,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.2,
+            "threshold": -0.3171851634979248,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.079647,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.265375,
+        "min_tdcf": 0.15,
+        "min_tdcf_threshold": -0.252291,
+        "auc": 0.985,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.25173527002334595,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.1,
+            "threshold": -0.26537519693374634,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.2668130397796631,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.068152,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.05,
+        "eer_threshold": -0.277013,
+        "min_tdcf": 0.55,
+        "min_tdcf_threshold": -0.257851,
+        "auc": 0.9725,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.2670333683490753,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.2718800902366638,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.05,
+            "threshold": -0.2770127058029175,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.071259,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.05,
+        "eer_threshold": -0.277013,
+        "min_tdcf": 0.55,
+        "min_tdcf_threshold": -0.257851,
+        "auc": 0.9725,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.2670333683490753,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.2718800902366638,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.05,
+            "threshold": -0.2770127058029175,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.071259,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.0,
+        "eer_threshold": -0.326224,
+        "min_tdcf": 0.0,
+        "min_tdcf_threshold": -0.326224,
+        "auc": 1.0,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.0,
+            "threshold": -0.3116613030433655,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.0,
+            "threshold": -0.3171458840370178,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.0,
+            "threshold": -0.3208138942718506,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.420381,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.15,
+        "eer_threshold": -0.327335,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.246753,
+        "auc": 0.885,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3266388773918152,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.15,
+            "threshold": -0.329756498336792,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.15,
+            "threshold": -0.34313535690307617,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.082911,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.40457,
+        "min_tdcf": 0.45,
+        "min_tdcf_threshold": -0.364248,
+        "auc": 0.9725,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.39745381474494934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.40304702520370483,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.4068252444267273,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.383941,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.368153,
+        "min_tdcf": 0.5,
+        "min_tdcf_threshold": -0.336123,
+        "auc": 0.97,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.35944828391075134,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.36612361669540405,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.37376728653907776,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.423324,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2019_la_eval",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@asvspoof2019_la_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.40457,
+        "min_tdcf": 0.45,
+        "min_tdcf_threshold": -0.364248,
+        "auc": 0.9725,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.39745381474494934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.40304702520370483,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.4068252444267273,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.383941,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.368153,
+        "min_tdcf": 0.5,
+        "min_tdcf_threshold": -0.336123,
+        "auc": 0.97,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.35944828391075134,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.36612361669540405,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.37376728653907776,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.423324,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "asvspoof2021_df_eval",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@asvspoof2021_df_eval",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "clean_16k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.2,
+        "eer_threshold": -0.344116,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.248641,
+        "auc": 0.84,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.2,
+            "threshold": -0.3441159129142761,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.2,
+            "threshold": -0.3448053002357483,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.2,
+            "threshold": -0.34600651264190674,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.124937,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.2,
+        "eer_threshold": -0.301454,
+        "min_tdcf": 0.8,
+        "min_tdcf_threshold": -0.253379,
+        "auc": 0.895,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.15,
+            "threshold": -0.3007691502571106,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.2,
+            "threshold": -0.30215293169021606,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.2,
+            "threshold": -0.30329710245132446,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.076304,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.2,
+        "eer_threshold": -0.297733,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.197209,
+        "auc": 0.8625,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.2,
+            "threshold": -0.2977331280708313,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.2999977469444275,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3017628788948059,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.074711,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "in_the_wild",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@in_the_wild",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.2,
+        "eer_threshold": -0.297733,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.197209,
+        "auc": 0.8625,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.2,
+            "threshold": -0.2977331280708313,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.2999977469444275,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3017628788948059,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.074711,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "opus_24k",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.1,
+        "eer_threshold": -0.368153,
+        "min_tdcf": 0.5,
+        "min_tdcf_threshold": -0.336123,
+        "auc": 0.97,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.05,
+            "threshold": -0.35944828391075134,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.05,
+            "threshold": -0.36612361669540405,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.1,
+            "threshold": -0.37376728653907776,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.423324,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "g711_ulaw_8k",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    },
+    {
+      "model_id": "lfcc-lcnn-tier1/codec_aug",
+      "dataset_id": "codec_degraded",
+      "channel_condition": "amr_nb_12k2",
+      "dataset_version": "synthetic@codec_degraded",
+      "source": "synthetic",
+      "note": "SYNTHETIC SMOKE CORPUS \u2014 not a published result. Context \u00a73.1: report real In-the-Wild / ASVspoof numbers when corpora are present.",
+      "metrics": {
+        "n": 40,
+        "n_bonafide": 20,
+        "n_spoof": 20,
+        "eer": 0.25,
+        "eer_threshold": -0.355684,
+        "min_tdcf": 0.9,
+        "min_tdcf_threshold": -0.252611,
+        "auc": 0.8225,
+        "fpr_at_tpr": {
+          "0.80": {
+            "target_tpr": 0.8,
+            "fpr": 0.25,
+            "threshold": -0.3580830693244934,
+            "achieved_tpr": 0.8
+          },
+          "0.90": {
+            "target_tpr": 0.9,
+            "fpr": 0.25,
+            "threshold": -0.3620815873146057,
+            "achieved_tpr": 0.9
+          },
+          "0.95": {
+            "target_tpr": 0.95,
+            "fpr": 0.25,
+            "threshold": -0.3642836809158325,
+            "achieved_tpr": 0.95
+          }
+        },
+        "ece": 0.147859,
+        "tdcf_citation": "ASVspoof 2019 CM t-DCF (Todisco et al., Interspeech 2019); C_miss=1.0, C_fa=10.0, pi_spoof=0.05"
+      }
+    }
+  ],
+  "fairness": {
+    "metric": "false_positive_rate",
+    "threshold_rule": "pooled_eer_threshold",
+    "groups": [
+      {
+        "group": "age_senior",
+        "n": 90,
+        "n_bonafide": 45,
+        "fpr": 0.444444,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      },
+      {
+        "group": "age_young",
+        "n": 90,
+        "n_bonafide": 45,
+        "fpr": 0.555556,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      },
+      {
+        "group": "dravidian",
+        "n": 120,
+        "n_bonafide": 60,
+        "fpr": 0.183333,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      },
+      {
+        "group": "gender_f",
+        "n": 90,
+        "n_bonafide": 45,
+        "fpr": 0.133333,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      },
+      {
+        "group": "gender_m",
+        "n": 90,
+        "n_bonafide": 45,
+        "fpr": 0.244444,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      },
+      {
+        "group": "indo_aryan",
+        "n": 120,
+        "n_bonafide": 60,
+        "fpr": 0.3,
+        "note": "proxy group assignment when Common Voice metadata absent"
+      }
+    ],
+    "note": "Groups are assigned from speaker-id heuristics or a deterministic rotation when Common Voice language labels are absent. Replace with CV language tags for the compliance slide (\u00a713.5)."
+  },
+  "latency": {
+    "fast_path": {
+      "n": 20.0,
+      "p50_ms": 5.025,
+      "p95_ms": 6.051,
+      "p99_ms": 6.547,
+      "mean_ms": 5.021
+    },
+    "slow_path": {
+      "n": 20.0,
+      "p50_ms": 4.092,
+      "p95_ms": 4.473,
+      "p99_ms": 4.786,
+      "mean_ms": 4.107
+    },
+    "end_to_end": {
+      "n": 20.0,
+      "p50_ms": 9.146,
+      "p95_ms": 10.075,
+      "p99_ms": 10.549,
+      "mean_ms": 9.128
+    },
+    "note": "fast_path = LFCC-LCNN antispoof window; slow_path = FFT stub (+2 ms) when Whisper is not loaded in this harness; replace with live ASR timings in production diagnostics."
+  },
+  "plots": [
+    "eval_plots/reliability_baseline_no_codec_aug_asvspoof2019_la_eval_clean_16k.png",
+    "eval_plots/reliability_baseline_no_codec_aug_asvspoof2021_df_eval_clean_16k.png",
+    "eval_plots/reliability_baseline_no_codec_aug_in_the_wild_clean_16k.png",
+    "eval_plots/reliability_baseline_no_codec_aug_in_the_wild_opus_24k.png",
+    "eval_plots/reliability_baseline_no_codec_aug_in_the_wild_g711_ulaw_8k.png",
+    "eval_plots/reliability_baseline_no_codec_aug_in_the_wild_amr_nb_12k2.png",
+    "eval_plots/reliability_codec_aug_asvspoof2019_la_eval_clean_16k.png",
+    "eval_plots/reliability_codec_aug_asvspoof2021_df_eval_clean_16k.png",
+    "eval_plots/reliability_codec_aug_in_the_wild_clean_16k.png",
+    "eval_plots/reliability_codec_aug_in_the_wild_opus_24k.png",
+    "eval_plots/reliability_codec_aug_in_the_wild_g711_ulaw_8k.png",
+    "eval_plots/reliability_codec_aug_in_the_wild_amr_nb_12k2.png"
+  ],
+  "honesty": {
+    "in_the_wild": "In-the-Wild EER is expected to be much higher than ASVspoof in-domain (Context \u00a73.1). Report the measured number without smoothing.",
+    "synthetic": "Synthetic cells are smoke-test only and must not be cited as published results."
+  }
+}

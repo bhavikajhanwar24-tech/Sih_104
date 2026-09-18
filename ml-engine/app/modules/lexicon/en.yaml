@@ -1,0 +1,88 @@
+# English social-engineering lexicon (Context §10.6).
+# Each entry: {pattern, weight, category}
+# SECRECY weights are highest — legitimate business almost never asks to conceal.
+
+entries:
+  # --- URGENCY ---
+  - {pattern: "immediately", weight: 0.72, category: urgency}
+  - {pattern: "right now", weight: 0.78, category: urgency}
+  - {pattern: "right away", weight: 0.72, category: urgency}
+  - {pattern: "urgent", weight: 0.65, category: urgency}
+  - {pattern: "urgently", weight: 0.70, category: urgency}
+  - {pattern: "as soon as possible", weight: 0.60, category: urgency}
+  - {pattern: "asap", weight: 0.62, category: urgency}
+  - {pattern: "don't delay", weight: 0.75, category: urgency}
+  - {pattern: "do not delay", weight: 0.75, category: urgency}
+  - {pattern: "before close of business", weight: 0.80, category: urgency}
+  - {pattern: "before the market closes", weight: 0.80, category: urgency}
+  - {pattern: "before cob", weight: 0.75, category: urgency}
+  - {pattern: "within \\d+ minutes?", weight: 0.82, category: urgency}
+  - {pattern: "in the next \\d+ minutes?", weight: 0.80, category: urgency}
+  - {pattern: "time sensitive", weight: 0.68, category: urgency}
+  - {pattern: "cannot wait", weight: 0.70, category: urgency}
+  - {pattern: "no time to", weight: 0.65, category: urgency}
+  - {pattern: "if you delay", weight: 0.72, category: urgency}
+  - {pattern: "\\bnow\\b", weight: 0.50, category: urgency}
+
+  # --- SECRECY (highest-signal — lower firing threshold applied in code) ---
+  - {pattern: "don't tell", weight: 0.95, category: secrecy}
+  - {pattern: "do not tell", weight: 0.95, category: secrecy}
+  - {pattern: "don't mention", weight: 0.92, category: secrecy}
+  - {pattern: "keep this between us", weight: 0.98, category: secrecy}
+  - {pattern: "between you and me", weight: 0.92, category: secrecy}
+  - {pattern: "strictly confidential", weight: 0.90, category: secrecy}
+  - {pattern: "confidential", weight: 0.70, category: secrecy}
+  - {pattern: "off the record", weight: 0.88, category: secrecy}
+  - {pattern: "bypass", weight: 0.90, category: secrecy}
+  - {pattern: "don't check with", weight: 0.96, category: secrecy}
+  - {pattern: "do not check with", weight: 0.96, category: secrecy}
+  - {pattern: "don't inform", weight: 0.94, category: secrecy}
+  - {pattern: "without telling", weight: 0.93, category: secrecy}
+  - {pattern: "verbal approval only", weight: 0.97, category: secrecy}
+  - {pattern: "verbal authorisation only", weight: 0.97, category: secrecy}
+  - {pattern: "verbal authorization only", weight: 0.97, category: secrecy}
+  - {pattern: "don't involve", weight: 0.90, category: secrecy}
+  - {pattern: "keep quiet", weight: 0.88, category: secrecy}
+  - {pattern: "nobody else should know", weight: 0.96, category: secrecy}
+  - {pattern: "don't call your manager", weight: 0.98, category: secrecy}
+  - {pattern: "don't ask anyone", weight: 0.95, category: secrecy}
+
+  # --- AUTHORITY ---
+  - {pattern: "this is the ceo", weight: 0.88, category: authority}
+  - {pattern: "this is the cfo", weight: 0.88, category: authority}
+  - {pattern: "this is the md", weight: 0.85, category: authority}
+  - {pattern: "this is the managing director", weight: 0.88, category: authority}
+  - {pattern: "i am the ceo", weight: 0.85, category: authority}
+  - {pattern: "i am the cfo", weight: 0.85, category: authority}
+  - {pattern: "i am the managing director", weight: 0.85, category: authority}
+  - {pattern: "speaking as ceo", weight: 0.82, category: authority}
+  - {pattern: "\\bcbi\\b", weight: 0.90, category: authority}
+  - {pattern: "central bureau", weight: 0.88, category: authority}
+  - {pattern: "\\brbi\\b", weight: 0.85, category: authority}
+  - {pattern: "reserve bank", weight: 0.82, category: authority}
+  - {pattern: "income tax department", weight: 0.90, category: authority}
+  - {pattern: "income tax", weight: 0.75, category: authority}
+  - {pattern: "police commissioner", weight: 0.88, category: authority}
+  - {pattern: "\\bpolice\\b", weight: 0.55, category: authority}
+  - {pattern: "arrest warrant", weight: 0.92, category: authority}
+  - {pattern: "digital arrest", weight: 0.95, category: authority}
+  - {pattern: "court case", weight: 0.70, category: authority}
+  - {pattern: "court order", weight: 0.78, category: authority}
+  - {pattern: "from the board", weight: 0.70, category: authority}
+
+  # --- COERCION ---
+  - {pattern: "you'll be held responsible", weight: 0.92, category: coercion}
+  - {pattern: "you will be held responsible", weight: 0.92, category: coercion}
+  - {pattern: "your account will be frozen", weight: 0.90, category: coercion}
+  - {pattern: "account will be frozen", weight: 0.88, category: coercion}
+  - {pattern: "you will be arrested", weight: 0.92, category: coercion}
+  - {pattern: "\\barrest\\b", weight: 0.70, category: coercion}
+  - {pattern: "bail money", weight: 0.88, category: coercion}
+  - {pattern: "\\bbail\\b", weight: 0.65, category: coercion}
+  - {pattern: "police station", weight: 0.80, category: coercion}
+  # Keep bare "hospital" out of EN — use threat-collocated phrases only.
+  # (Multilingual duplicates of "hospital" were stacking false coercion on Scenario 5.)
+  - {pattern: "or else", weight: 0.70, category: coercion}
+  - {pattern: "face consequences", weight: 0.85, category: coercion}
+  - {pattern: "legal action", weight: 0.72, category: coercion}
+  - {pattern: "your job is on the line", weight: 0.88, category: coercion}

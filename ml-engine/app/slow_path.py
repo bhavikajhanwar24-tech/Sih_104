@@ -1,4 +1,4 @@
-"""Slow-path orchestration — ASR (+ future intent) on its own asyncio cadence.
+"""Slow-path orchestration — ASR + linguistic intent on its own asyncio cadence.
 
 Runs every 2.5 s over a 6 s overlapping context window in a thread pool so the
 500 ms fast path is never blocked (Context §6.2 / §7.2).

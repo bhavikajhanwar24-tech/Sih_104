@@ -1,0 +1,61 @@
+# Romanised Hindi / Hinglish lexicon.
+# Whisper often romanises Hinglish ("turant", "mat batana") — without this file
+# half of Hindi hits are missed (Context §10.6).
+
+entries:
+  # --- URGENCY ---
+  - {pattern: "turant", weight: 0.82, category: urgency}
+  - {pattern: "abhi ke abhi", weight: 0.90, category: urgency}
+  - {pattern: "abhi abhi", weight: 0.78, category: urgency}
+  - {pattern: "jaldi", weight: 0.75, category: urgency}
+  - {pattern: "jaldi karo", weight: 0.82, category: urgency}
+  - {pattern: "deri mat karo", weight: 0.82, category: urgency}
+  - {pattern: "don't delay", weight: 0.75, category: urgency}
+  - {pattern: "udane", weight: 0.70, category: urgency}
+  - {pattern: "fauran", weight: 0.80, category: urgency}
+  - {pattern: "foran", weight: 0.78, category: urgency}
+  - {pattern: "time nahi hai", weight: 0.78, category: urgency}
+  - {pattern: "abhi transfer", weight: 0.80, category: urgency}
+
+  # --- SECRECY ---
+  - {pattern: "kisi ko mat batana", weight: 0.98, category: secrecy}
+  - {pattern: "kisi ko mat batao", weight: 0.98, category: secrecy}
+  - {pattern: "manager ko mat bolna", weight: 0.98, category: secrecy}
+  - {pattern: "manager ko mat batana", weight: 0.98, category: secrecy}
+  - {pattern: "kisi ko mat bolna", weight: 0.96, category: secrecy}
+  - {pattern: "chupke se", weight: 0.88, category: secrecy}
+  - {pattern: "secret rakhna", weight: 0.90, category: secrecy}
+  - {pattern: "batana mat", weight: 0.92, category: secrecy}
+  - {pattern: "verbal approval only", weight: 0.97, category: secrecy}
+  - {pattern: "sirf verbal", weight: 0.90, category: secrecy}
+  - {pattern: "bina bataye", weight: 0.90, category: secrecy}
+
+  # --- AUTHORITY ---
+  - {pattern: "main ceo bol raha hoon", weight: 0.95, category: authority}
+  - {pattern: "main cfo bol raha hoon", weight: 0.95, category: authority}
+  - {pattern: "main md bol raha hoon", weight: 0.92, category: authority}
+  - {pattern: "main ceo hun", weight: 0.90, category: authority}
+  - {pattern: "yeh cbi", weight: 0.90, category: authority}
+  - {pattern: "\\bcbi\\b", weight: 0.88, category: authority}
+  - {pattern: "\\brbi\\b", weight: 0.82, category: authority}
+  - {pattern: "income tax department", weight: 0.90, category: authority}
+  - {pattern: "digital arrest", weight: 0.96, category: authority}
+  - {pattern: "arrest warrant", weight: 0.92, category: authority}
+  - {pattern: "court case", weight: 0.70, category: authority}
+  - {pattern: "police commissioner", weight: 0.88, category: authority}
+
+  # --- COERCION ---
+  - {pattern: "tum zimmedar hoge", weight: 0.90, category: coercion}
+  - {pattern: "aap zimmedar hoge", weight: 0.90, category: coercion}
+  - {pattern: "account freeze", weight: 0.88, category: coercion}
+  - {pattern: "account freeze ho jayega", weight: 0.92, category: coercion}
+  - {pattern: "giraftar", weight: 0.85, category: coercion}
+  - {pattern: "musibat", weight: 0.82, category: coercion}
+  - {pattern: "police station", weight: 0.82, category: coercion}
+  - {pattern: "aspatal", weight: 0.30, category: coercion}
+  - {pattern: "hospital", weight: 0.28, category: coercion}
+  - {pattern: "accident ho gaya", weight: 0.55, category: coercion}
+  - {pattern: "bail", weight: 0.65, category: coercion}
+  - {pattern: "jamaat", weight: 0.70, category: coercion}
+  - {pattern: "naukrri chali jayegi", weight: 0.88, category: coercion}
+  - {pattern: "paise bhejo warna", weight: 0.90, category: coercion}
