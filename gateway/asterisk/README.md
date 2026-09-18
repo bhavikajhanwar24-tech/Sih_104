@@ -120,6 +120,16 @@ ml-engine\.venv\Scripts\python.exe gateway/asterisk_bridge.py
 
 **Analyst check:** Scenario `Live SIP (AudioSocket)` → Start session → dial **1002** from caller softphone → speak → Risk gauge should move.
 
+## P7.3 — ARI actuation (hold / whisper / terminate)
+
+Set `sentinelvoice.actuation.adapter: asterisk` on the backend. The bridge binds
+`sessionId → channelId` so L4 hold / L5 terminate hit the live SIP legs.
+
+| Prompt | File (8 kHz mono) |
+|--------|-------------------|
+| Hold tone | `sounds/sentinel-hold.wav` |
+| Agent whisper | `sounds/sentinel-whisper-warning.wav` |
+
 Unit tests: `pytest gateway/tests -q`
 
 ## Troubleshooting (the three failures you WILL hit)

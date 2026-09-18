@@ -89,7 +89,15 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.context.transaction.high-value-threshold-inr=100000",
             "sentinelvoice.context.transaction.large-amount-threshold-inr=5000000",
             "sentinelvoice.context.transaction.velocity-high-value-limit=3",
-            "sentinelvoice.context.transaction.known-beneficiary-hints[0]=payroll suspense 1001"
+            "sentinelvoice.context.transaction.known-beneficiary-hints[0]=payroll suspense 1001",
+            "sentinelvoice.actuation.adapter=noop",
+            "sentinelvoice.actuation.ari.base-url=http://127.0.0.1:8088/ari",
+            "sentinelvoice.actuation.ari.username=sentinel",
+            "sentinelvoice.actuation.ari.password=sentineldemo",
+            "sentinelvoice.actuation.ari.connect-timeout-ms=2000",
+            "sentinelvoice.actuation.ari.read-timeout-ms=3000",
+            "sentinelvoice.actuation.cbs-freeze-url=http://127.0.0.1:8080/mock-cbs/freeze",
+            "sentinelvoice.actuation.supervisor-endpoint=PJSIP/agent"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()

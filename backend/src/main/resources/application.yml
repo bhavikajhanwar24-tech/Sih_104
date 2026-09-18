@@ -166,3 +166,15 @@ sentinelvoice:
         - "vendor account ending 8821"
         - "payroll suspense 1001"
         - "rbi settlement pool"
+  actuation:
+    # noop | webrtc | asterisk  — lab default is noop so unit tests need no Asterisk.
+    adapter: noop
+    ari:
+      base-url: http://127.0.0.1:8088/ari
+      username: sentinel
+      password: sentineldemo
+      connect-timeout-ms: 2000
+      read-timeout-ms: 3000
+    # In-process MOCK CBS freeze sink (see MockCbsController).
+    cbs-freeze-url: http://127.0.0.1:${server.port:8080}/mock-cbs/freeze
+    supervisor-endpoint: PJSIP/agent

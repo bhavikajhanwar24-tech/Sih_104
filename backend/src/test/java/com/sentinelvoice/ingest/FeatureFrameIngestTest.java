@@ -3,6 +3,7 @@ package com.sentinelvoice.ingest;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
@@ -199,6 +200,7 @@ class FeatureFrameIngestTest {
                 auditDispatcher,
                 new TelemetryFrameBuilder(),
                 broadcaster,
+                mock(ActuationService.class),
                 meters,
                 clock
         );

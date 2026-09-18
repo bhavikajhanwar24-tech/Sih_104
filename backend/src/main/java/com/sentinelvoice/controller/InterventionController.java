@@ -1,5 +1,6 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.model.CallSession;
@@ -34,15 +35,18 @@ public class InterventionController {
     private final CallSessionManager callSessionManager;
     private final InterventionLadderService interventionLadderService;
     private final TelemetryBroadcaster telemetryBroadcaster;
+    private final ActuationService actuationService;
 
     public InterventionController(
             CallSessionManager callSessionManager,
             InterventionLadderService interventionLadderService,
-            TelemetryBroadcaster telemetryBroadcaster
+            TelemetryBroadcaster telemetryBroadcaster,
+            ActuationService actuationService
     ) {
         this.callSessionManager = callSessionManager;
         this.interventionLadderService = interventionLadderService;
         this.telemetryBroadcaster = telemetryBroadcaster;
+        this.actuationService = actuationService;
     }
 
     @PostMapping("/{sessionId}/override")
@@ -75,6 +79,14 @@ public class InterventionController {
         );
 
         publishOverrideTelemetry(sessionId, session, previous, decision, nowMs);
+
+        if (decision.changed()) {
+            try {
+                actuationService.onLevelChanged(sessionId, previous, decision.level());
+            } catch (Exception ignored) {
+                // ActuationService never throws by contract; belt-and-braces.
+            }
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("schema", "sentinelvoice.InterventionOverride/1");

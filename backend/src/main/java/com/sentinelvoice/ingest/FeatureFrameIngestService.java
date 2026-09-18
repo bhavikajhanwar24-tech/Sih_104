@@ -1,5 +1,6 @@
 package com.sentinelvoice.ingest;
 
+import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
@@ -33,6 +34,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -65,6 +67,7 @@ public class FeatureFrameIngestService {
     private final AuditWriteDispatcher auditWriteDispatcher;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
+    private final ActuationService actuationService;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -84,6 +87,7 @@ public class FeatureFrameIngestService {
             AuditWriteDispatcher auditWriteDispatcher,
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
+            @Lazy ActuationService actuationService,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -99,6 +103,7 @@ public class FeatureFrameIngestService {
         this.auditWriteDispatcher = auditWriteDispatcher;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
+        this.actuationService = actuationService;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -283,6 +288,19 @@ public class FeatureFrameIngestService {
         );
 
         telemetryBroadcaster.publish(telemetry);
+        if (decision.changed()) {
+            try {
+                actuationService.onLevelChanged(session.getSessionId(), previousLevel, decision.level());
+            } catch (Exception ex) {
+                log.error(
+                        "actuation_invoke_failed sessionId={} level={} err={}",
+                        session.getSessionId(),
+                        decision.level(),
+                        ex.toString(),
+                        ex
+                );
+            }
+        }
         log.info(
                 "telemetry_built sessionId={} seq={} smoothed={} level={} reasons={}",
                 session.getSessionId(),

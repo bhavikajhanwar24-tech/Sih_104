@@ -28,6 +28,8 @@ services:
       - ./gateway/asterisk/config/modules.conf:/etc/asterisk/modules.conf:ro
       - ./gateway/asterisk/config/logger.conf:/etc/asterisk/logger.conf:ro
       - ./gateway/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./gateway/asterisk/sounds/sentinel-hold.wav:/var/lib/asterisk/sounds/sentinel-hold.wav:ro
+      - ./gateway/asterisk/sounds/sentinel-whisper-warning.wav:/var/lib/asterisk/sounds/sentinel-whisper-warning.wav:ro
     # Configs are also baked into the image; mounts win for live edits.
 
   ml-engine:

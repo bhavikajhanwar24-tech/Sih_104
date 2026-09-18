@@ -228,6 +228,29 @@ class DecisionPlaneClient:
         except Exception:
             LOG.exception("FAIL-OPEN: Decision Plane close failed sid=%s", sid)
 
+    async def bind_channel(self, sid: str, channel_id: str, role: str = "caller") -> None:
+        """Populate Decision Plane sessionId→channelId map for ARI hold/terminate/whisper."""
+        url = f"{self.base_url}/api/v1/actuation/{sid}/channel"
+        body = {"channelId": channel_id, "role": role}
+        try:
+            r = await self._client.post(url, json=body)
+            if r.status_code == 200:
+                LOG.info(
+                    "decision_channel_bound sid=%s channel=%s role=%s",
+                    sid,
+                    channel_id,
+                    role,
+                )
+                return
+            LOG.warning(
+                "decision_channel_bind status=%s sid=%s body=%s",
+                r.status_code,
+                sid,
+                (r.text or "")[:200],
+            )
+        except Exception:
+            LOG.exception("FAIL-OPEN: channel bind failed sid=%s channel=%s", sid, channel_id)
+
 
 # uuid (wire) -> sessionId (ml-engine). Same string: UUID hex.
 _uuid_to_sid: dict[str, str] = {}
@@ -381,11 +404,19 @@ class AriSnoopController:
     BridgeEnter events; polling /channels catches live caller legs reliably.
     """
 
-    def __init__(self, ari_url: str, user: str, password: str, app: str) -> None:
+    def __init__(
+        self,
+        ari_url: str,
+        user: str,
+        password: str,
+        app: str,
+        decision: Optional["DecisionPlaneClient"] = None,
+    ) -> None:
         self.ari_url = ari_url.rstrip("/")
         self.user = user
         self.password = password
         self.app = app
+        self.decision = decision
         self._http = httpx.AsyncClient(
             base_url=self.ari_url,
             auth=(user, password),
@@ -446,6 +477,9 @@ class AriSnoopController:
                 snoop_id,
                 sid,
             )
+            if self.decision is not None and sid:
+                role = "agent" if name.startswith("PJSIP/agent") else "caller"
+                await self.decision.bind_channel(sid, channel_id, role=role)
         except Exception:
             LOG.exception("ari_snoop_exception channel=%s", channel_id)
 
@@ -490,8 +524,13 @@ class AriSnoopController:
         if not channel_id:
             return
         # One snoop on the caller leg is enough for mixed spy=both audio.
+        # Also register the agent leg for agent-only whisper (no second media snoop).
         if name.startswith("PJSIP/caller"):
             await self._snoop_channel(channel_id, name)
+        elif name.startswith("PJSIP/agent") and self.decision is not None:
+            sid = await self._get_var(channel_id, "SV_SESSION")
+            if sid:
+                await self.decision.bind_channel(sid, channel_id, role="agent")
 
     async def _poll_channels_once(self) -> None:
         try:
@@ -517,6 +556,10 @@ class AriSnoopController:
             # Tap caller when up (bridged or ringing-answered).
             if name.startswith("PJSIP/caller"):
                 await self._snoop_channel(channel_id, name)
+            elif name.startswith("PJSIP/agent") and self.decision is not None:
+                sid = await self._get_var(channel_id, "SV_SESSION")
+                if sid:
+                    await self.decision.bind_channel(sid, channel_id, role="agent")
 
     async def _poll_loop(self) -> None:
         LOG.info("ARI channel poller started (0.5s)")
@@ -619,7 +662,7 @@ async def run_server(
     )
     metrics_task = asyncio.create_task(metrics_logger(metrics, METRICS_INTERVAL_S))
     if enable_ari:
-        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP)
+        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP, decision=decision)
         ari_task = asyncio.create_task(ari.run())
     try:
         async with server:

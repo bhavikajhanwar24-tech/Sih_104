@@ -28,7 +28,8 @@ public record SentinelProperties(
         @NotNull @Valid Session session,
         @NotNull @Valid Audit audit,
         @NotNull @Valid Identity identity,
-        @NotNull @Valid ContextScoring context
+        @NotNull @Valid ContextScoring context,
+        @NotNull @Valid Actuation actuation
 ) {
 
     private static final Set<String> REQUIRED_FAMILIES = Set.of(
@@ -179,6 +180,26 @@ public record SentinelProperties(
             @DecimalMin("1.0") double largeAmountThresholdInr,
             @Min(1) int velocityHighValueLimit,
             @NotNull List<String> knownBeneficiaryHints
+    ) {
+    }
+
+    /**
+     * Call actuation adapter selection and ARI / mock-CBS endpoints (Context §11.6).
+     */
+    public record Actuation(
+            @NotBlank String adapter,
+            @NotNull @Valid Ari ari,
+            @NotBlank String cbsFreezeUrl,
+            @NotBlank String supervisorEndpoint
+    ) {
+    }
+
+    public record Ari(
+            @NotBlank String baseUrl,
+            @NotBlank String username,
+            @NotBlank String password,
+            @Min(1) int connectTimeoutMs,
+            @Min(1) int readTimeoutMs
     ) {
     }
 
