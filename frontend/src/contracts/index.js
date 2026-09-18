@@ -51,6 +51,15 @@ export const CHANNEL_PROFILES = Object.freeze({
   WEBRTC_WIDEBAND: 'WEBRTC_WIDEBAND',
 });
 
+/** Media-plane PCM encodings accepted by ml-engine /ingest hello. */
+export const AUDIO_ENCODINGS = Object.freeze({
+  PCM_S16LE: 'pcm_s16le',
+  PCM_F32LE: 'pcm_f32le',
+  MULAW: 'mulaw',
+  ALAW: 'alaw',
+  SLIN16: 'slin16',
+});
+
 export const RISK_STATES = Object.freeze({
   SCORED: 'SCORED',
   INSUFFICIENT_EVIDENCE: 'INSUFFICIENT_EVIDENCE',

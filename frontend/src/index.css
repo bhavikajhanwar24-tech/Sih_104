@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * SentinelVoice design tokens — dark cybersecurity palette.
+ * Risk colour ramp is shared by every risk UI component (gauge, badges, ladder).
+ */
+:root {
+  --sv-bg: #0b1220;
+  --sv-panel: #121a2b;
+  --sv-border: #1e2a44;
+  --sv-fg: #e6edf7;
+  --sv-muted: #8b9bb4;
+  --sv-accent: #38bdf8;
+
+  /* Risk ramp: green → amber → orange → red */
+  --risk-clear: #10b981;
+  --risk-watch: #f59e0b;
+  --risk-elevated: #f97316;
+  --risk-critical: #ef4444;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(ellipse at top, #152038 0%, var(--sv-bg) 55%);
+  color: var(--sv-fg);
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+}

@@ -23,6 +23,13 @@ export default defineConfig({
         target: 'ws://localhost:8080',
         ws: true,
       },
+      // Browser audio → ml-engine only (never Java).
+      // Client connects to /ws/ingest/{sid} → ws://localhost:8000/ingest/{sid}
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
+        rewrite: (p) => p.replace(/^\/ws/, ''),
+      },
     },
   },
   test: {
