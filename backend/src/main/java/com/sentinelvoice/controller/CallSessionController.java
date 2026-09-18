@@ -23,8 +23,10 @@ import com.sentinelvoice.model.LinguisticFamily;
 import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
+import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
+import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -52,6 +54,7 @@ public class CallSessionController {
     private final TransactionPolicyService transactionPolicyService;
     private final IdentityResolutionService identityResolutionService;
     private final DirectoryService directoryService;
+    private final TelemetryBroadcaster telemetryBroadcaster;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
@@ -61,7 +64,8 @@ public class CallSessionController {
             RelationshipGraphService relationshipGraphService,
             TransactionPolicyService transactionPolicyService,
             IdentityResolutionService identityResolutionService,
-            DirectoryService directoryService
+            DirectoryService directoryService,
+            TelemetryBroadcaster telemetryBroadcaster
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionEngineService = fusionEngineService;
@@ -71,6 +75,7 @@ public class CallSessionController {
         this.transactionPolicyService = transactionPolicyService;
         this.identityResolutionService = identityResolutionService;
         this.directoryService = directoryService;
+        this.telemetryBroadcaster = telemetryBroadcaster;
     }
 
     @PostMapping("/start")
@@ -83,6 +88,19 @@ public class CallSessionController {
     public ResponseEntity<Map<String, Object>> getSession(@PathVariable String sessionId) {
         return callSessionManager.getSession(sessionId)
                 .map(session -> ResponseEntity.ok(descriptor(session, "ok")))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * REST fallback for the last published TelemetryFrame — debug aid when STOMP misbehaves.
+     */
+    @GetMapping("/{sessionId}/telemetry/latest")
+    public ResponseEntity<TelemetryFrame> latestTelemetry(@PathVariable String sessionId) {
+        if (callSessionManager.getSession(sessionId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return telemetryBroadcaster.latest(sessionId)
+                .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 

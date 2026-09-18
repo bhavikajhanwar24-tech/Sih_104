@@ -4,18 +4,40 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.sentinelvoice.audit.AuditLedgerService;
+import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.context.RelationshipGraphService;
+import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.RelationshipAssessment;
+import com.sentinelvoice.context.model.TransactionAssessment;
+import com.sentinelvoice.fusion.FusionEngineService;
+import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.fusion.ReasonGenerator;
+import com.sentinelvoice.identity.DirectoryService;
+import com.sentinelvoice.identity.IdentityResolutionService;
+import com.sentinelvoice.identity.model.IdentityAssessment;
+import com.sentinelvoice.intervention.InterventionDecision;
+import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.model.AuditBlock;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
+import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.SessionStartRequest;
+import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.service.CallSessionManager;
+import com.sentinelvoice.telemetry.TelemetryBroadcaster;
+import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,7 +45,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class FeatureFrameIngestTest {
@@ -111,6 +137,10 @@ class FeatureFrameIngestTest {
     private CallSessionManager sessions;
     private FeatureFrameIngestService ingest;
     private SimpleMeterRegistry meters;
+    private FusionEngineService fusionEngine;
+    private InterventionLadderService ladder;
+    private TelemetryBroadcaster broadcaster;
+    private Clock clock;
 
     @BeforeEach
     void setUp() {
@@ -126,7 +156,52 @@ class FeatureFrameIngestTest {
         when(audit.append(any(), any(), any())).thenReturn(new AuditBlock());
         sessions = new CallSessionManager(properties, audit);
         meters = new SimpleMeterRegistry();
-        ingest = new FeatureFrameIngestService(sessions, properties, meters);
+        clock = Clock.fixed(Instant.parse("2026-09-18T10:00:00Z"), ZoneOffset.UTC);
+
+        fusionEngine = mock(FusionEngineService.class);
+        when(fusionEngine.evaluate(anyString(), any())).thenReturn(stubFusion());
+
+        ladder = mock(InterventionLadderService.class);
+        when(ladder.evaluate(anyString(), any())).thenReturn(
+                InterventionDecision.unchanged(InterventionLevel.LEVEL_1_SILENT, 0L, "test")
+        );
+
+        ReasonGenerator reasonGenerator = mock(ReasonGenerator.class);
+        lenient().when(reasonGenerator.generate(any(), any(), any())).thenReturn(List.of());
+
+        IdentityResolutionService identity = mock(IdentityResolutionService.class);
+        lenient().when(identity.resolve(any(), any())).thenReturn(stubIdentity());
+
+        RelationshipGraphService relationship = mock(RelationshipGraphService.class);
+        lenient().when(relationship.assess(any())).thenReturn(
+                new RelationshipAssessment(0, true, 0, false, false, 0.1, List.of("FIRST_CONTACT"))
+        );
+
+        TransactionPolicyService transaction = mock(TransactionPolicyService.class);
+        lenient().when(transaction.assess(any(), any())).thenReturn(
+                new TransactionAssessment(0.1, List.of("NO_ASK"), false, true, false, 0, null, null)
+        );
+
+        DirectoryService directory = mock(DirectoryService.class);
+        AuditWriteDispatcher auditDispatcher = mock(AuditWriteDispatcher.class);
+        broadcaster = mock(TelemetryBroadcaster.class);
+
+        ingest = new FeatureFrameIngestService(
+                sessions,
+                properties,
+                fusionEngine,
+                ladder,
+                reasonGenerator,
+                identity,
+                relationship,
+                transaction,
+                directory,
+                auditDispatcher,
+                new TelemetryFrameBuilder(),
+                broadcaster,
+                meters,
+                clock
+        );
     }
 
     @Test
@@ -208,6 +283,27 @@ class FeatureFrameIngestTest {
         assertEquals(14200, session.getCumulativeSpeechMs());
         assertNotNull(session.getLastFeatureFrame());
         assertEquals(1.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
+        verify(broadcaster).publish(any());
+        verify(fusionEngine).evaluate(eq("call-9012"), any());
+        verify(ladder).evaluate(eq("call-9012"), any());
+        assertNotNull(meters.find("sentinel.pipeline.latency").timer());
+    }
+
+    @Test
+    void pipelineFailureBroadcastsDegradedTelemetry() {
+        sessions.createSession(start("deg-1"));
+        when(fusionEngine.evaluate(anyString(), any())).thenThrow(new RuntimeException("boom"));
+
+        FeatureFrame frame = stubFrame("deg-1", 1, clock.millis());
+        ingest.ingest(frame);
+
+        ArgumentCaptor<TelemetryFrame> captor = ArgumentCaptor.forClass(TelemetryFrame.class);
+        verify(broadcaster).publish(captor.capture());
+        TelemetryFrame published = captor.getValue();
+        assertEquals("DEGRADED", published.risk().state());
+        assertEquals(1, published.topReasons().size());
+        assertEquals("PIPELINE_ERROR", published.topReasons().getFirst().code());
+        assertEquals("CRITICAL", published.topReasons().getFirst().severity());
     }
 
     @Test
@@ -224,9 +320,9 @@ class FeatureFrameIngestTest {
     }
 
     @Test
-    void dropsStaleEpochWindow() throws Exception {
+    void dropsStaleEpochWindow() {
         sessions.createSession(start("stale-1"));
-        long oldEnd = Instant.now().toEpochMilli() - 5_000;
+        long oldEnd = clock.millis() - 5_000;
         FeatureFrame frame = stubFrame("stale-1", 1, oldEnd);
         ingest.ingest(frame);
         assertEquals(1.0, meters.find("sentinel.frames.stale").counter().count(), 1e-9);
@@ -240,6 +336,35 @@ class FeatureFrameIngestTest {
                 "cli-1",
                 "desk-1",
                 ChannelProfile.PSTN_NARROWBAND,
+                null
+        );
+    }
+
+    private static IdentityAssessment stubIdentity() {
+        return new IdentityAssessment(
+                "cli-1",
+                "UNKNOWN",
+                null,
+                null,
+                null,
+                null,
+                false,
+                new IdentityAssessment.VoicePassport(false, null, com.sentinelvoice.identity.IdentityVerdict.INCONCLUSIVE),
+                null,
+                0.0,
+                null,
+                List.of()
+        );
+    }
+
+    private static FusionResult stubFusion() {
+        return new FusionResult(
+                0.2,
+                0.2,
+                FusionResult.Trend.STABLE,
+                FusionResult.RiskState.INSUFFICIENT_EVIDENCE,
+                Map.of(),
+                new FusionResult.CorroborationDetail(false, List.of(), 2),
                 null
         );
     }

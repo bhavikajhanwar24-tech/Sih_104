@@ -135,15 +135,25 @@ function formatAjvErrors(label, errors, data) {
  * @returns {TelemetryFrame}
  */
 export function assertTelemetryFrame(frame) {
-  if (!CONTRACT_VALIDATION) return frame;
-
-  const ok = ajvValidateTelemetryFrame(frame);
-  if (!ok) {
-    console.error(
-      formatAjvErrors('TelemetryFrame', ajvValidateTelemetryFrame.errors, frame),
-    );
+  const err = getTelemetryValidationError(frame);
+  if (err) {
+    console.error(err);
   }
   return frame;
+}
+
+/**
+ * Dev-only validation message for the StatusBar / console. Null when valid or
+ * when contract validation is off (production builds).
+ *
+ * @param {unknown} frame
+ * @returns {string | null}
+ */
+export function getTelemetryValidationError(frame) {
+  if (!CONTRACT_VALIDATION) return null;
+  const ok = ajvValidateTelemetryFrame(frame);
+  if (ok) return null;
+  return formatAjvErrors('TelemetryFrame', ajvValidateTelemetryFrame.errors, frame);
 }
 
 /**
