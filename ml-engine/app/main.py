@@ -6,7 +6,8 @@ import time
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import numpy as np
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from app import __version__
 from app.config import settings
@@ -122,6 +123,35 @@ async def close_session(sid: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="session_not_found")
     logger.info("session_close session_id=%s", sid)
     return {"status": "closed", "sessionId": sid}
+
+
+@app.post("/session/{sid}/pcm")
+async def push_pcm(sid: str, request: Request) -> dict[str, Any]:
+    """
+    Append float32 LE mono samples (@ settings.sample_rate, typically 16 kHz)
+    to the session ring buffer. Used by gateway/asterisk_bridge.py (P7.2).
+    """
+    session = registry.get(sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session_not_found")
+    raw = await request.body()
+    if not raw:
+        return {"status": "ok", "sessionId": sid, "samples": 0}
+    if len(raw) % 4:
+        raw = raw[: len(raw) - (len(raw) % 4)]
+    pcm = np.frombuffer(raw, dtype="<f4").astype(np.float32, copy=True)
+    session.ring_buffer.write(pcm)
+    session.seq += 1
+    if is_speech(pcm):
+        session.cumulative_speech_ms += int(
+            round(1000.0 * pcm.size / settings.sample_rate)
+        )
+    return {
+        "status": "ok",
+        "sessionId": sid,
+        "samples": int(pcm.size),
+        "seq": session.seq,
+    }
 
 
 @app.websocket("/ingest/{sid}")

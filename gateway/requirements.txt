@@ -1,0 +1,2 @@
+# Gateway (AudioSocket bridge) — use the ml-engine venv; needs:
+#   httpx numpy scipy websockets pytest pytest-asyncio
