@@ -34,9 +34,10 @@ alwaysApply: true
   and MUST return `{"available": False}` rather than raising when the channel can't support it.
 
 ## React (frontend/)
-- React 18 + TypeScript + Vite + Tailwind. Functional components + hooks.
+- React 18 + Vite + Tailwind. Plain JSX + JSDoc (no TypeScript / no `.tsx`). Functional components + hooks.
 - No localStorage/sessionStorage.
 - All telemetry flows through the `useTelemetrySocket` hook. Components never open their own sockets.
+- PropTypes on every component; enums and accessors from `@/contracts` — never hardcode wire strings.
 
 ## Style
 - Small, reviewable diffs. Change only what the task asks for.
