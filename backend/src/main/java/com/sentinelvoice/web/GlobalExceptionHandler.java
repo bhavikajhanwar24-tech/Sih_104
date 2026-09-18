@@ -1,5 +1,6 @@
 package com.sentinelvoice.web;
 
+import com.sentinelvoice.passport.ConsentRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -19,6 +20,16 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ConsentRequiredException.class)
+    public ResponseEntity<ApiError> handleConsentRequired(
+            ConsentRequiredException ex,
+            HttpServletRequest request
+    ) {
+        String message = ex.getMessage() == null ? "Consent required" : ex.getMessage();
+        log.error("consent required cid={} path={} msg={}", cid(), request.getRequestURI(), message);
+        return error(HttpStatus.FORBIDDEN, message, request);
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleMethodArgumentNotValid(
