@@ -3,6 +3,8 @@ package com.sentinelvoice.telemetry;
 import com.sentinelvoice.fusion.EvidenceFamily;
 import com.sentinelvoice.fusion.FamilyScore;
 import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.fusion.ReasonGenerator;
+import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.FeatureFrame;
@@ -20,11 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Assembles a {@link TelemetryFrame} from session state, the current FeatureFrame,
- * fusion output, and the intervention ladder decision.
- *
- * <p>Identity / topReasons stay minimal here — P8 / P5 deepen them. Fusion is whatever
- * {@link com.sentinelvoice.fusion.FusionEngineService} returns (P5 owns the math).
+ * Assembles a {@link TelemetryFrame} from session + FeatureFrame + fusion + FSM + reasons + identity.
  */
 @Component
 public class TelemetryFrameBuilder {
@@ -35,13 +33,13 @@ public class TelemetryFrameBuilder {
             FusionResult fusion,
             InterventionDecision decision,
             InterventionLevel previousLevel,
-            long nowMs
+            long nowMs,
+            IdentityAssessment identity,
+            List<ReasonGenerator.GeneratedReason> reasons
     ) {
         long callElapsedMs = Math.max(0L, nowMs - session.getCreatedAt().toEpochMilli());
         long changedAtMs = decision.changed() ? nowMs : session.getLevelChangedAtMs();
 
-        TelemetryFrame.Families families = mapFamilies(fusion.families());
-        TelemetryFrame.Corroboration corroboration = mapCorroboration(fusion.corroboration());
         TelemetryFrame.Risk risk = new TelemetryFrame.Risk(
                 clamp01(fusion.instantaneous()),
                 clamp01(fusion.smoothed()),
@@ -56,12 +54,7 @@ public class TelemetryFrameBuilder {
                 null,
                 decision.actionsToFire() == null ? List.of() : decision.actionsToFire()
         );
-        TelemetryFrame.Identity identity = placeholderIdentity(session, frame);
-        TelemetryFrame.TranscriptDelta transcriptDelta = new TelemetryFrame.TranscriptDelta(
-                callElapsedMs,
-                "",
-                List.of()
-        );
+
         String auditHash = auditHash(
                 session.getSessionId(),
                 frame.seq(),
@@ -77,24 +70,141 @@ public class TelemetryFrameBuilder {
                 nowMs,
                 callElapsedMs,
                 risk,
-                families,
-                corroboration,
+                mapFamilies(fusion.families()),
+                mapCorroboration(fusion.corroboration()),
                 intervention,
-                identity,
-                List.of(),
-                transcriptDelta,
+                mapIdentity(session, frame, identity),
+                mapReasons(reasons),
+                new TelemetryFrame.TranscriptDelta(callElapsedMs, "", List.of()),
                 auditHash
         );
     }
 
+    /**
+     * Demo-safe failure frame: risk.state=DEGRADED plus a CRITICAL error reason.
+     */
+    public TelemetryFrame buildDegraded(
+            CallSession session,
+            FeatureFrame frame,
+            long nowMs,
+            String errorMessage
+    ) {
+        long callElapsedMs = Math.max(0L, nowMs - session.getCreatedAt().toEpochMilli());
+        String msg = errorMessage == null || errorMessage.isBlank()
+                ? "Pipeline error"
+                : errorMessage;
+        // Quantified sentence for contract consistency with ReasonGenerator style.
+        String text = "Decision pipeline failed for frame seq " + frame.seq()
+                + " (" + msg.replaceAll("[\\r\\n]+", " ") + ").";
+        TelemetryFrame.FamilyScore unavailable = new TelemetryFrame.FamilyScore(0.0, 0.0, 0.0, false);
+        return new TelemetryFrame(
+                TelemetryFrame.SCHEMA,
+                session.getSessionId(),
+                frame.seq(),
+                nowMs,
+                callElapsedMs,
+                new TelemetryFrame.Risk(0.0, clamp01(session.getSmoothedRisk()), "STABLE", "DEGRADED"),
+                new TelemetryFrame.Families(
+                        unavailable, unavailable, unavailable, unavailable, unavailable, unavailable
+                ),
+                new TelemetryFrame.Corroboration(List.of(), 2, false),
+                new TelemetryFrame.Intervention(
+                        session.getCurrentLevel().name(),
+                        session.getCurrentLevel().name(),
+                        session.getLevelChangedAtMs(),
+                        0L,
+                        null,
+                        List.of()
+                ),
+                mapIdentity(session, frame, null),
+                List.of(new TelemetryFrame.Reason("PIPELINE_ERROR", "CRITICAL", text)),
+                new TelemetryFrame.TranscriptDelta(callElapsedMs, "", List.of()),
+                auditHash(session.getSessionId(), frame.seq(), nowMs, session.getSmoothedRisk(),
+                        session.getCurrentLevel())
+        );
+    }
+
+    private static TelemetryFrame.Identity mapIdentity(
+            CallSession session,
+            FeatureFrame frame,
+            IdentityAssessment identity
+    ) {
+        if (identity == null) {
+            String cli = session.getCallerId() != null ? session.getCallerId() : "unknown";
+            String claimedIdentity = frame.linguistic() != null ? frame.linguistic().claimedIdentity() : null;
+            String claimedRole = frame.linguistic() != null ? frame.linguistic().claimedRole() : null;
+            return new TelemetryFrame.Identity(
+                    cli,
+                    "UNKNOWN",
+                    null,
+                    claimedIdentity,
+                    claimedRole,
+                    null,
+                    false,
+                    new TelemetryFrame.VoicePassport(false, 0.0, "INCONCLUSIVE"),
+                    null
+            );
+        }
+        TelemetryFrame.DirectoryRecord claimDir = null;
+        if (identity.directoryRecordForClaim() != null
+                && identity.directoryRecordForClaim().get("employeeId") != null) {
+            claimDir = new TelemetryFrame.DirectoryRecord(
+                    String.valueOf(identity.directoryRecordForClaim().get("employeeId")),
+                    String.valueOf(identity.directoryRecordForClaim().getOrDefault("role", ""))
+            );
+        }
+        TelemetryFrame.VoicePassport passport = new TelemetryFrame.VoicePassport(
+                identity.voicePassport() != null && identity.voicePassport().enrolled(),
+                identity.voicePassport() != null && identity.voicePassport().cosine() != null
+                        ? identity.voicePassport().cosine()
+                        : 0.0,
+                identity.voicePassport() != null && identity.voicePassport().verdict() != null
+                        ? identity.voicePassport().verdict().name()
+                        : "INCONCLUSIVE"
+        );
+        TelemetryFrame.PresenceConflict presence = null;
+        if (identity.presenceConflict() != null) {
+            presence = new TelemetryFrame.PresenceConflict(
+                    identity.presenceConflict().expected(),
+                    identity.presenceConflict().observed()
+            );
+        }
+        return new TelemetryFrame.Identity(
+                identity.cli(),
+                identity.cliTrunk() != null ? identity.cliTrunk() : "UNKNOWN",
+                identity.directoryMatch(),
+                identity.claimedIdentity(),
+                identity.claimedRole(),
+                claimDir,
+                identity.cliVsClaimMismatch(),
+                passport,
+                presence
+        );
+    }
+
+    private static List<TelemetryFrame.Reason> mapReasons(List<ReasonGenerator.GeneratedReason> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return List.of();
+        }
+        List<TelemetryFrame.Reason> out = new ArrayList<>(reasons.size());
+        for (ReasonGenerator.GeneratedReason r : reasons) {
+            out.add(new TelemetryFrame.Reason(
+                    r.code().name(),
+                    r.severity().name(),
+                    r.text()
+            ));
+        }
+        return out;
+    }
+
     private static TelemetryFrame.Families mapFamilies(Map<EvidenceFamily, FamilyScore> scores) {
         return new TelemetryFrame.Families(
-                familyOrUnavailable(scores.get(EvidenceFamily.VOICE)),
-                familyOrUnavailable(scores.get(EvidenceFamily.CHANNEL)),
-                familyOrUnavailable(scores.get(EvidenceFamily.PROSODY)),
-                familyOrUnavailable(scores.get(EvidenceFamily.LINGUISTIC)),
-                familyOrUnavailable(scores.get(EvidenceFamily.TRANSACTION)),
-                familyOrUnavailable(scores.get(EvidenceFamily.RELATIONSHIP))
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.VOICE)),
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.CHANNEL)),
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.PROSODY)),
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.LINGUISTIC)),
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.TRANSACTION)),
+                familyOrUnavailable(scores == null ? null : scores.get(EvidenceFamily.RELATIONSHIP))
         );
     }
 
@@ -124,30 +234,6 @@ public class TelemetryFrameBuilder {
                 above,
                 Math.max(0, detail.independentFamiliesRequired()),
                 detail.satisfied()
-        );
-    }
-
-    /**
-     * Placeholder identity until P8.1 IdentityResolutionService feeds real values.
-     */
-    private static TelemetryFrame.Identity placeholderIdentity(CallSession session, FeatureFrame frame) {
-        String cli = session.getCallerId() != null ? session.getCallerId() : "unknown";
-        String claimedIdentity = null;
-        String claimedRole = null;
-        if (frame.linguistic() != null) {
-            claimedIdentity = frame.linguistic().claimedIdentity();
-            claimedRole = frame.linguistic().claimedRole();
-        }
-        return new TelemetryFrame.Identity(
-                cli,
-                "UNKNOWN",
-                null,
-                claimedIdentity,
-                claimedRole,
-                null,
-                false,
-                new TelemetryFrame.VoicePassport(false, 0.0, "INCONCLUSIVE"),
-                null
         );
     }
 
