@@ -66,7 +66,12 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.ml.frame-staleness-ms=1500",
             "sentinelvoice.session.ttl-minutes=30",
             "sentinelvoice.session.max-concurrent=100",
-            "sentinelvoice.audit.genesis-prefix=SENTINELVOICE-GENESIS-v1"
+            "sentinelvoice.audit.genesis-prefix=SENTINELVOICE-GENESIS-v1",
+            "sentinelvoice.identity.internal-extension-pattern=^(ext-)?\\d{3,5}$",
+            "sentinelvoice.identity.registered-external-clis[0]=+91-22-6655-0100",
+            "sentinelvoice.identity.cosine-match-min=0.70",
+            "sentinelvoice.identity.cosine-mismatch-max=0.50",
+            "sentinelvoice.identity.spoof-high-threshold=0.60"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()

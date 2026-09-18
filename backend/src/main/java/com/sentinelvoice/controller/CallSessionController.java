@@ -3,6 +3,8 @@ package com.sentinelvoice.controller;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.identity.IdentityResolutionService;
+import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.intervention.InterventionStateMachine;
@@ -43,19 +45,22 @@ public class CallSessionController {
     private final InterventionLadderService interventionLadderService;
     private final NaturalLanguageFraudService naturalLanguageFraudService;
     private final RelationshipGraphService relationshipGraphService;
+    private final IdentityResolutionService identityResolutionService;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
             FusionEngineService fusionEngineService,
             InterventionLadderService interventionLadderService,
             NaturalLanguageFraudService naturalLanguageFraudService,
-            RelationshipGraphService relationshipGraphService
+            RelationshipGraphService relationshipGraphService,
+            IdentityResolutionService identityResolutionService
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionEngineService = fusionEngineService;
         this.interventionLadderService = interventionLadderService;
         this.naturalLanguageFraudService = naturalLanguageFraudService;
         this.relationshipGraphService = relationshipGraphService;
+        this.identityResolutionService = identityResolutionService;
     }
 
     @PostMapping("/start")
@@ -129,14 +134,14 @@ public class CallSessionController {
                 new FeatureFrame.LatencyMs(50, 200)
         );
 
-        FusionContext fusionContext = new FusionContext(
+        IdentityAssessment identity = identityResolutionService.resolve(session, frame);
+        FusionContext fusionContext = FusionContext.withIdentity(
                 frame,
                 transactionDeviation,
                 true,
                 relationship.score(),
                 true,
-                false,
-                Double.POSITIVE_INFINITY
+                identity
         );
         FusionResult fusion = fusionEngineService.evaluate(sessionId, fusionContext);
         List<String> corroborating = fusion.corroboration().familiesAboveThreshold().stream()
@@ -182,6 +187,7 @@ public class CallSessionController {
         body.put("corroboration", fusion.corroboration().satisfied());
         body.put("linguistic", linguistic);
         body.put("relationship", relationship);
+        body.put("identity", identity);
         return ResponseEntity.ok(body);
     }
 

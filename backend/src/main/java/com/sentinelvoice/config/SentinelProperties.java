@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,7 +26,8 @@ public record SentinelProperties(
         @NotNull @Valid Intervention intervention,
         @NotNull @Valid Ml ml,
         @NotNull @Valid Session session,
-        @NotNull @Valid Audit audit
+        @NotNull @Valid Audit audit,
+        @NotNull @Valid Identity identity
 ) {
 
     private static final Set<String> REQUIRED_FAMILIES = Set.of(
@@ -125,6 +127,18 @@ public record SentinelProperties(
 
     public record Audit(
             @NotBlank String genesisPrefix
+    ) {
+    }
+
+    /**
+     * Identity pipeline thresholds and trunk classification rules (Context §12 / P8.1).
+     */
+    public record Identity(
+            @NotBlank String internalExtensionPattern,
+            @NotNull List<String> registeredExternalClis,
+            @DecimalMin("0.0") @DecimalMax("1.0") double cosineMatchMin,
+            @DecimalMin("0.0") @DecimalMax("1.0") double cosineMismatchMax,
+            @DecimalMin("0.0") @DecimalMax("1.0") double spoofHighThreshold
     ) {
     }
 
