@@ -34,6 +34,7 @@ export function IdentityCard({ frame, className = '' }) {
   const cosineDisplay = Number.isFinite(cosineTarget)
     ? cosineAnim.toFixed(2)
     : '—';
+  const watermarkNote = watermarkAttributionNote(frame);
 
   return (
     <div className={`flex flex-col gap-2 text-[11px] ${className}`}>
@@ -130,6 +131,27 @@ export function IdentityCard({ frame, className = '' }) {
           expected {presence.expected ?? '—'} · observed {presence.observed ?? '—'}
         </p>
       ) : null}
+
+      {/* Attribution only — never a risk input (Context §10.7). */}
+      {watermarkNote ? (
+        <p
+          className="rounded border px-2 py-1 font-mono text-[10px]"
+          style={{
+            borderColor: `${palette.accent}66`,
+            background: `${palette.accent}14`,
+            color: palette.fg,
+          }}
+          title="Attribution enrichment only — does not move the risk score"
+        >
+          <span
+            className="font-semibold uppercase tracking-wide"
+            style={{ color: palette.accent }}
+          >
+            Attribution ·{' '}
+          </span>
+          {watermarkNote}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -138,6 +160,22 @@ IdentityCard.propTypes = {
   frame: PropTypes.object,
   className: PropTypes.string,
 };
+
+/**
+ * Surface WATERMARK_DETECTED as an identity attribution note (not a risk cue).
+ * @param {TelemetryFrame | null | undefined} frame
+ * @returns {string | null}
+ */
+function watermarkAttributionNote(frame) {
+  const reasons = Array.isArray(frame?.topReasons) ? frame.topReasons : [];
+  const hit = reasons.find(
+    (r) => String(r?.code || '').toUpperCase() === 'WATERMARK_DETECTED',
+  );
+  if (!hit) return null;
+  const text = typeof hit.text === 'string' && hit.text.trim() ? hit.text.trim() : null;
+  if (text) return text;
+  return 'Known generative-audio watermark detected (attribution only)';
+}
 
 /**
  * @param {Object} props
