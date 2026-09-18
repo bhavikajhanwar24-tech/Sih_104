@@ -1,6 +1,11 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.fusion.FusionContext;
+import com.sentinelvoice.fusion.FusionEngineService;
+import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.model.CallSession;
+import com.sentinelvoice.model.ChannelProfile;
+import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.LinguisticAssessment;
 import com.sentinelvoice.model.LinguisticFamily;
@@ -9,7 +14,6 @@ import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.service.CallSessionManager;
-import com.sentinelvoice.service.FusedRiskEngineService;
 import com.sentinelvoice.service.InterventionLadderService;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
 import com.sentinelvoice.service.RelationshipGraphService;
@@ -32,20 +36,20 @@ import java.util.Map;
 public class CallSessionController {
 
     private final CallSessionManager callSessionManager;
-    private final FusedRiskEngineService fusedRiskEngineService;
+    private final FusionEngineService fusionEngineService;
     private final InterventionLadderService interventionLadderService;
     private final NaturalLanguageFraudService naturalLanguageFraudService;
     private final RelationshipGraphService relationshipGraphService;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
-            FusedRiskEngineService fusedRiskEngineService,
+            FusionEngineService fusionEngineService,
             InterventionLadderService interventionLadderService,
             NaturalLanguageFraudService naturalLanguageFraudService,
             RelationshipGraphService relationshipGraphService
     ) {
         this.callSessionManager = callSessionManager;
-        this.fusedRiskEngineService = fusedRiskEngineService;
+        this.fusionEngineService = fusionEngineService;
         this.interventionLadderService = interventionLadderService;
         this.naturalLanguageFraudService = naturalLanguageFraudService;
         this.relationshipGraphService = relationshipGraphService;
@@ -74,51 +78,88 @@ public class CallSessionController {
             @RequestParam double transactionDeviation
     ) {
         CallSession session = callSessionManager.requireSession(sessionId);
-        LinguisticAssessment linguistic = naturalLanguageFraudService.assess(
-                new LinguisticFamily(
-                        true,
-                        0L,
-                        "en",
-                        nlpSignal,
-                        nlpSignal,
-                        nlpSignal,
-                        nlpSignal,
-                        false,
-                        null,
-                        null,
-                        null,
-                        ""
-                )
+        LinguisticFamily linguisticFamily = new LinguisticFamily(
+                true,
+                0L,
+                "en",
+                nlpSignal,
+                nlpSignal,
+                nlpSignal,
+                nlpSignal,
+                false,
+                null,
+                null,
+                null,
+                ""
         );
+        LinguisticAssessment linguistic = naturalLanguageFraudService.assess(linguisticFamily);
         RelationshipAssessment relationship = relationshipGraphService.assess(
                 new RelationshipQuery(session.getCallerId(), session.getCalleeId(), null)
         );
-        var assessment = fusedRiskEngineService.evaluate(
+
+        FeatureFrame frame = new FeatureFrame(
+                "sentinelvoice.FeatureFrame/1",
                 sessionId,
-                voiceAuthenticity,
-                channelForensics,
-                prosody,
-                linguistic.composite(),
-                transactionDeviation,
-                relationship.score()
+                (int) session.allocateSeq(),
+                0L,
+                500L,
+                session.getChannelProfile() != null ? session.getChannelProfile() : ChannelProfile.WEBRTC_WIDEBAND,
+                true,
+                Math.max(session.getCumulativeSpeechMs(), 5000L),
+                new FeatureFrame.VoiceFamily(true, voiceAuthenticity, "sim", Double.valueOf(1)),
+                new FeatureFrame.ChannelFamily(
+                        true, Double.valueOf(50), Boolean.TRUE, channelForensics, Double.valueOf(1) / 2, Double.valueOf(0)),
+                new FeatureFrame.ProsodyFamily(
+                        true,
+                        Double.valueOf(120),
+                        Double.valueOf(10),
+                        Double.valueOf(1) / 2,
+                        Double.valueOf(5),
+                        Double.valueOf(20),
+                        Double.valueOf(10),
+                        Double.valueOf(0),
+                        Double.valueOf(4),
+                        prosody),
+                new FeatureFrame.SpeakerFamily(false, null, null, null, null),
+                new FeatureFrame.WatermarkFamily(false, null, null, null, null),
+                linguisticFamily,
+                new FeatureFrame.LatencyMs(50, 200)
         );
-        InterventionLevel level = interventionLadderService.resolve(assessment.totalRisk());
+
+        FusionContext fusionContext = new FusionContext(
+                frame,
+                transactionDeviation,
+                true,
+                relationship.score(),
+                true,
+                false,
+                Double.POSITIVE_INFINITY
+        );
+        FusionResult fusion = fusionEngineService.evaluate(sessionId, fusionContext);
+        InterventionLevel level = interventionLadderService.resolve(fusion.smoothed());
+
+        Map<String, Double> factorBreakdown = new LinkedHashMap<>();
+        fusion.families().forEach((family, score) ->
+                factorBreakdown.put(family.configKey(), score.available() ? score.score() : 0));
+
         TelemetryEntry entry = new TelemetryEntry(
-                session.allocateSeq(),
+                frame.seq(),
                 Instant.now().toEpochMilli(),
-                assessment.totalRisk(),
-                assessment.totalRisk(),
+                fusion.instantaneous(),
+                fusion.smoothed(),
                 level,
-                assessment.factorBreakdown()
+                factorBreakdown
         );
         callSessionManager.recordTelemetry(sessionId, entry);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("sessionId", sessionId);
-        body.put("riskScore", assessment.totalRisk());
+        body.put("riskScore", fusion.smoothed());
+        body.put("instantaneousRisk", fusion.instantaneous());
         body.put("interventionLevel", level.name());
-        body.put("factors", assessment.factorBreakdown());
-        body.put("explanation", assessment.explanation());
+        body.put("factors", factorBreakdown);
+        body.put("state", fusion.state().name());
+        body.put("corroboration", fusion.corroboration().satisfied());
         body.put("linguistic", linguistic);
         body.put("relationship", relationship);
         return ResponseEntity.ok(body);

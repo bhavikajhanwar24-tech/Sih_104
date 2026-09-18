@@ -66,6 +66,12 @@ sentinelvoice:
       relationship: 0.60
     linguistic-staleness-tau-ms: 3000
     min-speech-ms-for-scoring: 3000
+    emergency:
+      # Context §9.4 — emergency bypass thresholds
+      cosine-mismatch-threshold: 0.50
+      secrecy-threshold: 0.85
+      authority-threshold: 0.85
+      transaction-score-threshold: 0.80
   intervention:
     l1-to-l2:
       up-threshold: 0.35
