@@ -87,7 +87,9 @@ public record SentinelProperties(
             @NotNull @Valid Transition l3ToL2,
             @NotNull @Valid Transition l3ToL4,
             @NotNull @Valid Transition l4ToL3,
-            @NotNull @Valid Transition l4ToL5
+            @NotNull @Valid Transition l4ToL5,
+            @Min(value = 1, message = "intervention.overridePinDurationMs must be >= 1")
+            long overridePinDurationMs
     ) {
     }
 

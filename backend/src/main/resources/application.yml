@@ -101,6 +101,8 @@ sentinelvoice:
       up-threshold: 0.90
       down-threshold: 0.90
       dwell-ms: 0
+    # How long a manual override pins the level (automatic transitions suppressed)
+    override-pin-duration-ms: 120000
   ml:
     base-url: http://localhost:8000
     websocket-url: ws://localhost:8000/ingest

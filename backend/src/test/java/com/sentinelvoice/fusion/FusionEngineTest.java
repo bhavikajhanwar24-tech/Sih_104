@@ -13,7 +13,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
-class FusionEngineTest {
+public class FusionEngineTest {
 
     private SentinelProperties properties;
     private EmaSmoother emaSmoother;
@@ -221,7 +221,7 @@ class FusionEngineTest {
         return weights.values().stream().mapToDouble(Double::doubleValue).sum();
     }
 
-    static SentinelProperties testProperties() {
+    public static SentinelProperties testProperties() {
         return testPropertiesWithWeights(
                 Map.of(
                         "voice", 0.24,
@@ -270,7 +270,8 @@ class FusionEngineTest {
                         new SentinelProperties.Transition(0.55, 0.46, 8000),
                         new SentinelProperties.Transition(0.75, 0.66, 1000),
                         new SentinelProperties.Transition(0.75, 0.66, 15000),
-                        new SentinelProperties.Transition(0.90, 0.90, 0)
+                        new SentinelProperties.Transition(0.90, 0.90, 0),
+                        120_000L
                 ),
                 new SentinelProperties.Ml("http://localhost:8000", "ws://localhost:8000/ingest", 2000, 1500),
                 new SentinelProperties.Session(30, 100),

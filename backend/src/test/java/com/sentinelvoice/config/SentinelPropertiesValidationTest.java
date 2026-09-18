@@ -59,6 +59,7 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.intervention.l4-to-l5.up-threshold=0.90",
             "sentinelvoice.intervention.l4-to-l5.down-threshold=0.90",
             "sentinelvoice.intervention.l4-to-l5.dwell-ms=0",
+            "sentinelvoice.intervention.override-pin-duration-ms=120000",
             "sentinelvoice.ml.base-url=http://localhost:8000",
             "sentinelvoice.ml.websocket-url=ws://localhost:8000/ingest",
             "sentinelvoice.ml.connect-timeout-ms=2000",

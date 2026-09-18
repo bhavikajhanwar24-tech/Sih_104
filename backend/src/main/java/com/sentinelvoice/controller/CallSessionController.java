@@ -3,6 +3,9 @@ package com.sentinelvoice.controller;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.intervention.InterventionDecision;
+import com.sentinelvoice.intervention.InterventionLadderService;
+import com.sentinelvoice.intervention.InterventionStateMachine;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
@@ -14,7 +17,6 @@ import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.service.CallSessionManager;
-import com.sentinelvoice.service.InterventionLadderService;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
 import com.sentinelvoice.service.RelationshipGraphService;
 import jakarta.validation.Valid;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -136,7 +139,21 @@ public class CallSessionController {
                 Double.POSITIVE_INFINITY
         );
         FusionResult fusion = fusionEngineService.evaluate(sessionId, fusionContext);
-        InterventionLevel level = interventionLadderService.resolve(fusion.smoothed());
+        List<String> corroborating = fusion.corroboration().familiesAboveThreshold().stream()
+                .map(f -> f.configKey())
+                .toList();
+        InterventionDecision decision = interventionLadderService.evaluate(
+                sessionId,
+                new InterventionStateMachine.EvaluationInput(
+                        fusion.smoothed(),
+                        fusion.corroboration().satisfied(),
+                        corroborating,
+                        fusion.emergencyReason() != null,
+                        false,
+                        Instant.now().toEpochMilli()
+                )
+        );
+        InterventionLevel level = decision.level();
 
         Map<String, Double> factorBreakdown = new LinkedHashMap<>();
         fusion.families().forEach((family, score) ->
@@ -157,6 +174,9 @@ public class CallSessionController {
         body.put("riskScore", fusion.smoothed());
         body.put("instantaneousRisk", fusion.instantaneous());
         body.put("interventionLevel", level.name());
+        body.put("interventionChanged", decision.changed());
+        body.put("dwellRemainingMs", decision.dwellRemainingMs());
+        body.put("rationale", decision.rationale());
         body.put("factors", factorBreakdown);
         body.put("state", fusion.state().name());
         body.put("corroboration", fusion.corroboration().satisfied());
