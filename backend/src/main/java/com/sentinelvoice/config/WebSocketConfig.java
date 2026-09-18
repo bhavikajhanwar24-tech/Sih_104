@@ -17,7 +17,13 @@ import org.springframework.web.socket.config.annotation.WebSocketTransportRegist
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSocketConfigurer {
 
     private static final String STOMP_ENDPOINT = "/ws-sentinel";
-    private static final String[] ALLOWED_ORIGIN_PATTERNS = SecurityConfig.ALLOWED_ORIGINS.toArray(String[]::new);
+    /** Dev-friendly origins — localhost and 127.0.0.1 on any port (Vite may shift). */
+    private static final String[] ALLOWED_ORIGIN_PATTERNS = {
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+            "https://localhost:*",
+            "https://127.0.0.1:*",
+    };
 
     private final FeatureFrameSocketHandler featureFrameSocketHandler;
 

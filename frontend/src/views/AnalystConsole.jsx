@@ -1,178 +1,172 @@
-import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import { CHANNEL_PROFILES } from '@/contracts';
 import { MicControl } from '@/components/MicControl.jsx';
 import { RiskGauge } from '@/components/RiskGauge.jsx';
-import {
-  CONNECTION_STATES,
-  useTelemetrySocket,
-} from '@/hooks/useTelemetrySocket.js';
+import { SessionControl } from '@/components/SessionControl.jsx';
+import { Panel } from '@/components/ui/Panel.jsx';
+import { useSession } from '@/context/SessionContext.jsx';
+import { useTelemetrySocket } from '@/hooks/useTelemetrySocket.js';
 
 /**
- * Minimal analyst console — mic capture + live risk gauge + raw telemetry JSON.
+ * Analyst operations view — named grid slots for later widgets.
+ *
+ * Layout (1280×720 safe):
+ *   [ identity ][ risk gauge ][ intervention ]
+ *   [ spectrogram     ][ evidence panel      ]
+ *   [ live transcript ][ reasons list        ]
+ */
+export function AnalystConsole() {
+  const { sessionId, isRunning, sessionError } = useSession();
+  const { latest, error: telemetryError } = useTelemetrySocket(sessionId);
+
+  const hasFrame = latest != null;
+  const bootStatus = !isRunning
+    ? 'empty'
+    : sessionError || telemetryError
+      ? 'error'
+      : hasFrame
+        ? 'ready'
+        : 'empty';
+
+  const emptyMsg = !isRunning ? 'Start a session to begin' : 'waiting for audio';
+  const errMsg = sessionError || telemetryError || 'Telemetry error';
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 p-2 md:gap-3 md:p-3">
+      <div className="flex shrink-0 flex-col gap-2 lg:flex-row">
+        <SessionControl className="min-w-0 flex-1" />
+        {sessionId ? (
+          <div className="w-full shrink-0 lg:w-72">
+            <MicControl sessionId={sessionId} />
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-12 gap-2 md:gap-3">
+        <Panel
+          title="Identity"
+          slot="identity"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[9rem] sm:col-span-4"
+        >
+          <PlaceholderBody
+            lines={[
+              `CLI ${latest?.identity?.cli ?? '—'}`,
+              `Claim ${latest?.identity?.claimedIdentity ?? '—'}`,
+              `Passport ${latest?.identity?.voicePassport?.verdict ?? '—'}`,
+            ]}
+          />
+        </Panel>
+
+        <Panel
+          title="Risk"
+          slot="risk"
+          status={bootStatus === 'error' ? 'error' : hasFrame ? 'ready' : bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[14rem] sm:col-span-4"
+          variant="flush"
+        >
+          <div className="flex h-full items-center justify-center p-2">
+            <RiskGauge frame={latest} />
+          </div>
+        </Panel>
+
+        <Panel
+          title="Intervention"
+          slot="intervention"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[9rem] sm:col-span-4"
+        >
+          <PlaceholderBody
+            lines={[
+              latest?.intervention?.level ?? 'LEVEL_1_SILENT',
+              `dwell ${latest?.intervention?.dwellRemainingMs ?? 0} ms`,
+            ]}
+          />
+        </Panel>
+
+        <Panel
+          title="Spectrogram"
+          slot="spectrogram"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[12rem] md:col-span-7"
+        >
+          <PlaceholderBody lines={['Spectrogram canvas — P6.x']} />
+        </Panel>
+
+        <Panel
+          title="Evidence"
+          slot="evidence"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[12rem] md:col-span-5"
+        >
+          <PlaceholderBody lines={['Evidence radar / waterfall — P6.3']} />
+        </Panel>
+
+        <Panel
+          title="Live transcript"
+          slot="transcript"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[10rem] md:col-span-7"
+        >
+          <PlaceholderBody
+            lines={[
+              latest?.transcriptDelta?.text
+                ? latest.transcriptDelta.text
+                : 'No transcript delta yet',
+            ]}
+          />
+        </Panel>
+
+        <Panel
+          title="Reasons"
+          slot="reasons"
+          status={bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[10rem] md:col-span-5"
+        >
+          <PlaceholderBody
+            lines={
+              Array.isArray(latest?.topReasons) && latest.topReasons.length > 0
+                ? latest.topReasons.map((r) => `${r.code ?? '?'} — ${r.text ?? ''}`)
+                : ['Reasons list — P6.2 (empty until fusion emits)']
+            }
+          />
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Temporary body until dedicated widgets land.
  *
  * @param {Object} props
- * @param {string} [props.sessionId='browser-dev']
+ * @param {string[]} props.lines
  */
-export function AnalystConsole({ sessionId = 'browser-dev' }) {
-  const {
-    latest,
-    history,
-    connectionState,
-    error,
-    lastValidationError,
-  } = useTelemetrySocket(sessionId);
-
-  const [jsonOpen, setJsonOpen] = useState(true);
-  const [sessionStatus, setSessionStatus] = useState(/** @type {string | null} */ (null));
-
-  // Ensure the Decision Plane has a CallSession before FeatureFrames arrive.
-  useEffect(() => {
-    let cancelled = false;
-    setSessionStatus('starting…');
-
-    async function ensureSession() {
-      try {
-        const existing = await fetch(`/api/v1/session/${encodeURIComponent(sessionId)}`);
-        if (cancelled) return;
-        if (existing.ok) {
-          setSessionStatus('session open');
-          return;
-        }
-        const res = await fetch('/api/v1/session/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            schema: 'sentinelvoice.SessionStartRequest/1',
-            sessionId,
-            callerId: 'browser-agent',
-            calleeId: 'desk-1',
-            channelProfile: CHANNEL_PROFILES.WEBRTC_WIDEBAND,
-          }),
-        });
-        if (cancelled) return;
-        if (!res.ok) {
-          const text = await res.text();
-          // Concurrent StrictMode double-mount can race; treat conflict as open.
-          if (res.status === 400 && /already exists/i.test(text)) {
-            setSessionStatus('session open');
-            return;
-          }
-          setSessionStatus(`session start failed (${res.status}): ${text.slice(0, 120)}`);
-          return;
-        }
-        setSessionStatus('session open');
-      } catch (err) {
-        if (!cancelled) {
-          setSessionStatus(err instanceof Error ? err.message : 'session start failed');
-        }
-      }
-    }
-
-    ensureSession();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
-
+function PlaceholderBody({ lines }) {
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 py-8">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="font-display text-xs uppercase tracking-[0.2em] text-sv-accent">
-            SentinelVoice
-          </p>
-          <h1 className="mt-1 font-display text-2xl font-semibold text-sv-fg">
-            Analyst console
-          </h1>
-          <p className="mt-1 font-mono text-xs text-sv-muted">session {sessionId}</p>
-        </div>
-        <ConnectionBadge state={connectionState} />
-      </header>
-
-      {/* Inline status strip — StatusBar (P6.1) will own this; keep drift visible now. */}
-      <div className="flex flex-col gap-1 rounded border border-sv-border bg-sv-panel/60 px-3 py-2 text-xs">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sv-muted">
-          <span>Decision Plane: {connectionState}</span>
-          <span>Session: {sessionStatus ?? '—'}</span>
-          <span>Frames: {history.length}</span>
-          <span>seq: {latest?.seq ?? '—'}</span>
-        </div>
-        {error ? (
-          <p className="text-risk-elevated" role="status">
-            {error}
-          </p>
-        ) : null}
-        {lastValidationError ? (
-          <p className="font-mono text-risk-critical" role="alert">
-            Contract: {lastValidationError}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <MicControl sessionId={sessionId} />
-        <div className="flex flex-col items-center justify-center rounded-lg border border-sv-border bg-sv-panel/80 p-4">
-          <RiskGauge frame={latest} />
-        </div>
-      </div>
-
-      <section className="rounded-lg border border-sv-border bg-sv-panel/80">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-sv-fg hover:bg-sv-bg/40"
-          onClick={() => setJsonOpen((o) => !o)}
-          aria-expanded={jsonOpen}
-        >
-          <span>Raw telemetry JSON</span>
-          <span className="font-mono text-xs text-sv-muted">{jsonOpen ? '▾' : '▸'}</span>
-        </button>
-        {jsonOpen ? (
-          <pre className="max-h-80 overflow-auto border-t border-sv-border bg-sv-bg/60 p-4 font-mono text-[11px] leading-relaxed text-sv-fg">
-            {latest ? JSON.stringify(latest, null, 2) : '// waiting for TelemetryFrame…'}
-          </pre>
-        ) : null}
-      </section>
-    </div>
+    <ul className="space-y-1 font-mono text-[11px] tabular-nums text-sv-fg">
+      {lines.map((line) => (
+        <li key={line} className="truncate text-sv-muted">
+          {line}
+        </li>
+      ))}
+    </ul>
   );
 }
 
-AnalystConsole.propTypes = {
-  sessionId: PropTypes.string,
-};
-
-/**
- * @param {Object} props
- * @param {string} props.state
- */
-function ConnectionBadge({ state }) {
-  const connected = state === CONNECTION_STATES.CONNECTED;
-  const reconnecting = state === CONNECTION_STATES.RECONNECTING;
-  const colour = connected
-    ? 'bg-risk-clear'
-    : reconnecting
-      ? 'bg-risk-watch'
-      : 'bg-risk-critical';
-  const label = connected
-    ? 'STOMP connected'
-    : reconnecting
-      ? 'STOMP reconnecting…'
-      : state === CONNECTION_STATES.CONNECTING
-        ? 'STOMP connecting…'
-        : 'STOMP disconnected';
-
-  return (
-    <div
-      className="flex items-center gap-2 rounded border border-sv-border bg-sv-panel px-3 py-2"
-      role="status"
-      aria-live="polite"
-    >
-      <span className={`inline-block h-2.5 w-2.5 rounded-full ${colour}`} aria-hidden />
-      <span className="font-mono text-xs font-medium text-sv-fg">{label}</span>
-    </div>
-  );
-}
-
-ConnectionBadge.propTypes = {
-  state: PropTypes.string.isRequired,
+PlaceholderBody.propTypes = {
+  lines: PropTypes.arrayOf(PropTypes.string).isRequired,
 };

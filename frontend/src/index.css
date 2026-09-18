@@ -3,18 +3,20 @@
 @tailwind utilities;
 
 /*
- * SentinelVoice design tokens — dark cybersecurity palette.
- * Risk colour ramp is shared by every risk UI component (gauge, badges, ladder).
+ * SentinelVoice design tokens — synced with theme.js.
+ * Risk ramp is reserved exclusively for risk UI.
  */
 :root {
-  --sv-bg: #0b1220;
-  --sv-panel: #121a2b;
-  --sv-border: #1e2a44;
-  --sv-fg: #e6edf7;
+  --sv-bg: #0a0e14;
+  --sv-panel: #131922;
+  --sv-elevated: #1a222e;
+  --sv-border: #243044;
+  --sv-fg: #e8eef7;
   --sv-muted: #8b9bb4;
   --sv-accent: #38bdf8;
+  --sv-live: #38bdf8;
+  --sv-fault: #e2e8f0;
 
-  /* Risk ramp: green → amber → orange → red */
   --risk-clear: #10b981;
   --risk-watch: #f59e0b;
   --risk-elevated: #f97316;
@@ -24,12 +26,22 @@
 html,
 body,
 #root {
+  height: 100%;
   min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
-  background: radial-gradient(ellipse at top, #152038 0%, var(--sv-bg) 55%);
+  background: var(--sv-bg);
   color: var(--sv-fg);
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+.tabular-nums,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
