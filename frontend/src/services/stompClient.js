@@ -1,12 +1,13 @@
 import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 
 /**
  * Shared STOMP client for Decision Plane telemetry.
  *
- * Connects to the Java SockJS endpoint `/ws-sentinel` (proxied by Vite to
- * http://localhost:8080). Components must NOT open their own sockets — use
- * {@link useTelemetrySocket} which rides this singleton.
+ * Uses the native WebSocket STOMP endpoint (Spring registers `/ws-sentinel`
+ * both raw and with SockJS). Native WS is far more reliable through Vite's
+ * proxy than SockJS's XHR/websocket dance.
+ *
+ * Components must NOT open their own sockets — use {@link useTelemetrySocket}.
  */
 
 export const CONNECTION_STATES = Object.freeze({
@@ -35,15 +36,16 @@ let reconnectTimer = null;
 let wantConnected = false;
 
 /**
- * Broker URL. Prefer same-origin `/ws-sentinel` so Vite's proxy handles it in
- * dev; absolute override via VITE_STOMP_URL.
+ * STOMP broker URL (ws / wss). Override with VITE_STOMP_URL
+ * (e.g. ws://localhost:8080/ws-sentinel to bypass the Vite proxy).
  * @returns {string}
  */
 export function brokerUrl() {
   if (import.meta.env.VITE_STOMP_URL) {
     return String(import.meta.env.VITE_STOMP_URL);
   }
-  return `${window.location.protocol}//${window.location.host}/ws-sentinel`;
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws-sentinel`;
 }
 
 /**
@@ -134,9 +136,20 @@ function connect() {
     null,
   );
 
+  // Tear down any half-open client before creating a new one.
+  if (client) {
+    try {
+      client.deactivate();
+    } catch {
+      /* ignore */
+    }
+    client = null;
+  }
+
   const stomp = new Client({
-    webSocketFactory: () => new SockJS(brokerUrl()),
-    reconnectDelay: 0, // we own backoff
+    brokerURL: brokerUrl(),
+    reconnectDelay: 0,
+    connectionTimeout: 8000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
     debug: () => {},
@@ -195,6 +208,17 @@ export function subscribe(destination, onMessage) {
   let sub = null;
   let cancelled = false;
 
+  const clearSub = () => {
+    if (sub) {
+      try {
+        sub.unsubscribe();
+      } catch {
+        /* ignore — connection may already be dead */
+      }
+      sub = null;
+    }
+  };
+
   const trySubscribe = () => {
     if (cancelled) return;
     const c = client;
@@ -207,9 +231,10 @@ export function subscribe(destination, onMessage) {
 
   const unlisten = onConnectionState((state) => {
     if (state === CONNECTION_STATES.CONNECTED) {
-      sub = null; // force re-subscribe after reconnect
+      clearSub();
       trySubscribe();
     } else {
+      // Connection lost — drop local handle; server-side sub is already gone.
       sub = null;
     }
   });
@@ -219,12 +244,7 @@ export function subscribe(destination, onMessage) {
   return () => {
     cancelled = true;
     unlisten();
-    try {
-      sub?.unsubscribe();
-    } catch {
-      /* ignore */
-    }
-    sub = null;
+    clearSub();
   };
 }
 

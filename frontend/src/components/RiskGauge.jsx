@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { getLevel, getSmoothedRisk, INTERVENTION_LEVELS } from '@/contracts';
+import { riskColour } from '@/theme.js';
 
-/**
- * Map a unit-interval risk score to the Tailwind risk colour ramp CSS variable.
- * @param {number} score 0..1
- * @returns {string}
- */
-export function riskColor(score) {
-  if (score < 0.35) return 'var(--risk-clear)';
-  if (score < 0.55) return 'var(--risk-watch)';
-  if (score < 0.75) return 'var(--risk-elevated)';
-  return 'var(--risk-critical)';
-}
+/** @deprecated Use {@link riskColour} from `@/theme.js`. */
+export const riskColor = riskColour;
 
 /**
  * Animated SVG risk gauge — smoothed arc + instantaneous needle.
@@ -66,10 +58,10 @@ export function RiskGauge({ frame, className = '' }) {
   const cx = size / 2;
   const cy = size / 2 + 10;
   const radius = 84;
-  const startAngle = Math.PI; // left
-  const sweep = Math.PI; // semicircle
+  const startAngle = Math.PI;
+  const sweep = Math.PI;
 
-  const color = riskColor(smoothed);
+  const color = riskColour(smoothed);
   const pct = Math.round(smoothed * 100);
 
   return (

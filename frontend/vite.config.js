@@ -43,6 +43,12 @@ export default defineConfig({
         ws: true,
         rewrite: (p) => p.replace(/^\/ws/, ''),
       },
+      // ml-engine REST (health / diagnostics) — keep separate from /api (Java).
+      '/engine': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/engine/, ''),
+      },
     },
   },
   test: {

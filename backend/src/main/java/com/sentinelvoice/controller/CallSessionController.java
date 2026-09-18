@@ -104,6 +104,19 @@ public class CallSessionController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PostMapping("/{sessionId}/close")
+    public ResponseEntity<Map<String, Object>> closeSession(@PathVariable String sessionId) {
+        if (callSessionManager.getSession(sessionId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        callSessionManager.closeSession(sessionId);
+        telemetryBroadcaster.clear(sessionId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "closed");
+        body.put("sessionId", sessionId);
+        return ResponseEntity.ok(body);
+    }
+
     @PostMapping("/{sessionId}/simulate")
     public ResponseEntity<Map<String, Object>> simulate(
             @PathVariable String sessionId,
