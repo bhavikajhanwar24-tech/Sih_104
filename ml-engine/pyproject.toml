@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinelvoice-ml-engine"
+version = "0.1.0"
+description = "SentinelVoice Inference Plane — FastAPI feature extraction (audio plumbing in P2.1)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "numpy>=1.26,<3",
+    "scipy>=1.11,<2",
+    "soundfile>=0.12,<1",
+    "librosa>=0.10,<1",
+    "websockets>=12,<16",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
+    "python-multipart>=0.0.9,<1",
+    "httpx>=0.27,<1",
+    "pytest>=8,<9",
+    "jsonschema>=4.23,<5",
+    "webrtcvad>=2.0.10,<3; python_version<'3.13'",
+    "webrtcvad-wheels>=2.0.14; python_version>='3.13'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "httpx>=0.27,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

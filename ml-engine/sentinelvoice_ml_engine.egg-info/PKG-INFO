@@ -1,0 +1,45 @@
+Metadata-Version: 2.4
+Name: sentinelvoice-ml-engine
+Version: 0.1.0
+Summary: SentinelVoice Inference Plane — FastAPI feature extraction (audio plumbing in P2.1)
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.30
+Requires-Dist: numpy<3,>=1.26
+Requires-Dist: scipy<2,>=1.11
+Requires-Dist: soundfile<1,>=0.12
+Requires-Dist: librosa<1,>=0.10
+Requires-Dist: websockets<16,>=12
+Requires-Dist: pydantic<3,>=2
+Requires-Dist: pydantic-settings<3,>=2
+Requires-Dist: python-multipart<1,>=0.0.9
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: pytest<9,>=8
+Requires-Dist: webrtcvad<3,>=2.0.10; python_version < "3.13"
+Requires-Dist: webrtcvad-wheels>=2.0.14; python_version >= "3.13"
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8; extra == "dev"
+Requires-Dist: httpx<1,>=0.27; extra == "dev"
+
+# SentinelVoice Inference Plane (`ml-engine`)
+
+Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice. P2.1 is audio plumbing only: codec normaliser, bounded ring buffer, VAD, session registry, ingest WebSocket. No feature extraction yet.
+
+Raw PCM exists **only** in `RingBuffer`: fixed 8 s of float32, overwritten in place, never grown, never written to disk or logs. `close()` calls `zeroise()`. See Context §6.3.
+
+## Run
+
+```bash
+cd ml-engine
+pip install -e .
+pytest
+uvicorn app.main:app --reload --port 8000
+```
+
+- `GET /health` → `{status, version, active_sessions}`
+- `POST /session/{sid}/open` creates a `PipelineSession`
+- `POST /session/{sid}/close` zeroises the ring buffer and drops the session
+- `WS /ingest/{sid}` JSON hello, then binary frames (`pcm_s16le`, `pcm_f32le`, `mulaw`, `alaw`, `slin16`). Ack every 10 frames.
+
+Logs record lengths and counters only — never audio bytes.

@@ -31,6 +31,8 @@ public class CallSession {
     private volatile InterventionLevel currentLevel = InterventionLevel.LEVEL_1_SILENT;
     private volatile long levelChangedAtMs;
     private volatile long cumulativeSpeechMs;
+    private volatile FeatureFrame lastFeatureFrame;
+    private volatile int lastFeatureSeq = -1;
 
     public CallSession(
             String sessionId,
@@ -70,6 +72,24 @@ public class CallSession {
 
     public long allocateSeq() {
         return nextSeq.getAndIncrement();
+    }
+
+    public void storeFeatureFrame(FeatureFrame frame) {
+        this.lastFeatureFrame = frame;
+        this.lastFeatureSeq = frame.seq();
+        this.cumulativeSpeechMs = frame.cumulativeSpeechMs();
+        this.lastFrameAt = Instant.now();
+        if (this.state == SessionState.INITIALISING) {
+            this.state = SessionState.ACTIVE;
+        }
+    }
+
+    public FeatureFrame getLastFeatureFrame() {
+        return lastFeatureFrame;
+    }
+
+    public int getLastFeatureSeq() {
+        return lastFeatureSeq;
     }
 
     public void close() {

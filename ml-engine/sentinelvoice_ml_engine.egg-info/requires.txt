@@ -1,0 +1,22 @@
+fastapi<1,>=0.115
+uvicorn[standard]<1,>=0.30
+numpy<3,>=1.26
+scipy<2,>=1.11
+soundfile<1,>=0.12
+librosa<1,>=0.10
+websockets<16,>=12
+pydantic<3,>=2
+pydantic-settings<3,>=2
+python-multipart<1,>=0.0.9
+httpx<1,>=0.27
+pytest<9,>=8
+
+[:python_version < "3.13"]
+webrtcvad<3,>=2.0.10
+
+[:python_version >= "3.13"]
+webrtcvad-wheels>=2.0.14
+
+[dev]
+pytest<9,>=8
+httpx<1,>=0.27
