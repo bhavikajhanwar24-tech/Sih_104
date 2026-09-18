@@ -1,28 +1,42 @@
 package com.sentinelvoice.service;
 
+import com.sentinelvoice.model.LinguisticAssessment;
+import com.sentinelvoice.model.LinguisticFamily;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-
+/**
+ * Thin consumer of FeatureFrame.linguistic. No keyword matching — that belongs in Python (P10.2).
+ */
 @Service
 public class NaturalLanguageFraudService {
 
-    public double scoreUrgency(String transcript) {
-        if (transcript == null || transcript.isBlank()) {
-            return 0.15;
+    public LinguisticAssessment assess(LinguisticFamily linguistic) {
+        if (linguistic == null || !linguistic.available()) {
+            return LinguisticAssessment.unavailable();
         }
-        String normalized = transcript.toLowerCase();
-        if (normalized.contains("immediately") || normalized.contains("urgent") || normalized.contains("do not tell anyone")) {
-            return 0.91;
-        }
-        return 0.42;
+        double urgency = nz(linguistic.urgency());
+        double secrecy = nz(linguistic.secrecy());
+        double authority = nz(linguistic.authorityInvocation());
+        double coercion = nz(linguistic.emotionalCoercion());
+        double composite = (urgency + secrecy + authority + coercion) / 4.0;
+        boolean askDetected = Boolean.TRUE.equals(linguistic.askDetected());
+        long ageMs = linguistic.ageMs() == null ? 0L : linguistic.ageMs();
+        return new LinguisticAssessment(
+                true,
+                urgency,
+                secrecy,
+                authority,
+                coercion,
+                askDetected,
+                linguistic.claimedIdentity(),
+                linguistic.claimedRole(),
+                linguistic.language(),
+                ageMs,
+                composite
+        );
     }
 
-    public Map<String, Object> explain(String transcript) {
-        return Map.of(
-                "transcript", transcript,
-                "urgencyScore", scoreUrgency(transcript),
-                "status", "NLP urgency signal evaluated"
-        );
+    private static double nz(Double value) {
+        return value == null ? 0.0 : value;
     }
 }

@@ -22,4 +22,8 @@ public class VoicePassportService {
     public CallerProfile save(CallerProfile profile) {
         return callerProfileRepository.save(profile);
     }
+
+    public void deleteById(Long profileId) {
+        callerProfileRepository.deleteById(profileId);
+    }
 }

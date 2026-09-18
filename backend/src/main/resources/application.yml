@@ -20,13 +20,79 @@ spring:
       path: /h2-console
 
 server:
-  port: 8082
+  port: 8080
 
+logging:
+  level:
+    com.sentinelvoice: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [cid=%X{cid:-}] [%15.15t] %-40.40logger{39} : %m%n"
+
+# Values from Context §9.1 (fusion weights / EMA / family thresholds) and §9.5 (intervention hysteresis).
 sentinelvoice:
-  risk:
-    default-window-seconds: 5
-    intervention-thresholds:
-      soft-nudge: 0.35
-      mfa: 0.55
-      auto-hold: 0.75
-      terminate: 0.9
+  fusion:
+    weights:
+      wideband:
+        voice: 0.24
+        channel: 0.08
+        prosody: 0.13
+        linguistic: 0.25
+        transaction: 0.18
+        relationship: 0.12
+      narrowband:
+        voice: 0.15
+        channel: 0.10
+        prosody: 0.12
+        linguistic: 0.29
+        transaction: 0.20
+        relationship: 0.14
+    lambda-up: 0.55
+    lambda-down: 0.88
+    family-thresholds:
+      voice: 0.60
+      channel: 0.55
+      prosody: 0.60
+      linguistic: 0.65
+      transaction: 0.60
+      relationship: 0.60
+    linguistic-staleness-tau-ms: 3000
+    min-speech-ms-for-scoring: 3000
+  intervention:
+    l1-to-l2:
+      up-threshold: 0.35
+      down-threshold: 0.28
+      dwell-ms: 1000
+    l2-to-l1:
+      up-threshold: 0.35
+      down-threshold: 0.28
+      dwell-ms: 5000
+    l2-to-l3:
+      up-threshold: 0.55
+      down-threshold: 0.46
+      dwell-ms: 1000
+    l3-to-l2:
+      up-threshold: 0.55
+      down-threshold: 0.46
+      dwell-ms: 8000
+    l3-to-l4:
+      up-threshold: 0.75
+      down-threshold: 0.66
+      dwell-ms: 1000
+    l4-to-l3:
+      up-threshold: 0.75
+      down-threshold: 0.66
+      dwell-ms: 15000
+    l4-to-l5:
+      up-threshold: 0.90
+      down-threshold: 0.90
+      dwell-ms: 0
+  ml:
+    base-url: http://localhost:8000
+    websocket-url: ws://localhost:8000/ingest
+    connect-timeout-ms: 2000
+    frame-staleness-ms: 1500
+  session:
+    ttl-minutes: 30
+    max-concurrent: 100
+  audit:
+    genesis-prefix: SENTINELVOICE-GENESIS-v1

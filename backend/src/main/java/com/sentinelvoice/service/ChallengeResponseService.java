@@ -2,10 +2,10 @@ package com.sentinelvoice.service;
 
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 @Service
 public class ChallengeResponseService {
@@ -17,7 +17,7 @@ public class ChallengeResponseService {
             "Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot", "Hotel", "Indigo"
     );
 
-    private final Random random = new Random();
+    private final SecureRandom random = new SecureRandom();
 
     public String issueChallenge() {
         String prefix = PREFIXES.get(random.nextInt(PREFIXES.size()));
