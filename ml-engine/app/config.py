@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     emit_enabled: bool = True
     java_ingest_ws: str = "ws://127.0.0.1:8080/ws/features"
+    java_decision_http: str = "http://127.0.0.1:8080"
     emit_interval_ms: int = 500
     window_seconds: float = 2.0
     emit_queue_max: int = 64

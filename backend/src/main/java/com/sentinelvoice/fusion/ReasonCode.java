@@ -91,6 +91,16 @@ public enum ReasonCode {
             EvidenceFamily.VOICE,
             "Liveness challenge response took {0} ms, which exceeds the allowed budget of {1} ms."
     ),
+    CHALLENGE_CONTENT_FAIL(
+            Severity.CRITICAL,
+            EvidenceFamily.VOICE,
+            "Liveness challenge content mismatch: expected phrase was not recognisably spoken (overlap {0})."
+    ),
+    CHALLENGE_ACOUSTIC_FAIL(
+            Severity.CRITICAL,
+            EvidenceFamily.VOICE,
+            "Liveness challenge acoustic mismatch: response speaker cosine {0} is below the consistency floor of {1}."
+    ),
     WATERMARK_DETECTED(
             Severity.INFO,
             EvidenceFamily.VOICE,

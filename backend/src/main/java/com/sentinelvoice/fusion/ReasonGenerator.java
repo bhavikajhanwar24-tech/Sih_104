@@ -56,10 +56,32 @@ public class ReasonGenerator {
             int crossChannelSignalCount,
             boolean challengeLatencyFailed,
             long challengeLatencyMs,
-            long challengeBudgetMs
+            long challengeBudgetMs,
+            /** Optional: CHALLENGE_CONTENT_FAIL / CHALLENGE_ACOUSTIC_FAIL / etc. */
+            String challengeFailCode,
+            double challengeMetric
     ) {
+        public Assessments(
+                RelationshipAssessment relationship,
+                boolean presenceConflict,
+                String presenceExpected,
+                String presenceObserved,
+                boolean crossChannelPrecursor,
+                int crossChannelSignalCount,
+                boolean challengeLatencyFailed,
+                long challengeLatencyMs,
+                long challengeBudgetMs
+        ) {
+            this(
+                    relationship, presenceConflict, presenceExpected, presenceObserved,
+                    crossChannelPrecursor, crossChannelSignalCount,
+                    challengeLatencyFailed, challengeLatencyMs, challengeBudgetMs,
+                    null, 0.0
+            );
+        }
+
         public static Assessments empty() {
-            return new Assessments(null, false, null, null, false, 0, false, 0L, 0L);
+            return new Assessments(null, false, null, null, false, 0, false, 0L, 0L, null, 0.0);
         }
     }
 
@@ -334,17 +356,50 @@ public class ReasonGenerator {
     }
 
     private void evaluateChallenge(Assessments assessments, List<Candidate> out) {
-        if (!assessments.challengeLatencyFailed()) {
+        String code = assessments.challengeFailCode();
+        if (code == null || code.isBlank()) {
+            if (!assessments.challengeLatencyFailed()) {
+                return;
+            }
+            out.add(new Candidate(
+                    ReasonCode.CHALLENGE_LATENCY_FAIL,
+                    ReasonCode.CHALLENGE_LATENCY_FAIL.format(
+                            assessments.challengeLatencyMs(),
+                            assessments.challengeBudgetMs()
+                    ),
+                    1.0
+            ));
             return;
         }
-        out.add(new Candidate(
-                ReasonCode.CHALLENGE_LATENCY_FAIL,
-                ReasonCode.CHALLENGE_LATENCY_FAIL.format(
+        try {
+            ReasonCode rc = ReasonCode.valueOf(code);
+            String text = switch (rc) {
+                case CHALLENGE_LATENCY_FAIL -> rc.format(
                         assessments.challengeLatencyMs(),
                         assessments.challengeBudgetMs()
-                ),
-                1.0
-        ));
+                );
+                case CHALLENGE_CONTENT_FAIL -> rc.format(
+                        String.format(java.util.Locale.ROOT, "%.2f", assessments.challengeMetric())
+                );
+                case CHALLENGE_ACOUSTIC_FAIL -> rc.format(
+                        String.format(java.util.Locale.ROOT, "%.2f", assessments.challengeMetric()),
+                        "0.55"
+                );
+                default -> rc.format(assessments.challengeMetric());
+            };
+            out.add(new Candidate(rc, text, 1.0));
+        } catch (Exception ex) {
+            if (assessments.challengeLatencyFailed()) {
+                out.add(new Candidate(
+                        ReasonCode.CHALLENGE_LATENCY_FAIL,
+                        ReasonCode.CHALLENGE_LATENCY_FAIL.format(
+                                assessments.challengeLatencyMs(),
+                                assessments.challengeBudgetMs()
+                        ),
+                        1.0
+                ));
+            }
+        }
     }
 
     private void evaluateWatermark(FeatureFrame frame, List<Candidate> out) {

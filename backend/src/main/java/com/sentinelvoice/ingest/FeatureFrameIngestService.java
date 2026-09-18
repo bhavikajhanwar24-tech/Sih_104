@@ -3,6 +3,8 @@ package com.sentinelvoice.ingest;
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.challenge.ChallengeService;
+import com.sentinelvoice.challenge.model.ChallengeVerdict;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
@@ -14,6 +16,7 @@ import com.sentinelvoice.fusion.EvidenceFamily;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.fusion.ReasonCode;
 import com.sentinelvoice.fusion.ReasonGenerator;
 import com.sentinelvoice.identity.DirectoryService;
 import com.sentinelvoice.identity.IdentityResolutionService;
@@ -72,6 +75,7 @@ public class FeatureFrameIngestService {
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final ActuationService actuationService;
+    private final ChallengeService challengeService;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -93,6 +97,7 @@ public class FeatureFrameIngestService {
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
             @Lazy ActuationService actuationService,
+            ChallengeService challengeService,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -110,6 +115,7 @@ public class FeatureFrameIngestService {
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.actuationService = actuationService;
+        this.challengeService = challengeService;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -232,13 +238,16 @@ public class FeatureFrameIngestService {
         List<String> corroborating = fusion.corroboration().familiesAboveThreshold().stream()
                 .map(EvidenceFamily::configKey)
                 .toList();
+        boolean challengeEmergency = challengeService.lastFailure(session.getSessionId())
+                .filter(f -> nowMs - f.atEpochMs() < 60_000L)
+                .isPresent();
         InterventionDecision decision = interventionLadderService.evaluate(
                 session.getSessionId(),
                 new InterventionStateMachine.EvaluationInput(
                         fusion.smoothed(),
                         fusion.corroboration().satisfied(),
                         corroborating,
-                        fusion.emergencyReason() != null,
+                        fusion.emergencyReason() != null || challengeEmergency,
                         false,
                         nowMs
                 )
@@ -247,17 +256,7 @@ public class FeatureFrameIngestService {
         List<ReasonGenerator.GeneratedReason> reasons = reasonGenerator.generate(
                 fusionContext,
                 fusion.families(),
-                new ReasonGenerator.Assessments(
-                        relationship,
-                        identity.presenceConflict() != null,
-                        identity.presenceConflict() != null ? identity.presenceConflict().expected() : null,
-                        identity.presenceConflict() != null ? identity.presenceConflict().observed() : null,
-                        crossChannel.matchingCampaign(),
-                        crossChannel.eventCount(),
-                        false,
-                        0L,
-                        0L
-                )
+                challengeAssessments(session.getSessionId(), relationship, identity, crossChannel)
         );
 
         // Cumulative evidence for forensic dossier (every firing, not just latest topReasons).
@@ -376,7 +375,48 @@ public class FeatureFrameIngestService {
             case "DOUBLE_COMPRESSION" -> "score < 0.55";
             case "SYNTHETIC_ARTIFACTS" -> "spoofProbability < 0.60";
             case "POLICY_VIOLATION" -> "within verbalAuthorityLimit";
+            case "CHALLENGE_LATENCY_FAIL" -> "response onset ≤ 1.8s (fail > 3.5s)";
+            case "CHALLENGE_CONTENT_FAIL" -> "fuzzy phrase overlap ≥ 0.60";
+            case "CHALLENGE_ACOUSTIC_FAIL" -> "speaker cosine ≥ 0.55 vs call baseline";
             default -> "see methodology appendix";
         };
+    }
+
+    private ReasonGenerator.Assessments challengeAssessments(
+            String sessionId,
+            RelationshipAssessment relationship,
+            IdentityAssessment identity,
+            CorrelationResult crossChannel
+    ) {
+        var failure = challengeService.lastFailure(sessionId).orElse(null);
+        boolean latencyFailed = false;
+        String failCode = null;
+        long latencyMs = 0L;
+        long budgetMs = challengeService.properties().suspiciousLatencyMs();
+        double metric = 0.0;
+        if (failure != null && clock.millis() - failure.atEpochMs() < 120_000L) {
+            latencyMs = failure.latencyMs();
+            failCode = switch (failure.verdict()) {
+                case FAIL_LATENCY, TIMEOUT -> ReasonCode.CHALLENGE_LATENCY_FAIL.name();
+                case FAIL_CONTENT -> ReasonCode.CHALLENGE_CONTENT_FAIL.name();
+                case FAIL_ACOUSTIC -> ReasonCode.CHALLENGE_ACOUSTIC_FAIL.name();
+                case PASS -> null;
+            };
+            latencyFailed = failure.verdict() == ChallengeVerdict.FAIL_LATENCY
+                    || failure.verdict() == ChallengeVerdict.TIMEOUT;
+        }
+        return new ReasonGenerator.Assessments(
+                relationship,
+                identity.presenceConflict() != null,
+                identity.presenceConflict() != null ? identity.presenceConflict().expected() : null,
+                identity.presenceConflict() != null ? identity.presenceConflict().observed() : null,
+                crossChannel.matchingCampaign(),
+                crossChannel.eventCount(),
+                latencyFailed,
+                latencyMs,
+                budgetMs,
+                failCode,
+                metric
+        );
     }
 }
