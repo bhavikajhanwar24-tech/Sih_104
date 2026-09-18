@@ -1,6 +1,9 @@
 import PropTypes from 'prop-types';
+import { IdentityCard } from '@/components/IdentityCard.jsx';
 import { MicControl } from '@/components/MicControl.jsx';
+import { ReasonsList } from '@/components/ReasonsList.jsx';
 import { RiskGauge } from '@/components/RiskGauge.jsx';
+import { RiskTimeline } from '@/components/RiskTimeline.jsx';
 import { SessionControl } from '@/components/SessionControl.jsx';
 import { Panel } from '@/components/ui/Panel.jsx';
 import { useSession } from '@/context/SessionContext.jsx';
@@ -15,8 +18,8 @@ import { useTelemetrySocket } from '@/hooks/useTelemetrySocket.js';
  *   [ live transcript ][ reasons list        ]
  */
 export function AnalystConsole() {
-  const { sessionId, isRunning, sessionError } = useSession();
-  const { latest, error: telemetryError } = useTelemetrySocket(sessionId);
+  const { sessionId, isRunning, sessionError, highlightedFamily } = useSession();
+  const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
 
   const hasFrame = latest != null;
   const bootStatus = !isRunning
@@ -48,15 +51,9 @@ export function AnalystConsole() {
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[9rem] sm:col-span-4"
+          className="col-span-12 h-[16rem] sm:col-span-4 sm:h-[18rem]"
         >
-          <PlaceholderBody
-            lines={[
-              `CLI ${latest?.identity?.cli ?? '—'}`,
-              `Claim ${latest?.identity?.claimedIdentity ?? '—'}`,
-              `Passport ${latest?.identity?.voicePassport?.verdict ?? '—'}`,
-            ]}
-          />
+          <IdentityCard frame={latest} />
         </Panel>
 
         <Panel
@@ -65,11 +62,12 @@ export function AnalystConsole() {
           status={bootStatus === 'error' ? 'error' : hasFrame ? 'ready' : bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[14rem] sm:col-span-4"
+          className="col-span-12 h-[18rem] sm:col-span-4"
           variant="flush"
         >
-          <div className="flex h-full items-center justify-center p-2">
+          <div className="flex h-full flex-col items-center justify-between gap-1 p-2">
             <RiskGauge frame={latest} />
+            <RiskTimeline history={history} className="w-full shrink-0 px-1" />
           </div>
         </Panel>
 
@@ -79,12 +77,13 @@ export function AnalystConsole() {
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[9rem] sm:col-span-4"
+          className="col-span-12 h-[16rem] sm:col-span-4 sm:h-[18rem]"
         >
           <PlaceholderBody
             lines={[
               latest?.intervention?.level ?? 'LEVEL_1_SILENT',
               `dwell ${latest?.intervention?.dwellRemainingMs ?? 0} ms`,
+              `prev ${latest?.intervention?.previousLevel ?? '—'}`,
             ]}
           />
         </Panel>
@@ -108,7 +107,14 @@ export function AnalystConsole() {
           errorMessage={errMsg}
           className="col-span-12 h-[12rem] md:col-span-5"
         >
-          <PlaceholderBody lines={['Evidence radar / waterfall — P6.3']} />
+          <PlaceholderBody
+            lines={[
+              highlightedFamily
+                ? `Axis highlight → ${highlightedFamily} (P6.3)`
+                : 'Evidence radar / waterfall — P6.3',
+              'Click a reason to highlight its family',
+            ]}
+          />
         </Panel>
 
         <Panel
@@ -135,14 +141,11 @@ export function AnalystConsole() {
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
           className="col-span-12 h-[10rem] md:col-span-5"
+          variant="flush"
         >
-          <PlaceholderBody
-            lines={
-              Array.isArray(latest?.topReasons) && latest.topReasons.length > 0
-                ? latest.topReasons.map((r) => `${r.code ?? '?'} — ${r.text ?? ''}`)
-                : ['Reasons list — P6.2 (empty until fusion emits)']
-            }
-          />
+          <div className="p-2">
+            <ReasonsList frame={latest} />
+          </div>
         </Panel>
       </div>
     </div>

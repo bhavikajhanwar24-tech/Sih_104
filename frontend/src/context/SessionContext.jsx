@@ -11,10 +11,11 @@ import { SEED_SCENARIOS } from '@/theme.js';
  * @property {string} scenarioId
  * @property {number | null} startedAtMs
  * @property {string | null} highlightedReasonCode
+ * @property {string | null} highlightedFamily   evidence radar axis (P6.3)
  * @property {string | null} sessionError
  * @property {(profile: string) => void} setChannelProfile
  * @property {(scenarioId: string) => void} setScenarioId
- * @property {(code: string | null) => void} setHighlightedReasonCode
+ * @property {(code: string | null, family?: string | null) => void} setHighlightedReason
  * @property {() => Promise<void>} startSession
  * @property {() => Promise<void>} stopSession
  */
@@ -36,7 +37,15 @@ export function SessionProvider({ children }) {
   const [highlightedReasonCode, setHighlightedReasonCode] = useState(
     /** @type {string | null} */ (null),
   );
+  const [highlightedFamily, setHighlightedFamily] = useState(
+    /** @type {string | null} */ (null),
+  );
   const [sessionError, setSessionError] = useState(/** @type {string | null} */ (null));
+
+  const setHighlightedReason = useCallback((code, family = null) => {
+    setHighlightedReasonCode(code);
+    setHighlightedFamily(family ?? null);
+  }, []);
 
   const startSession = useCallback(async () => {
     setSessionError(null);
@@ -48,7 +57,7 @@ export function SessionProvider({ children }) {
         body: JSON.stringify({
           schema: 'sentinelvoice.SessionStartRequest/1',
           sessionId: id,
-          callerId: 'browser-agent',
+          callerId: scenarioId === 'cfo-wire-inr' ? '+91-unreg-sip-unknown' : 'browser-agent',
           calleeId: 'desk-1',
           channelProfile,
           scenarioId,
@@ -63,20 +72,20 @@ export function SessionProvider({ children }) {
       setSessionId(resolvedId);
       setStartedAtMs(Date.now());
       setIsRunning(true);
-      setHighlightedReasonCode(null);
+      setHighlightedReason(null, null);
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'session start failed');
       setIsRunning(false);
       setSessionId(null);
       setStartedAtMs(null);
     }
-  }, [channelProfile, scenarioId]);
+  }, [channelProfile, scenarioId, setHighlightedReason]);
 
   const stopSession = useCallback(async () => {
     const id = sessionId;
     setIsRunning(false);
     setStartedAtMs(null);
-    setHighlightedReasonCode(null);
+    setHighlightedReason(null, null);
     setSessionError(null);
     setSessionId(null);
     if (!id) return;
@@ -85,7 +94,7 @@ export function SessionProvider({ children }) {
     } catch {
       /* UI already stopped; backend close is best-effort */
     }
-  }, [sessionId]);
+  }, [sessionId, setHighlightedReason]);
 
   const value = useMemo(
     () => ({
@@ -95,10 +104,11 @@ export function SessionProvider({ children }) {
       scenarioId,
       startedAtMs,
       highlightedReasonCode,
+      highlightedFamily,
       sessionError,
       setChannelProfile,
       setScenarioId,
-      setHighlightedReasonCode,
+      setHighlightedReason,
       startSession,
       stopSession,
     }),
@@ -109,7 +119,9 @@ export function SessionProvider({ children }) {
       scenarioId,
       startedAtMs,
       highlightedReasonCode,
+      highlightedFamily,
       sessionError,
+      setHighlightedReason,
       startSession,
       stopSession,
     ],
