@@ -9,6 +9,7 @@
  */
 
 import { AUDIO_ENCODINGS, CHANNEL_PROFILES } from '@/contracts';
+import { publishPcm } from './pcmBus.js';
 import { resample } from './resample.js';
 // Force Vite to emit a separate worklet asset (new URL() was not emitted to dist/).
 import captureWorkletUrl from './capture-worklet.js?url';
@@ -299,6 +300,8 @@ export class AudioCapture {
     if (this.onLevel) this.onLevel(level);
 
     const at16k = resample(deviceSamples, this._deviceRate, this.targetRate);
+    // Fan-out for browser-side spectrogram (Context §10.4) — not on the wire.
+    publishPcm(at16k, this.targetRate);
     this._pending = concatFloat32(this._pending, at16k);
 
     while (this._pending.length >= FRAME_SAMPLES) {

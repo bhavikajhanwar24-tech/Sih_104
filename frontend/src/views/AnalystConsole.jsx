@@ -1,17 +1,15 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
-<<<<<<< HEAD
+import { EvidencePanel } from '@/components/EvidencePanel.jsx';
 import { IdentityCard } from '@/components/IdentityCard.jsx';
-import { MicControl } from '@/components/MicControl.jsx';
-import { ReasonsList } from '@/components/ReasonsList.jsx';
-=======
 import { InterventionBar } from '@/components/InterventionBar.jsx';
 import { MicControl } from '@/components/MicControl.jsx';
 import { OverrideDialog } from '@/components/OverrideDialog.jsx';
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
+import { ReasonsList } from '@/components/ReasonsList.jsx';
 import { RiskGauge } from '@/components/RiskGauge.jsx';
 import { RiskTimeline } from '@/components/RiskTimeline.jsx';
 import { SessionControl } from '@/components/SessionControl.jsx';
+import { SpectrogramCanvas } from '@/components/SpectrogramCanvas.jsx';
 import { SupervisorAlert } from '@/components/SupervisorAlert.jsx';
 import { TransactionPanel } from '@/components/TransactionPanel.jsx';
 import { Panel } from '@/components/ui/Panel.jsx';
@@ -24,18 +22,20 @@ import { INTERVENTION_LEVELS } from '@/contracts';
  *
  * Layout (1280×720 safe):
  *   [ identity ][ risk gauge ][ intervention ]
- *   [ spectrogram     ][ transaction panel   ]
- *   [ live transcript ][ reasons list        ]
+ *   [ spectrogram     ][ evidence panel      ]
+ *   [ live transcript ][ reasons | txn       ]
  */
 export function AnalystConsole() {
-<<<<<<< HEAD
-  const { sessionId, isRunning, sessionError, highlightedFamily } = useSession();
+  const {
+    sessionId,
+    isRunning,
+    sessionError,
+    scenarioId,
+    awaitingSip,
+    channelProfile,
+  } = useSession();
   const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
-=======
-  const { sessionId, isRunning, sessionError, scenarioId, awaitingSip } = useSession();
-  const { latest, error: telemetryError } = useTelemetrySocket(sessionId);
   const [overrideOpen, setOverrideOpen] = useState(false);
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
 
   const hasFrame = latest != null;
   const bootStatus = !isRunning
@@ -112,18 +112,7 @@ export function AnalystConsole() {
           status={bootStatus === 'error' ? 'error' : isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-<<<<<<< HEAD
-          className="col-span-12 h-[16rem] sm:col-span-4 sm:h-[18rem]"
-        >
-          <PlaceholderBody
-            lines={[
-              latest?.intervention?.level ?? 'LEVEL_1_SILENT',
-              `dwell ${latest?.intervention?.dwellRemainingMs ?? 0} ms`,
-              `prev ${latest?.intervention?.previousLevel ?? '—'}`,
-            ]}
-          />
-=======
-          className="col-span-12 h-[11rem] sm:col-span-4"
+          className="col-span-12 h-[11rem] sm:col-span-4 sm:h-[18rem]"
           variant="flush"
         >
           <div className="h-full p-2">
@@ -132,43 +121,32 @@ export function AnalystConsole() {
               onOverrideClick={sessionId ? () => setOverrideOpen(true) : undefined}
             />
           </div>
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
         </Panel>
 
         <Panel
           title="Spectrogram"
           slot="spectrogram"
-          status={bootStatus}
-          emptyMessage={emptyMsg}
-          errorMessage={errMsg}
-          className="col-span-12 h-[14rem] md:col-span-7"
-        >
-          <PlaceholderBody lines={['Spectrogram canvas — P6.x']} />
-        </Panel>
-
-        <Panel
-          title="Transaction"
-          slot="transaction"
           status={isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[14rem] md:col-span-5"
+          className="col-span-12 h-[14rem] md:col-span-6"
           variant="flush"
         >
-<<<<<<< HEAD
-          <PlaceholderBody
-            lines={[
-              highlightedFamily
-                ? `Axis highlight → ${highlightedFamily} (P6.3)`
-                : 'Evidence radar / waterfall — P6.3',
-              'Click a reason to highlight its family',
-            ]}
-          />
-=======
+          <SpectrogramCanvas channelProfile={channelProfile} className="h-full" />
+        </Panel>
+
+        <Panel
+          title="Evidence"
+          slot="evidence"
+          status={bootStatus === 'error' ? 'error' : hasFrame ? 'ready' : bootStatus}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[16rem] md:col-span-6"
+          variant="flush"
+        >
           <div className="h-full overflow-auto p-2">
-            <TransactionPanel sessionId={sessionId} frame={latest} />
+            <EvidencePanel frame={latest} channelProfile={channelProfile} />
           </div>
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
         </Panel>
 
         <Panel
@@ -177,7 +155,7 @@ export function AnalystConsole() {
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[10rem] md:col-span-7"
+          className="col-span-12 h-[10rem] md:col-span-5"
         >
           <PlaceholderBody
             lines={[
@@ -194,22 +172,26 @@ export function AnalystConsole() {
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[10rem] md:col-span-5"
+          className="col-span-12 h-[10rem] md:col-span-3"
           variant="flush"
         >
-<<<<<<< HEAD
           <div className="p-2">
             <ReasonsList frame={latest} />
           </div>
-=======
-          <PlaceholderBody
-            lines={
-              Array.isArray(latest?.topReasons) && latest.topReasons.length > 0
-                ? latest.topReasons.map((r) => `${r.code ?? '?'} — ${r.text ?? ''}`)
-                : ['Reasons list — empty until fusion emits']
-            }
-          />
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
+        </Panel>
+
+        <Panel
+          title="Transaction"
+          slot="transaction"
+          status={isRunning ? 'ready' : 'empty'}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[10rem] md:col-span-4"
+          variant="flush"
+        >
+          <div className="h-full overflow-auto p-2">
+            <TransactionPanel sessionId={sessionId} frame={latest} />
+          </div>
         </Panel>
       </div>
 

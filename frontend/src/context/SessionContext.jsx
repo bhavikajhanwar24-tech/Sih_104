@@ -58,13 +58,18 @@ export function SessionProvider({ children }) {
     }
   }, []);
 
+  const setHighlightedReason = useCallback((code, family = null) => {
+    setHighlightedReasonCode(code);
+    setHighlightedFamily(family ?? null);
+  }, []);
+
   const stopSession = useCallback(async () => {
     const id = sessionId;
     const sipOwned = sipOwnedRef.current;
     setIsRunning(false);
     setAwaitingSip(false);
     setStartedAtMs(null);
-    setHighlightedReasonCode(null);
+    setHighlightedReason(null, null);
     setSessionError(null);
     setSessionId(null);
     sipOwnedRef.current = false;
@@ -76,16 +81,11 @@ export function SessionProvider({ children }) {
     } catch {
       /* UI already stopped; backend close is best-effort */
     }
-  }, [sessionId]);
-
-  const setHighlightedReason = useCallback((code, family = null) => {
-    setHighlightedReasonCode(code);
-    setHighlightedFamily(family ?? null);
-  }, []);
+  }, [sessionId, setHighlightedReason]);
 
   const startSession = useCallback(async () => {
     setSessionError(null);
-    setHighlightedReasonCode(null);
+    setHighlightedReason(null, null);
 
     if (scenarioId === SIP_SCENARIO_ID) {
       // Listen for a Decision Plane session created by gateway/asterisk_bridge.py
@@ -132,10 +132,6 @@ export function SessionProvider({ children }) {
       setSessionId(resolvedId);
       setStartedAtMs(Date.now());
       setIsRunning(true);
-<<<<<<< HEAD
-      setHighlightedReason(null, null);
-=======
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'session start failed');
       setIsRunning(false);
@@ -144,22 +140,6 @@ export function SessionProvider({ children }) {
     }
   }, [channelProfile, scenarioId, setHighlightedReason]);
 
-<<<<<<< HEAD
-  const stopSession = useCallback(async () => {
-    const id = sessionId;
-    setIsRunning(false);
-    setStartedAtMs(null);
-    setHighlightedReason(null, null);
-    setSessionError(null);
-    setSessionId(null);
-    if (!id) return;
-    try {
-      await fetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
-    } catch {
-      /* UI already stopped; backend close is best-effort */
-    }
-  }, [sessionId, setHighlightedReason]);
-=======
   // Poll Decision Plane for a new SIP/AudioSocket session while awaiting.
   useEffect(() => {
     if (!awaitingSip || !isRunning) return undefined;
@@ -192,7 +172,6 @@ export function SessionProvider({ children }) {
       clearInterval(id);
     };
   }, [awaitingSip, isRunning]);
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
 
   const value = useMemo(
     () => ({
@@ -221,11 +200,8 @@ export function SessionProvider({ children }) {
       highlightedReasonCode,
       highlightedFamily,
       sessionError,
-<<<<<<< HEAD
-      setHighlightedReason,
-=======
       setScenarioId,
->>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
+      setHighlightedReason,
       startSession,
       stopSession,
     ],
