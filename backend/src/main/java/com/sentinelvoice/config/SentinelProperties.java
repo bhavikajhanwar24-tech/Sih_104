@@ -45,7 +45,23 @@ public record SentinelProperties(
             @Min(value = 1, message = "fusion.linguisticStalenessTauMs must be >= 1")
             long linguisticStalenessTauMs,
             @Min(value = 0, message = "fusion.minSpeechMsForScoring must be >= 0")
-            long minSpeechMsForScoring
+            long minSpeechMsForScoring,
+            @NotNull @Valid Emergency emergency
+    ) {
+    }
+
+    /**
+     * Emergency-bypass thresholds from Context §9.4. Bound from YAML — never hardcode in Java.
+     */
+    public record Emergency(
+            @DecimalMin(value = "0.0") @DecimalMax(value = "1.0")
+            double cosineMismatchThreshold,
+            @DecimalMin(value = "0.0") @DecimalMax(value = "1.0")
+            double secrecyThreshold,
+            @DecimalMin(value = "0.0") @DecimalMax(value = "1.0")
+            double authorityThreshold,
+            @DecimalMin(value = "0.0") @DecimalMax(value = "1.0")
+            double transactionScoreThreshold
     ) {
     }
 
@@ -54,12 +70,12 @@ public record SentinelProperties(
             @NotEmpty Map<String, @DecimalMin("0.0") @DecimalMax("1.0") Double> narrowband
     ) {
         @AssertTrue(message = "fusion.weights.wideband must include all six evidence families and sum to 1.0 ± 0.001")
-        public boolean widebandWeightsNormalized() {
+        public boolean isWidebandWeightsNormalized() {
             return familiesPresent(wideband) && sumsToOne(wideband);
         }
 
         @AssertTrue(message = "fusion.weights.narrowband must include all six evidence families and sum to 1.0 ± 0.001")
-        public boolean narrowbandWeightsNormalized() {
+        public boolean isNarrowbandWeightsNormalized() {
             return familiesPresent(narrowband) && sumsToOne(narrowband);
         }
     }
@@ -71,7 +87,9 @@ public record SentinelProperties(
             @NotNull @Valid Transition l3ToL2,
             @NotNull @Valid Transition l3ToL4,
             @NotNull @Valid Transition l4ToL3,
-            @NotNull @Valid Transition l4ToL5
+            @NotNull @Valid Transition l4ToL5,
+            @Min(value = 1, message = "intervention.overridePinDurationMs must be >= 1")
+            long overridePinDurationMs
     ) {
     }
 

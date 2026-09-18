@@ -34,6 +34,10 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.fusion.family-thresholds.relationship=0.60",
             "sentinelvoice.fusion.linguistic-staleness-tau-ms=3000",
             "sentinelvoice.fusion.min-speech-ms-for-scoring=3000",
+            "sentinelvoice.fusion.emergency.cosine-mismatch-threshold=0.50",
+            "sentinelvoice.fusion.emergency.secrecy-threshold=0.85",
+            "sentinelvoice.fusion.emergency.authority-threshold=0.85",
+            "sentinelvoice.fusion.emergency.transaction-score-threshold=0.80",
             "sentinelvoice.intervention.l1-to-l2.up-threshold=0.35",
             "sentinelvoice.intervention.l1-to-l2.down-threshold=0.28",
             "sentinelvoice.intervention.l1-to-l2.dwell-ms=1000",
@@ -55,6 +59,7 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.intervention.l4-to-l5.up-threshold=0.90",
             "sentinelvoice.intervention.l4-to-l5.down-threshold=0.90",
             "sentinelvoice.intervention.l4-to-l5.dwell-ms=0",
+            "sentinelvoice.intervention.override-pin-duration-ms=120000",
             "sentinelvoice.ml.base-url=http://localhost:8000",
             "sentinelvoice.ml.websocket-url=ws://localhost:8000/ingest",
             "sentinelvoice.ml.connect-timeout-ms=2000",
@@ -89,6 +94,20 @@ class SentinelPropertiesValidationTest {
                     assertThat(context.getStartupFailure())
                             .hasStackTraceContaining("fusion.lambdaUp must be between 0 and 1");
                 });
+    }
+
+    @Test
+    void weightsThatDoNotSumToOneFailStartup() {
+        runner.withPropertyValues(VALID)
+                .withPropertyValues(
+                        "sentinelvoice.fusion.weights.wideband.voice=1",
+                        "sentinelvoice.fusion.weights.wideband.channel=1",
+                        "sentinelvoice.fusion.weights.wideband.prosody=1",
+                        "sentinelvoice.fusion.weights.wideband.linguistic=1",
+                        "sentinelvoice.fusion.weights.wideband.transaction=1",
+                        "sentinelvoice.fusion.weights.wideband.relationship=1"
+                )
+                .run(context -> assertThat(context).hasFailed());
     }
 
     @Configuration
