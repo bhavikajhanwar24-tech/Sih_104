@@ -1,0 +1,195 @@
+2026-09-18 16:09:57,631 DEBUG asyncio Using proactor: IocpProactor
+2026-09-18 16:09:57,935 INFO sentinelvoice.audiosocket AudioSocket bridge listening on ('0.0.0.0', 9092)  ml-engine=http://127.0.0.1:8000
+2026-09-18 16:09:57,936 INFO sentinelvoice.audiosocket Design: fail open, not closed — ml-engine outages discard samples; calls stay up
+2026-09-18 16:10:07,938 INFO sentinelvoice.audiosocket audiosocket_metrics frames=0 bytes=0 sessions_active=0 drops=0 opened=0 closed=0 degraded=False
+2026-09-18 16:10:17,970 INFO sentinelvoice.audiosocket audiosocket_metrics frames=0 bytes=0 sessions_active=0 drops=0 opened=0 closed=0 degraded=False
+2026-09-18 16:10:18,486 INFO sentinelvoice.audiosocket audiosocket_connect peer=('127.0.0.1', 64513)
+2026-09-18 16:10:18,540 DEBUG httpcore.connection connect_tcp.started host='127.0.0.1' port=8000 local_address=None timeout=2.0 socket_options=None
+2026-09-18 16:10:18,541 DEBUG httpcore.connection connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x000001AD287A4440>
+2026-09-18 16:10:18,542 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,543 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,543 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,543 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,543 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,545 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'96'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,546 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/open?profile=PSTN_NARROWBAND "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,546 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,546 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,547 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,548 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,548 INFO sentinelvoice.audiosocket ml_session_open sid=6b31e47e-dc10-4b89-9456-b2c127028ebd profile=PSTN_NARROWBAND
+2026-09-18 16:10:18,553 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,554 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,554 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,554 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,555 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,555 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,556 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,556 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,556 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,557 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,557 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,559 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,559 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,560 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,560 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,560 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,561 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,562 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,562 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,562 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,563 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,563 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,595 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,597 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,598 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,599 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,599 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,601 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,601 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,602 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,603 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,605 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,606 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,649 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,650 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,651 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,651 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,652 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,653 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,654 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,655 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,656 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,658 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,659 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,709 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,710 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,711 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,711 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,712 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,713 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,714 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,715 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,716 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,718 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,718 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,761 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,763 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,763 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,765 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,765 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,766 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,767 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,768 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,768 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,770 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,770 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,813 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,815 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,816 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,816 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,817 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,818 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,819 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,820 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,821 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,822 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,822 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,870 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,871 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,871 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,872 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,873 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,874 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,875 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,876 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,876 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,878 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,878 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,929 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,931 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,932 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,933 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,934 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,935 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'89'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,936 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,936 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,937 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,938 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,939 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:18,981 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,982 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:18,983 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,984 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:18,984 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:18,986 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'90'), (b'content-type', b'application/json')])
+2026-09-18 16:10:18,986 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/pcm "HTTP/1.1 200 OK"
+2026-09-18 16:10:18,987 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:18,988 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:18,989 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:18,990 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:19,035 INFO sentinelvoice.audiosocket audiosocket_terminate sid=6b31e47e-dc10-4b89-9456-b2c127028ebd
+2026-09-18 16:10:19,038 DEBUG httpcore.http11 send_request_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:19,039 DEBUG httpcore.http11 send_request_headers.complete
+2026-09-18 16:10:19,040 DEBUG httpcore.http11 send_request_body.started request=<Request [b'POST']>
+2026-09-18 16:10:19,040 DEBUG httpcore.http11 send_request_body.complete
+2026-09-18 16:10:19,041 DEBUG httpcore.http11 receive_response_headers.started request=<Request [b'POST']>
+2026-09-18 16:10:19,043 DEBUG httpcore.http11 receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Fri, 18 Sep 2026 10:40:18 GMT'), (b'server', b'uvicorn'), (b'content-length', b'70'), (b'content-type', b'application/json')])
+2026-09-18 16:10:19,044 INFO httpx HTTP Request: POST http://127.0.0.1:8000/session/6b31e47e-dc10-4b89-9456-b2c127028ebd/close "HTTP/1.1 200 OK"
+2026-09-18 16:10:19,045 DEBUG httpcore.http11 receive_response_body.started request=<Request [b'POST']>
+2026-09-18 16:10:19,046 DEBUG httpcore.http11 receive_response_body.complete
+2026-09-18 16:10:19,047 DEBUG httpcore.http11 response_closed.started
+2026-09-18 16:10:19,048 DEBUG httpcore.http11 response_closed.complete
+2026-09-18 16:10:19,049 INFO sentinelvoice.audiosocket ml_session_close sid=6b31e47e-dc10-4b89-9456-b2c127028ebd status=200
+2026-09-18 16:10:19,050 INFO sentinelvoice.audiosocket audiosocket_disconnect peer=('127.0.0.1', 64513) sid=6b31e47e-dc10-4b89-9456-b2c127028ebd
+2026-09-18 16:10:28,002 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:10:38,023 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:10:48,128 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:10:58,155 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:08,170 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:18,183 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:28,230 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:38,256 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:48,285 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:11:58,311 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:08,330 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:18,359 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:28,380 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:38,400 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:48,429 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:12:58,462 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:08,493 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:18,515 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:28,530 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:38,543 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:48,569 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:13:58,593 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:08,625 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:18,647 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:28,676 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:38,701 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:48,728 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:14:58,751 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:08,788 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:18,821 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:28,845 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:38,847 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:48,869 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:15:58,895 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:08,917 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:18,938 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:28,978 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:39,002 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:49,028 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:16:59,057 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:09,061 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:19,088 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:29,120 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:39,138 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:49,163 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:17:59,186 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:18:09,190 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:18:19,217 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:18:29,239 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:18:39,263 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False
+2026-09-18 16:18:49,284 INFO sentinelvoice.audiosocket audiosocket_metrics frames=10 bytes=16000 sessions_active=0 drops=0 opened=1 closed=1 degraded=False

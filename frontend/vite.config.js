@@ -28,24 +28,26 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Prefer 127.0.0.1 — on Windows `localhost` can resolve to ::1 and miss
+        // services bound only on IPv4.
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
       },
       '/ws-sentinel': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         ws: true,
       },
       // Narrow prefix — MUST NOT be '/ws' or it can steal /ws-sentinel traffic.
       '/ws/ingest': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         ws: true,
         rewrite: (p) => p.replace(/^\/ws/, ''),
       },
       // ml-engine REST (health / diagnostics) — keep separate from /api (Java).
       '/engine': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/engine/, ''),
       },

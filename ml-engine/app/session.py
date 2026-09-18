@@ -19,6 +19,7 @@ class PipelineSession:
     seq: int = 0
     emit_seq: int = 0
     cumulative_speech_ms: int = 0
+    last_emitted_samples: int = -1
     created_at: float = field(default_factory=time.time)
     fast_path: FastPathState = field(init=False)
 

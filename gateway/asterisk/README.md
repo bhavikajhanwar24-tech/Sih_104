@@ -102,11 +102,21 @@ bash scripts/test-sip-call.sh
 Confirms the container is up, ARI returns JSON, and a Local/Echo originate works
 **before** you blame the AudioSocket bridge (P7.2).
 
-## Dialplan seam for P7.2
+## P7.2 — AudioSocket bridge (media → ml-engine)
 
-`extensions.conf` `[sentinel]` dials `PJSIP/agent` today. A clearly marked
-`TODO(P7.2)` sits above that Dial() — swap in `Dial(...,U(tap))` + `AudioSocket`
-when `gateway/asterisk_bridge.py` listens on `127.0.0.1:9092`.
+On the **host** (not inside the Asterisk container), with the ml-engine venv:
+
+```powershell
+$env:PYTHONPATH = (Get-Location)
+ml-engine\.venv\Scripts\python.exe gateway/asterisk_bridge.py
+```
+
+- Listens on `0.0.0.0:9092`
+- Dialplan `[sentinel-snoop]` connects to `host.docker.internal:9092`
+- ARI snoop attaches a media **copy** so caller↔agent two-way audio stays clean
+- If ml-engine is down the bridge **fail-opens** (accepts/discards audio; call stays up)
+
+Unit tests: `pytest gateway/tests -q`
 
 ## Troubleshooting (the three failures you WILL hit)
 

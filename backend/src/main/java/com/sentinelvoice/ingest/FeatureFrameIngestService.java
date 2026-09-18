@@ -304,9 +304,16 @@ public class FeatureFrameIngestService {
     long frameAgeMs(CallSession session, FeatureFrame frame) {
         long now = nowMs();
         long windowEnd = frame.windowEndMs();
-        long frameEndEpoch = windowEnd > EPOCH_MS_THRESHOLD
-                ? windowEnd
-                : session.getCreatedAt().toEpochMilli() + windowEnd;
-        return now - frameEndEpoch;
+        if (windowEnd > EPOCH_MS_THRESHOLD) {
+            return now - windowEnd;
+        }
+        // Call-relative windows track media time, not session-create time.
+        // Analyst UI often starts the mic several seconds after Start session.
+        Long mediaOrigin = session.getMediaOriginEpochMs();
+        if (mediaOrigin == null) {
+            mediaOrigin = now - windowEnd;
+            session.setMediaOriginEpochMs(mediaOrigin);
+        }
+        return now - (mediaOrigin + windowEnd);
     }
 }

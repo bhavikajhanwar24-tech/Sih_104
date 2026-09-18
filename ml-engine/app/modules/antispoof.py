@@ -20,12 +20,17 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
 
 from app.types import ChannelProfile
 
 logger = logging.getLogger("sentinelvoice.ml.antispoof")
+
+try:
+    import torch
+except ImportError:  # pragma: no cover — optional until torch/speechbrain installed
+    torch = None  # type: ignore[assignment]
+    logger.warning("antispoof_torch_missing — spoofProbability unavailable until torch is installed")
 
 ACTIVE_TIER = 1
 MODEL_ID_DEFAULT = "lfcc-lcnn-tier1/codec_aug"
@@ -103,6 +108,9 @@ def warmup(
     cal_path = Path(calibration) if calibration else _DEFAULT_CAL
 
     t0 = time.perf_counter()
+    if torch is None:
+        _ready = False
+        return {"ready": False, "reason": "torch_missing"}
     if not ckpt.is_file():
         _ready = False
         logger.warning("antispoof_checkpoint_missing path=%s", ckpt)
@@ -151,13 +159,20 @@ def warmup(
     }
 
 
-@torch.inference_mode()
 def score(
     audio: NDArray[np.floating],
     sr: int,
     profile: ChannelProfile | str | None = None,
 ) -> dict[str, Any]:
     """Return calibrated spoofProbability for one window."""
+    if torch is None:
+        return {
+            "available": False,
+            "spoofProbability": None,
+            "modelId": None,
+            "confidence": None,
+            "reason": "torch_missing",
+        }
     if _model is None:
         return {
             "available": False,
@@ -181,8 +196,9 @@ def score(
 
     max_frames = 200
     stack = pad_stack(lfcc_stack(samples, sr, max_frames=max_frames), max_frames)
-    x = torch.from_numpy(stack).unsqueeze(0).unsqueeze(0)
-    logit = float(_model(x).item())
+    with torch.inference_mode():
+        x = torch.from_numpy(stack).unsqueeze(0).unsqueeze(0)
+        logit = float(_model(x).item())
     key = _profile_key(profile)
     prob = float(np.clip(_platt(logit, key), 0.0, 1.0))
     conf = _predictive_confidence(prob)
