@@ -85,6 +85,14 @@
                     <include>*.yml</include>
                 </includes>
             </resource>
+            <!-- P12 fairness artefact for the compliance portal (§13.5) -->
+            <resource>
+                <directory>${project.basedir}/../ml-engine/benchmarks</directory>
+                <targetPath>benchmarks</targetPath>
+                <includes>
+                    <include>results.json</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

@@ -198,5 +198,5 @@ sentinelvoice:
     purge-interval-hours: 24
     purge-interval-ms: 86400000
     # P12 harness writes here; portal shows "evaluation not yet run" if missing.
-    fairness-results-path: ../benchmarks/results.json
+    fairness-results-path: ../ml-engine/benchmarks/results.json
     raw-audio-enforcing-path: ml-engine/app/ring_buffer.py

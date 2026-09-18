@@ -1,0 +1,140 @@
+{
+  "schema": "sentinelvoice.CodecStudyResults/1",
+  "meta": {
+    "generated_utc": "2026-09-18T18:49:00Z",
+    "git_commit": "eaddfe779bb7a49ff02c38dbe408c1b96204b609",
+    "seed": 42,
+    "n": 24,
+    "source": "synthetic",
+    "baseline_id": "lfcc-lcnn-tier1/baseline_no_codec_aug",
+    "codec_aug_id": "lfcc-lcnn-tier1/codec_aug",
+    "epochs": 3,
+    "conditions": [
+      "clean_16k",
+      "opus_24k",
+      "opus_12k",
+      "g711_mulaw_8k",
+      "g711_alaw_8k",
+      "amr_nb_12k2",
+      "amr_nb_4k75",
+      "mp3_64k",
+      "g711_mulaw_ploss_1pct",
+      "g711_mulaw_ploss_3pct"
+    ]
+  },
+  "rows": [
+    {
+      "condition": "clean_16k",
+      "label": "Clean 16 kHz",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "opus_24k",
+      "label": "Opus 24 kbps",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "opus_12k",
+      "label": "Opus 12 kbps",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "g711_mulaw_8k",
+      "label": "G.711 mu-law 8 kHz",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "g711_alaw_8k",
+      "label": "G.711 A-law 8 kHz",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "amr_nb_12k2",
+      "label": "AMR-NB 12.2 kbps",
+      "baseline_eer": 0.083333,
+      "codec_aug_eer": 0.0,
+      "delta_eer": -0.083333,
+      "baseline_fpr90": 0.083333,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "amr_nb_4k75",
+      "label": "AMR-NB 4.75 kbps",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "mp3_64k",
+      "label": "MP3 64 kbps",
+      "baseline_eer": 0.083333,
+      "codec_aug_eer": 0.0,
+      "delta_eer": -0.083333,
+      "baseline_fpr90": 0.083333,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "g711_mulaw_ploss_1pct",
+      "label": "G.711 mu-law + 1% loss",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    },
+    {
+      "condition": "g711_mulaw_ploss_3pct",
+      "label": "G.711 mu-law + 3% loss",
+      "baseline_eer": 0.0,
+      "codec_aug_eer": 0.0,
+      "delta_eer": 0.0,
+      "baseline_fpr90": 0.0,
+      "codec_aug_fpr90": 0.0,
+      "n": 24
+    }
+  ],
+  "dual_profile_false_escalation": {
+    "definition": "False escalation = bona fide call reaching \u2265 L3 under corroboration gate (\u22652 evidence families \u2265 0.45). Acoustic-alone L2 is allowed.",
+    "baseline": {
+      "wideband_clean": 0.0,
+      "narrowband_g711": 0.0
+    },
+    "codec_aug": {
+      "wideband_clean": 0.0,
+      "narrowband_g711": 0.0
+    },
+    "n_bonafide": 12
+  },
+  "chart": "docs/eval_plots/codec_robustness_bars.png"
+}

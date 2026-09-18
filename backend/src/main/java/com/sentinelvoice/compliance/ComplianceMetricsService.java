@@ -14,8 +14,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -140,6 +143,10 @@ public class ComplianceMetricsService {
         return dist;
     }
 
+    /**
+     * Loads P12 {@code results.json} and shapes it for the portal chart contract:
+     * {@code byLanguageGroup}, {@code byGender}, {@code byChannelProfile}, plus honest gap notes.
+     */
     public Map<String, Object> fairnessReport() {
         Path path = resolveFairnessPath();
         Map<String, Object> out = new LinkedHashMap<>();
@@ -154,7 +161,7 @@ public class ComplianceMetricsService {
             JsonNode root = objectMapper.readTree(Files.readString(path));
             out.put("status", "ok");
             out.put("message", null);
-            out.put("results", objectMapper.convertValue(root, Map.class));
+            out.put("results", shapeFairnessForPortal(root));
             return out;
         } catch (IOException e) {
             out.put("status", "unreadable");
@@ -180,17 +187,168 @@ public class ComplianceMetricsService {
         return auditBlockRepository.findDistinctSessionIds();
     }
 
+    @SuppressWarnings("unchecked")
+    Map<String, Object> shapeFairnessForPortal(JsonNode root) {
+        Map<String, Object> shaped = new LinkedHashMap<>();
+        JsonNode fairness = root.path("fairness");
+        String metric = textOr(fairness, "metric", "false_positive_rate");
+        shaped.put("metric", metric);
+        shaped.put("thresholdRule", textOr(fairness, "threshold_rule", "pooled_eer_threshold"));
+        shaped.put(
+                "generatedAt",
+                textOr(root.path("meta"), "generated_at_utc", null)
+        );
+        shaped.put("sourceNote", textOr(fairness, "note", null));
+
+        List<Map<String, Object>> byLanguage = new ArrayList<>();
+        List<Map<String, Object>> byGender = new ArrayList<>();
+        List<Map<String, Object>> byAge = new ArrayList<>();
+
+        JsonNode groups = fairness.path("groups");
+        if (groups.isArray()) {
+            for (JsonNode g : groups) {
+                String name = textOr(g, "group", "unknown");
+                Map<String, Object> row = groupRow(g, name);
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (lower.contains("gender")) {
+                    byGender.add(row);
+                } else if (lower.contains("age")) {
+                    byAge.add(row);
+                } else {
+                    // indo_aryan / dravidian / language family labels
+                    byLanguage.add(row);
+                }
+            }
+        }
+
+        List<Map<String, Object>> byChannel = channelFprFromCells(root.path("cells"));
+
+        shaped.put("byLanguageGroup", byLanguage);
+        shaped.put("byGender", byGender);
+        shaped.put("byAgeBand", byAge);
+        shaped.put("byChannelProfile", byChannel);
+
+        String disparity = buildDisparityNotes(byLanguage, byGender, byChannel);
+        shaped.put("disparityNotes", disparity);
+        shaped.put("mitigations", List.of(
+                "Report FPR parity by language family, gender, and channel — never hide the gap.",
+                "Replace proxy group assignment with Mozilla Common Voice language tags when corpora are present.",
+                "Enrol Voice Passport per channel profile (wideband + narrowband) to cut channel-driven FPR lift.",
+                "Corroboration gate (Scenario 5) keeps acoustic-only spikes from escalating past L2."
+        ));
+        return shaped;
+    }
+
+    private static Map<String, Object> groupRow(JsonNode g, String name) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("group", name);
+        row.put("n", g.path("n").asInt(0));
+        row.put("nBonafide", g.path("n_bonafide").asInt(0));
+        row.put("fpr", g.path("fpr").isMissingNode() || g.path("fpr").isNull()
+                ? null
+                : g.path("fpr").asDouble());
+        row.put("note", textOr(g, "note", null));
+        return row;
+    }
+
+    private List<Map<String, Object>> channelFprFromCells(JsonNode cells) {
+        // Mean FPR@TPR=0.90 per channel_condition across models/datasets (real cell metrics).
+        Map<String, List<Double>> byChannel = new LinkedHashMap<>();
+        if (cells != null && cells.isArray()) {
+            for (JsonNode cell : cells) {
+                String ch = textOr(cell, "channel_condition", null);
+                if (ch == null || ch.isBlank()) {
+                    continue;
+                }
+                JsonNode fprNode = cell.path("metrics").path("fpr_at_tpr").path("0.90").path("fpr");
+                if (fprNode.isMissingNode() || fprNode.isNull()) {
+                    continue;
+                }
+                byChannel.computeIfAbsent(ch, k -> new ArrayList<>()).add(fprNode.asDouble());
+            }
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map.Entry<String, List<Double>> e : byChannel.entrySet()) {
+            List<Double> vals = e.getValue();
+            double mean = vals.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("group", e.getKey());
+            row.put("n", vals.size());
+            row.put("nBonafide", null);
+            row.put("fpr", round6(mean));
+            row.put("note", "mean FPR@TPR=0.90 across P12 cells for this channel");
+            rows.add(row);
+        }
+        rows.sort(Comparator.comparing(r -> String.valueOf(r.get("group"))));
+        return rows;
+    }
+
+    private static String buildDisparityNotes(
+            List<Map<String, Object>> language,
+            List<Map<String, Object>> gender,
+            List<Map<String, Object>> channel
+    ) {
+        String langGap = gapSentence("language family", language);
+        String genderGap = gapSentence("gender", gender);
+        String channelGap = gapSentence("channel profile", channel);
+        return String.join(" ", List.of(
+                "Honest FPR gaps (Context §13.5) — a flat chart would be less credible than a visible disparity.",
+                langGap,
+                genderGap,
+                channelGap,
+                "We surface the gap, document mitigations, and refuse to ship a model that interrogates one language community more than another without scrutiny."
+        ));
+    }
+
+    private static String gapSentence(String facet, List<Map<String, Object>> rows) {
+        Double min = null;
+        Double max = null;
+        String minG = null;
+        String maxG = null;
+        for (Map<String, Object> row : rows) {
+            Object fprObj = row.get("fpr");
+            if (!(fprObj instanceof Number n)) {
+                continue;
+            }
+            double fpr = n.doubleValue();
+            String g = String.valueOf(row.get("group"));
+            if (min == null || fpr < min) {
+                min = fpr;
+                minG = g;
+            }
+            if (max == null || fpr > max) {
+                max = fpr;
+                maxG = g;
+            }
+        }
+        if (min == null || max == null) {
+            return "No " + facet + " FPR rows yet.";
+        }
+        double gap = max - min;
+        return String.format(
+                Locale.ROOT,
+                "%s: highest FPR %.1f%% (%s) vs lowest %.1f%% (%s) — gap %.1f pp.",
+                capitalize(facet),
+                max * 100.0,
+                maxG,
+                min * 100.0,
+                minG,
+                gap * 100.0
+        );
+    }
+
     private Path resolveFairnessPath() {
         String configured = compliance.fairnessResultsPath();
         Path cwd = Path.of(System.getProperty("user.dir"));
-        List<Path> candidates = new java.util.ArrayList<>(List.of(
+        List<Path> candidates = new ArrayList<>(List.of(
                 Path.of(configured),
                 cwd.resolve(configured),
+                cwd.resolve("ml-engine").resolve("benchmarks").resolve("results.json"),
                 cwd.resolve("benchmarks").resolve("results.json"),
+                cwd.resolve("..").resolve("ml-engine").resolve("benchmarks").resolve("results.json"),
                 cwd.resolve("..").resolve("benchmarks").resolve("results.json"),
                 cwd.resolve("..").resolve(configured)
         ));
-        // Classpath resource exported beside the running jar / test working dirs.
         try {
             var url = getClass().getClassLoader().getResource("benchmarks/results.json");
             if (url != null && "file".equals(url.getProtocol())) {
@@ -206,5 +364,28 @@ public class ComplianceMetricsService {
             }
         }
         return cwd.resolve(configured).normalize();
+    }
+
+    private static String textOr(JsonNode node, String field, String fallback) {
+        if (node == null || node.isMissingNode()) {
+            return fallback;
+        }
+        JsonNode v = node.path(field);
+        if (v.isMissingNode() || v.isNull()) {
+            return fallback;
+        }
+        String s = v.asText();
+        return s == null || s.isBlank() ? fallback : s;
+    }
+
+    private static double round6(double v) {
+        return Math.round(v * 1_000_000.0) / 1_000_000.0;
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isBlank()) {
+            return s;
+        }
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }
