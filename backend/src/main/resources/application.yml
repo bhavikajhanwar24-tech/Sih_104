@@ -112,6 +112,13 @@ sentinelvoice:
     websocket-url: ws://localhost:8000/ingest
     connect-timeout-ms: 2000
     frame-staleness-ms: 1500
+  challenge:
+    human-latency-ms: 1800
+    suspicious-latency-ms: 3500
+    expiry-ms: 15000
+    content-overlap-min: 0.60
+    acoustic-cosine-min: 0.55
+    speech-capture-ms: 3000
   session:
     ttl-minutes: 30
     max-concurrent: 100

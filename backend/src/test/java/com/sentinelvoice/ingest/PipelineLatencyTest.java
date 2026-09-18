@@ -2,6 +2,8 @@ package com.sentinelvoice.ingest;
 
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.challenge.ChallengeProperties;
+import com.sentinelvoice.challenge.ChallengeService;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
@@ -37,12 +39,14 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -130,6 +134,10 @@ class PipelineLatencyTest {
             );
         });
 
+        ChallengeService challengeService = mock(ChallengeService.class);
+        lenient().when(challengeService.lastFailure(any())).thenReturn(Optional.empty());
+        lenient().when(challengeService.properties()).thenReturn(ChallengeProperties.defaults());
+
         ingest = new FeatureFrameIngestService(
                 sessions,
                 properties,
@@ -145,6 +153,7 @@ class PipelineLatencyTest {
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
                 mock(ActuationService.class),
+                challengeService,
                 meters,
                 clock
         );

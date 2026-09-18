@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
+import { ChallengePanel } from '@/components/ChallengePanel.jsx';
 import { CrossChannelTimeline } from '@/components/CrossChannelTimeline.jsx';
 import { EvidencePanel } from '@/components/EvidencePanel.jsx';
 import { IdentityCard } from '@/components/IdentityCard.jsx';
@@ -165,6 +166,18 @@ export function AnalystConsole() {
             callStartedAtMs={startedAtMs ?? undefined}
             className="h-full"
           />
+        </Panel>
+
+        <Panel
+          title="Liveness challenge"
+          slot="challenge"
+          status={isRunning ? 'ready' : 'empty'}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[22rem] md:col-span-5"
+          variant="flush"
+        >
+          <ChallengePanel sessionId={sessionId} />
         </Panel>
 
         <Panel

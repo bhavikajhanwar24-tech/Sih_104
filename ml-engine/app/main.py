@@ -16,7 +16,11 @@ from app.normaliser import normalise
 from app import redteam_state
 from app.modules.adversarial import apply as apply_perturbation
 from app.routes.enrol import router as enrol_router
+<<<<<<< HEAD
 from app.routes.redteam import router as redteam_router
+=======
+from app.routes.challenge import router as challenge_router
+>>>>>>> 91dafd902acbfe1630f620db69a23243bd9a4826
 from app.scheduler import SessionScheduler
 from app.session import registry
 from app.slow_path import SlowPathRunner
@@ -105,7 +109,11 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="SentinelVoice Inference Plane", version=__version__, lifespan=lifespan)
 app.include_router(enrol_router)
+<<<<<<< HEAD
 app.include_router(redteam_router)
+=======
+app.include_router(challenge_router)
+>>>>>>> 91dafd902acbfe1630f620db69a23243bd9a4826
 
 
 @app.get("/health")

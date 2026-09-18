@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.challenge.ChallengeProperties;
+import com.sentinelvoice.challenge.ChallengeService;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
@@ -40,6 +42,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -189,6 +192,9 @@ class FeatureFrameIngestTest {
         DirectoryService directory = mock(DirectoryService.class);
         AuditWriteDispatcher auditDispatcher = mock(AuditWriteDispatcher.class);
         ActuationService actuationService = mock(ActuationService.class);
+        ChallengeService challengeService = mock(ChallengeService.class);
+        lenient().when(challengeService.lastFailure(any())).thenReturn(Optional.empty());
+        lenient().when(challengeService.properties()).thenReturn(ChallengeProperties.defaults());
         broadcaster = mock(TelemetryBroadcaster.class);
 
         CrossChannelCorrelationService crossChannel = mock(CrossChannelCorrelationService.class);
@@ -213,6 +219,7 @@ class FeatureFrameIngestTest {
                 new TelemetryFrameBuilder(),
                 broadcaster,
                 actuationService,
+                challengeService,
                 meters,
                 clock
         );
