@@ -33,7 +33,8 @@ Thumbs.db
 
 # ML engine
 ml-engine/.venv/
-ml-engine/models/
+ml-engine/models/**
+!ml-engine/models/README.md
 ml-engine/__pycache__/
 
 # Frontend
@@ -47,6 +48,7 @@ frontend/dist/
 datasets/
 *.onnx
 *.pt
+!ml-engine/models/README.md
 
 # Local debug dumps
 frontend/err.txt

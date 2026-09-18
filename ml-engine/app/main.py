@@ -46,6 +46,21 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logger.exception("speaker_warmup_failed — speaker features unavailable until fixed")
 
+    # Tier-1 anti-spoof LCNN + Platt calibration (Context §10.1).
+    try:
+        from app.modules import antispoof as antispoof_mod
+
+        ainfo = antispoof_mod.warmup()
+        logger.info(
+            "antispoof_warmup ready=%s tier=%s latency_ms=%s within_budget=%s",
+            ainfo.get("ready"),
+            ainfo.get("tier"),
+            ainfo.get("infer_latency_ms"),
+            ainfo.get("within_budget"),
+        )
+    except Exception:
+        logger.exception("antispoof_warmup_failed — spoofProbability unavailable until trained")
+
     if settings.emit_enabled:
         _emitter_task = asyncio.create_task(emitter.run(), name="feature-emitter")
         logger.info("lifespan_start emit_enabled=true url=%s", emitter.url)
