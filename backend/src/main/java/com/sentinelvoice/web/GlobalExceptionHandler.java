@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.Instant;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
@@ -20,6 +22,20 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiError> handleResponseStatus(
+            ResponseStatusException ex,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String message = ex.getReason() == null ? status.getReasonPhrase() : ex.getReason();
+        log.error("response status cid={} path={} status={} msg={}", cid(), request.getRequestURI(), status.value(), message);
+        return error(status, message, request);
+    }
 
     @ExceptionHandler(ConsentRequiredException.class)
     public ResponseEntity<ApiError> handleConsentRequired(
