@@ -4,7 +4,7 @@ import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.model.Ask;
 import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.LinguisticFamily;
-import com.sentinelvoice.model.RelationshipAssessment;
+import com.sentinelvoice.context.model.RelationshipAssessment;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

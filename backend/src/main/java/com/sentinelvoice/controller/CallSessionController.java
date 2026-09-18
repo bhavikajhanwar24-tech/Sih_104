@@ -1,9 +1,15 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.context.RelationshipGraphService;
+import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.RelationshipAssessment;
+import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.identity.DirectoryService;
 import com.sentinelvoice.identity.IdentityResolutionService;
+import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
@@ -14,13 +20,11 @@ import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.LinguisticAssessment;
 import com.sentinelvoice.model.LinguisticFamily;
-import com.sentinelvoice.model.RelationshipAssessment;
 import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
-import com.sentinelvoice.service.RelationshipGraphService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,7 +49,9 @@ public class CallSessionController {
     private final InterventionLadderService interventionLadderService;
     private final NaturalLanguageFraudService naturalLanguageFraudService;
     private final RelationshipGraphService relationshipGraphService;
+    private final TransactionPolicyService transactionPolicyService;
     private final IdentityResolutionService identityResolutionService;
+    private final DirectoryService directoryService;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
@@ -53,14 +59,18 @@ public class CallSessionController {
             InterventionLadderService interventionLadderService,
             NaturalLanguageFraudService naturalLanguageFraudService,
             RelationshipGraphService relationshipGraphService,
-            IdentityResolutionService identityResolutionService
+            TransactionPolicyService transactionPolicyService,
+            IdentityResolutionService identityResolutionService,
+            DirectoryService directoryService
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionEngineService = fusionEngineService;
         this.interventionLadderService = interventionLadderService;
         this.naturalLanguageFraudService = naturalLanguageFraudService;
         this.relationshipGraphService = relationshipGraphService;
+        this.transactionPolicyService = transactionPolicyService;
         this.identityResolutionService = identityResolutionService;
+        this.directoryService = directoryService;
     }
 
     @PostMapping("/start")
@@ -135,9 +145,16 @@ public class CallSessionController {
         );
 
         IdentityAssessment identity = identityResolutionService.resolve(session, frame);
+        DirectoryRecord claimed = null;
+        if (identity.directoryRecordForClaim() != null
+                && identity.directoryRecordForClaim().get("employeeId") instanceof String empId) {
+            claimed = directoryService.findByEmployeeId(empId).orElse(null);
+        }
+        TransactionAssessment transaction = transactionPolicyService.assess(frame, claimed);
+        double txnScore = Math.max(transactionDeviation, transaction.score());
         FusionContext fusionContext = FusionContext.withIdentity(
                 frame,
-                transactionDeviation,
+                txnScore,
                 true,
                 relationship.score(),
                 true,
@@ -187,6 +204,7 @@ public class CallSessionController {
         body.put("corroboration", fusion.corroboration().satisfied());
         body.put("linguistic", linguistic);
         body.put("relationship", relationship);
+        body.put("transaction", transaction);
         body.put("identity", identity);
         return ResponseEntity.ok(body);
     }

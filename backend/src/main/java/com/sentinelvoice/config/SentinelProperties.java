@@ -27,7 +27,8 @@ public record SentinelProperties(
         @NotNull @Valid Ml ml,
         @NotNull @Valid Session session,
         @NotNull @Valid Audit audit,
-        @NotNull @Valid Identity identity
+        @NotNull @Valid Identity identity,
+        @NotNull @Valid ContextScoring context
 ) {
 
     private static final Set<String> REQUIRED_FAMILIES = Set.of(
@@ -139,6 +140,45 @@ public record SentinelProperties(
             @DecimalMin("0.0") @DecimalMax("1.0") double cosineMatchMin,
             @DecimalMin("0.0") @DecimalMax("1.0") double cosineMismatchMax,
             @DecimalMin("0.0") @DecimalMax("1.0") double spoofHighThreshold
+    ) {
+    }
+
+    /**
+     * Contextual evidence-family scoring (P8.3 relationship graph + transaction policy).
+     */
+    public record ContextScoring(
+            @NotNull @Valid RelationshipScoring relationship,
+            @NotNull @Valid TransactionScoring transaction
+    ) {
+    }
+
+    /**
+     * Linear relationship score coefficients:
+     * {@code S = w_fc*I_fc + w_hier*hierNorm + w_off*I_off + w_dur*I_dur}.
+     */
+    public record RelationshipScoring(
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightFirstContact,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightHierarchy,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightOffHours,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightDurationAnomaly,
+            @Min(1) int hierarchyNormalizeLevels,
+            @Min(0) int businessHourStart,
+            @Min(1) int businessHourEnd,
+            @Min(1) int typicalHourDeviationHours,
+            @DecimalMin("1.0") double durationAnomalyRatio
+    ) {
+    }
+
+    public record TransactionScoring(
+            @DecimalMin("0.0") @DecimalMax("1.0") double policyViolationScore,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightChannelDenied,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightBeneficiaryNovel,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightVelocity,
+            @DecimalMin("0.0") @DecimalMax("1.0") double weightUrgencyAmountProduct,
+            @DecimalMin("0.0") double highValueThresholdInr,
+            @DecimalMin("1.0") double largeAmountThresholdInr,
+            @Min(1) int velocityHighValueLimit,
+            @NotNull List<String> knownBeneficiaryHints
     ) {
     }
 
