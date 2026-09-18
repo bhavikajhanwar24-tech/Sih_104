@@ -7,9 +7,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // sockjs-client expects `global`
+    global: 'globalThis',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+    },
+  },
+  build: {
+    // AudioWorklet addModule() is unreliable with data: URLs in some browsers —
+    // always emit capture-worklet.js as a real asset.
+    assetsInlineLimit: (filePath) => {
+      if (String(filePath).includes('capture-worklet')) return false;
+      return undefined; // fall back to default 4096
     },
   },
   server: {
@@ -20,13 +32,14 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/ws-sentinel': {
-        target: 'ws://localhost:8080',
+        target: 'http://localhost:8080',
+        changeOrigin: true,
         ws: true,
       },
-      // Browser audio → ml-engine only (never Java).
-      // Client connects to /ws/ingest/{sid} → ws://localhost:8000/ingest/{sid}
-      '/ws': {
-        target: 'ws://localhost:8000',
+      // Narrow prefix — MUST NOT be '/ws' or it can steal /ws-sentinel traffic.
+      '/ws/ingest': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
         ws: true,
         rewrite: (p) => p.replace(/^\/ws/, ''),
       },

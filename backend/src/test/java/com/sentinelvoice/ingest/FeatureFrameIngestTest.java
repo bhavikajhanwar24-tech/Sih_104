@@ -5,25 +5,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.fusion.FusionEngineService;
+import com.sentinelvoice.fusion.FusionResult;
+import com.sentinelvoice.intervention.InterventionDecision;
+import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.model.AuditBlock;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
+import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.service.CallSessionManager;
+import com.sentinelvoice.telemetry.TelemetryBroadcaster;
+import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class FeatureFrameIngestTest {
@@ -111,6 +121,9 @@ class FeatureFrameIngestTest {
     private CallSessionManager sessions;
     private FeatureFrameIngestService ingest;
     private SimpleMeterRegistry meters;
+    private FusionEngineService fusionEngine;
+    private InterventionLadderService ladder;
+    private TelemetryBroadcaster broadcaster;
 
     @BeforeEach
     void setUp() {
@@ -126,7 +139,25 @@ class FeatureFrameIngestTest {
         when(audit.append(any(), any(), any())).thenReturn(new AuditBlock());
         sessions = new CallSessionManager(properties, audit);
         meters = new SimpleMeterRegistry();
-        ingest = new FeatureFrameIngestService(sessions, properties, meters);
+
+        fusionEngine = mock(FusionEngineService.class);
+        when(fusionEngine.evaluate(anyString(), any())).thenReturn(stubFusion());
+
+        ladder = mock(InterventionLadderService.class);
+        when(ladder.evaluate(anyString(), any())).thenReturn(
+                InterventionDecision.unchanged(InterventionLevel.LEVEL_1_SILENT, 0L, "test")
+        );
+
+        broadcaster = mock(TelemetryBroadcaster.class);
+        ingest = new FeatureFrameIngestService(
+                sessions,
+                properties,
+                fusionEngine,
+                ladder,
+                new TelemetryFrameBuilder(),
+                broadcaster,
+                meters
+        );
     }
 
     @Test
@@ -208,6 +239,9 @@ class FeatureFrameIngestTest {
         assertEquals(14200, session.getCumulativeSpeechMs());
         assertNotNull(session.getLastFeatureFrame());
         assertEquals(1.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
+        verify(broadcaster).publish(any());
+        verify(fusionEngine).evaluate(eq("call-9012"), any());
+        verify(ladder).evaluate(eq("call-9012"), any());
     }
 
     @Test
@@ -240,6 +274,18 @@ class FeatureFrameIngestTest {
                 "cli-1",
                 "desk-1",
                 ChannelProfile.PSTN_NARROWBAND,
+                null
+        );
+    }
+
+    private static FusionResult stubFusion() {
+        return new FusionResult(
+                0.2,
+                0.2,
+                FusionResult.Trend.STABLE,
+                FusionResult.RiskState.INSUFFICIENT_EVIDENCE,
+                Map.of(),
+                new FusionResult.CorroborationDetail(false, List.of(), 2),
                 null
         );
     }

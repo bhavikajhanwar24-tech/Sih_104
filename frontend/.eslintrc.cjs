@@ -45,6 +45,20 @@ module.exports = {
   },
   overrides: [
     {
+      files: ['**/audio/capture-worklet.js'],
+      env: {
+        // AudioWorklet global scope
+        browser: true,
+      },
+      globals: {
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly',
+        currentFrame: 'readonly',
+        currentTime: 'readonly',
+        sampleRate: 'readonly',
+      },
+    },
+    {
       files: ['**/__tests__/**', '**/*.test.js', '**/*.test.jsx'],
       env: {
         jest: true,

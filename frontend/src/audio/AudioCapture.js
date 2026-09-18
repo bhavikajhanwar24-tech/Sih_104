@@ -10,6 +10,8 @@
 
 import { AUDIO_ENCODINGS, CHANNEL_PROFILES } from '@/contracts';
 import { resample } from './resample.js';
+// Force Vite to emit a separate worklet asset (new URL() was not emitted to dist/).
+import captureWorkletUrl from './capture-worklet.js?url';
 
 /** @typedef {'pcm_s16le'|'pcm_f32le'|'mulaw'|'alaw'|'slin16'} AudioEncoding */
 
@@ -240,8 +242,7 @@ export class AudioCapture {
     this._ctx = new AudioCtx({ sampleRate: this._deviceRate });
     this._deviceRate = this._ctx.sampleRate;
 
-    const workletUrl = new URL('./capture-worklet.js', import.meta.url);
-    await this._ctx.audioWorklet.addModule(workletUrl);
+    await this._ctx.audioWorklet.addModule(captureWorkletUrl);
 
     this._source = this._ctx.createMediaStreamSource(this._stream);
     this._worklet = new AudioWorkletNode(this._ctx, 'capture-processor', {
