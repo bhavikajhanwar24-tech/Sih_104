@@ -1,10 +1,9 @@
 package com.sentinelvoice.intervention;
 
 import com.sentinelvoice.audit.AuditEventType;
-import com.sentinelvoice.audit.AuditLedgerService;
+import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.fusion.FusionEngineTest;
-import com.sentinelvoice.model.AuditBlock;
 import com.sentinelvoice.model.InterventionLevel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,31 +21,21 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class InterventionStateMachineTest {
 
     @Mock
-    private AuditLedgerService auditLedgerService;
+    private AuditWriteDispatcher auditWriteDispatcher;
 
     private InterventionStateMachine fsm;
-    private final AtomicInteger auditSeq = new AtomicInteger();
 
     @BeforeEach
     void setUp() {
         SentinelProperties properties = FusionEngineTest.testProperties();
-        lenient().when(auditLedgerService.append(anyString(), any(AuditEventType.class), anyMap()))
-                .thenAnswer(invocation -> {
-                    AuditBlock block = new AuditBlock();
-                    block.setSessionId(invocation.getArgument(0));
-                    block.setEventType(invocation.getArgument(1, AuditEventType.class).name());
-                    block.setBlockIndex(auditSeq.getAndIncrement());
-                    return block;
-                });
-        fsm = new InterventionStateMachine(properties, auditLedgerService);
+        fsm = new InterventionStateMachine(properties, auditWriteDispatcher);
     }
 
     @Test
@@ -134,7 +122,7 @@ class InterventionStateMachineTest {
         assertThat(held.level()).isEqualTo(InterventionLevel.LEVEL_2_SOFT_NUDGE);
         assertThat(held.suppressedIntent()).isNotNull();
         assertThat(held.suppressedIntent()).contains("would have");
-        verify(auditLedgerService).append(eq(session), eq(AuditEventType.ANALYST_OVERRIDE), anyMap());
+        verify(auditWriteDispatcher).submit(eq(session), eq(AuditEventType.ANALYST_OVERRIDE), anyMap());
     }
 
     @Test
@@ -143,23 +131,14 @@ class InterventionStateMachineTest {
         long t = 6_000_000L;
         List<Map<String, Object>> riskPayloads = new ArrayList<>();
 
-        when(auditLedgerService.append(eq(session), eq(AuditEventType.RISK_LEVEL_CHANGED), anyMap()))
-                .thenAnswer(invocation -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> payload = invocation.getArgument(2);
-                    riskPayloads.add(Map.copyOf(payload));
-                    AuditBlock block = new AuditBlock();
-                    block.setEventType(AuditEventType.RISK_LEVEL_CHANGED.name());
-                    block.setBlockIndex(auditSeq.getAndIncrement());
-                    return block;
-                });
-        when(auditLedgerService.append(eq(session), eq(AuditEventType.ANALYST_OVERRIDE), anyMap()))
-                .thenAnswer(invocation -> {
-                    AuditBlock block = new AuditBlock();
-                    block.setEventType(AuditEventType.ANALYST_OVERRIDE.name());
-                    block.setBlockIndex(auditSeq.getAndIncrement());
-                    return block;
-                });
+        doAnswer(invocation -> {
+            if (invocation.getArgument(1) == AuditEventType.RISK_LEVEL_CHANGED) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> payload = invocation.getArgument(2);
+                riskPayloads.add(Map.copyOf(payload));
+            }
+            return null;
+        }).when(auditWriteDispatcher).submit(eq(session), any(AuditEventType.class), anyMap());
 
         // L1 → L2 (dwell 1s)
         fsm.evaluate(session, input(t, 0.10, false, false));
@@ -181,7 +160,7 @@ class InterventionStateMachineTest {
         assertThat(riskPayloads.get(3)).containsEntry("from", "LEVEL_4_AUTO_HOLD").containsEntry("to", "LEVEL_5_TERMINATE")
                 .containsEntry("trigger", "MANUAL");
 
-        verify(auditLedgerService, atLeast(1)).append(eq(session), eq(AuditEventType.ANALYST_OVERRIDE), anyMap());
+        verify(auditWriteDispatcher, atLeast(1)).submit(eq(session), eq(AuditEventType.ANALYST_OVERRIDE), anyMap());
     }
 
     @Test
@@ -191,7 +170,7 @@ class InterventionStateMachineTest {
         InterventionDecision d = fsm.evaluate(session, input(t, 0.99, true, true));
         assertThat(d.level()).isEqualTo(InterventionLevel.LEVEL_4_AUTO_HOLD);
         assertThat(d.changed()).isTrue();
-        verify(auditLedgerService).append(eq(session), eq(AuditEventType.RISK_LEVEL_CHANGED), anyMap());
+        verify(auditWriteDispatcher).submit(eq(session), eq(AuditEventType.RISK_LEVEL_CHANGED), anyMap());
     }
 
     private static InterventionStateMachine.EvaluationInput input(

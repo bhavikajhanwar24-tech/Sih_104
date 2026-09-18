@@ -1,7 +1,7 @@
 package com.sentinelvoice.intervention;
 
 import com.sentinelvoice.audit.AuditEventType;
-import com.sentinelvoice.audit.AuditLedgerService;
+import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.model.InterventionLevel;
 import org.slf4j.Logger;
@@ -47,15 +47,15 @@ public class InterventionStateMachine {
 
     private final SentinelProperties.Intervention interventionProps;
     private final long overridePinDurationMs;
-    private final AuditLedgerService auditLedgerService;
+    private final AuditWriteDispatcher auditWriteDispatcher;
     private final Map<InterventionLevel, TransitionRule> upRules;
     private final Map<InterventionLevel, TransitionRule> downRules;
     private final ConcurrentMap<String, SessionLadderState> sessions = new ConcurrentHashMap<>();
 
-    public InterventionStateMachine(SentinelProperties properties, AuditLedgerService auditLedgerService) {
+    public InterventionStateMachine(SentinelProperties properties, AuditWriteDispatcher auditWriteDispatcher) {
         this.interventionProps = properties.intervention();
         this.overridePinDurationMs = interventionProps.overridePinDurationMs();
-        this.auditLedgerService = auditLedgerService;
+        this.auditWriteDispatcher = auditWriteDispatcher;
         this.upRules = buildUpRules(interventionProps);
         this.downRules = buildDownRules(interventionProps);
     }
@@ -181,7 +181,7 @@ public class InterventionStateMachine {
             overridePayload.put("analystId", analystId.trim());
             overridePayload.put("reason", reason.trim());
             overridePayload.put("pinnedUntilMs", state.override.expiresAtMs());
-            auditLedgerService.append(sessionId, AuditEventType.ANALYST_OVERRIDE, overridePayload);
+            auditWriteDispatcher.submit(sessionId, AuditEventType.ANALYST_OVERRIDE, overridePayload);
 
             if (from != targetLevel) {
                 applyTransition(sessionId, state, from, targetLevel, 0.0, List.of(), Trigger.MANUAL, nowMs);
@@ -342,7 +342,7 @@ public class InterventionStateMachine {
         payload.put("smoothedScore", smoothedScore);
         payload.put("corroboratingFamilies", corroboratingFamilies);
         payload.put("trigger", trigger.name());
-        auditLedgerService.append(sessionId, AuditEventType.RISK_LEVEL_CHANGED, payload);
+        auditWriteDispatcher.submit(sessionId, AuditEventType.RISK_LEVEL_CHANGED, payload);
     }
 
     /**
