@@ -29,8 +29,7 @@ export function TransactionPanel({ sessionId, frame }) {
   const [mfaState, setMfaState] = useState(/** @type {'pending'|'approved'|'denied'} */ ('pending'));
   const [mfaSeconds, setMfaSeconds] = useState(45);
 
-  const showMfa = level === INTERVENTION_LEVELS.LEVEL_3_STEP_UP_MFA
-    || level === INTERVENTION_LEVELS.LEVEL_4_AUTO_HOLD;
+  const showMfa = level === INTERVENTION_LEVELS.LEVEL_3_STEP_UP_MFA;
 
   useEffect(() => {
     if (!showMfa) {
@@ -59,6 +58,7 @@ export function TransactionPanel({ sessionId, frame }) {
     setBusy(true);
     setResult(null);
     try {
+      // Always hit the server — UI disable is UX; 423 proves the lock is not CSS-only.
       const res = await fetch(
         `/api/v1/transaction/${encodeURIComponent(sessionId)}/approve`,
         {
@@ -74,6 +74,34 @@ export function TransactionPanel({ sessionId, frame }) {
         setResult(`Approve failed (${res.status})`);
       } else {
         setResult('Approved (mock)');
+      }
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : 'network error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function probeServerLock() {
+    if (!sessionId || busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch(
+        `/api/v1/transaction/${encodeURIComponent(sessionId)}/approve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actorId: 'judge-probe' }),
+        },
+      );
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 423) {
+        setResult(`423 LOCKED (server) — ${body.reason ?? 'locked'}`);
+      } else if (res.ok) {
+        setResult('Server allowed approve (not locked)');
+      } else {
+        setResult(`Probe failed (${res.status})`);
       }
     } catch (err) {
       setResult(err instanceof Error ? err.message : 'network error');
@@ -160,6 +188,19 @@ export function TransactionPanel({ sessionId, frame }) {
           </div>
         ) : null}
       </div>
+
+      {lockedByTelemetry && sessionId ? (
+        <button
+          type="button"
+          data-testid="probe-server-lock"
+          onClick={probeServerLock}
+          disabled={busy}
+          className="w-full rounded border border-dashed border-sv-border px-2 py-1 font-mono text-[10px] text-sv-muted hover:border-sv-accent hover:text-sv-accent"
+          title="POST /api/v1/transaction/{id}/approve — expect HTTP 423"
+        >
+          Probe server lock (expect 423)
+        </button>
+      ) : null}
 
       {showMfa ? (
         <div

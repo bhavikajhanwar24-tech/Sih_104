@@ -67,7 +67,7 @@ export function InterventionBar({ frame, onOverrideClick }) {
     return undefined;
   }, [level]);
 
-  const pendingEscalation = dwellMs > 0 && currentIdx < 4;
+  const pendingEscalation = dwellMs > 0;
 
   return (
     <div

@@ -186,7 +186,7 @@ export function AnalystConsole() {
           status={isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[10rem] md:col-span-4"
+          className="col-span-12 h-[16rem] md:col-span-4"
           variant="flush"
         >
           <div className="h-full overflow-auto p-2">

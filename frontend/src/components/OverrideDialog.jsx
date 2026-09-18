@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { INTERVENTION_LEVELS } from '@/contracts';
 
@@ -22,6 +22,13 @@ export function OverrideDialog({ open, onClose, sessionId, currentLevel, onSucce
   const [reason, setReason] = useState('');
   const [error, setError] = useState(/** @type {string | null} */ (null));
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setTargetLevel(currentLevel ?? INTERVENTION_LEVELS.LEVEL_2_SOFT_NUDGE);
+    setReason('');
+    setError(null);
+  }, [open, currentLevel]);
 
   const reasonOk = reason.trim().length >= 10;
   const canSubmit = useMemo(
