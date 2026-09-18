@@ -1,8 +1,17 @@
 # SentinelVoice Inference Plane (`ml-engine`)
 
-Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice. P2.1 is audio plumbing only: codec normaliser, bounded ring buffer, VAD, session registry, ingest WebSocket. No feature extraction yet.
+Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice.
 
 Raw PCM exists **only** in `RingBuffer`: fixed 8 s of float32, overwritten in place, never grown, never written to disk or logs. `close()` calls `zeroise()`. See Context §6.3.
+
+## DSP modules (P4.1)
+
+```bash
+python -m scripts.inspect_features path/to.wav --profile narrowband
+python -m scripts.inspect_features --compare bonafide.wav spoof.wav --profile wideband
+```
+
+Spectral (LFCC, STFT stats, dual-profile bands, CQT periodicity) and phase (IPD entropy, modified group delay) live under `app/modules/`. CQT runs every 4th window and is carried forward.
 
 ## Run
 
