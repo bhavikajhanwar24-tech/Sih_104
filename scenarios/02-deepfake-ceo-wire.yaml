@@ -1,0 +1,51 @@
+# Scenario 2 — Deepfake CEO/CFO wire fraud (Context §14). Full ladder → L4 auto-hold.
+id: deepfake-ceo-wire
+title: Deepfake CFO wire fraud (₹50L)
+description: >
+  Cloned CFO voice over external SIP, ₹50L urgent wire with secrecy demand.
+  Risk 0.22→0.51→0.78; ladder reaches L4 auto-hold. Approve button locks live.
+expectedTrajectory:
+  - { tSec: 0,  risk: 0.22, level: LEVEL_1_SILENT,      corroboration: false }
+  - { tSec: 4,  risk: 0.38, level: LEVEL_2_SOFT_NUDGE,  corroboration: false }
+  - { tSec: 10, risk: 0.51, level: LEVEL_2_SOFT_NUDGE,  corroboration: false }
+  - { tSec: 16, risk: 0.58, level: LEVEL_3_STEP_UP_MFA, corroboration: true }
+  - { tSec: 24, risk: 0.78, level: LEVEL_4_AUTO_HOLD,   corroboration: true }
+channelProfile: PSTN_NARROWBAND
+caller:
+  cli: "+91-98XXX-44120"
+  trunkClass: EXTERNAL_SIP
+  claimedIdentity: "Rajesh Kumar"
+  claimedRole: "Chief Financial Officer"
+  employeeId: EMP-10492
+callee:
+  cli: "+91-22-6655-5040"
+  employeeId: EMP-50040
+  name: "Sunita Rao"
+directoryOverrides:
+  - employeeId: EMP-10492
+    presenceStatus: OFFSITE
+    calendarLocation: London
+    passportEnrolled: true
+relationshipEdges: []   # first-contact anomaly: no CFO→Sunita edge
+crossChannelEvents:
+  - id: cc-bec-email-sunitarao
+    channel: EMAIL
+    targetEmployeeId: EMP-50040
+    occurredHoursAgo: 36
+    severity: HIGH
+    indicator: "Rajesh Kumar <rajesh.kumar@secure-finance-mail.com>"
+    campaignId: BEC-CFO-2026-09
+    description: BEC email to Sunita Rao purporting to be CFO — urgent wire, secrecy
+  - id: cc-smish-sms-sunitarao
+    channel: SMS
+    targetEmployeeId: EMP-50040
+    occurredHoursAgo: 4
+    severity: HIGH
+    indicator: "Rajesh Kumar via +91-98XXX-44120"
+    campaignId: BEC-CFO-2026-09
+    description: Smishing SMS claiming CFO needs ₹50L vendor settlement before close
+audio:
+  source: scenarios/audio/02-deepfake-ceo-wire.wav
+  liveAllowed: true
+expectedFinalLevel: LEVEL_4_AUTO_HOLD
+teachingPoint: The full ladder; approve button locks live on corroborating families.

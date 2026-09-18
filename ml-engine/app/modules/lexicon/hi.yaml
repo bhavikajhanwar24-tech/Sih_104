@@ -1,0 +1,52 @@
+# Hindi (Devanagari) social-engineering lexicon.
+# Whisper often emits Devanagari for Hindi; romanised sibling is hi_roman.yaml.
+
+entries:
+  # --- URGENCY ---
+  - {pattern: "तुरंत", weight: 0.80, category: urgency}
+  - {pattern: "अभी", weight: 0.55, category: urgency}
+  - {pattern: "अभी के अभी", weight: 0.88, category: urgency}
+  - {pattern: "जल्दी", weight: 0.72, category: urgency}
+  - {pattern: "जल्दी करो", weight: 0.80, category: urgency}
+  - {pattern: "देरी मत करो", weight: 0.82, category: urgency}
+  - {pattern: "समय नहीं है", weight: 0.78, category: urgency}
+  - {pattern: "आज ही", weight: 0.70, category: urgency}
+  - {pattern: "मिनटों में", weight: 0.80, category: urgency}
+  - {pattern: "बाजार बंद होने से पहले", weight: 0.85, category: urgency}
+
+  # --- SECRECY ---
+  - {pattern: "किसी को मत बताना", weight: 0.98, category: secrecy}
+  - {pattern: "किसी को मत बताओ", weight: 0.98, category: secrecy}
+  - {pattern: "मैनेजर को मत बोलना", weight: 0.98, category: secrecy}
+  - {pattern: "मैनेजर को मत बताना", weight: 0.98, category: secrecy}
+  - {pattern: "गुप्त रखो", weight: 0.92, category: secrecy}
+  - {pattern: "गोपनीय", weight: 0.85, category: secrecy}
+  - {pattern: "केवल मौखिक अनुमति", weight: 0.95, category: secrecy}
+  - {pattern: "बिना बताए", weight: 0.90, category: secrecy}
+  - {pattern: "चुपचाप", weight: 0.82, category: secrecy}
+  - {pattern: "बात मत फैलाना", weight: 0.94, category: secrecy}
+
+  # --- AUTHORITY ---
+  - {pattern: "मैं सीईओ बोल रहा हूँ", weight: 0.92, category: authority}
+  - {pattern: "मैं सीएफओ बोल रहा हूँ", weight: 0.92, category: authority}
+  - {pattern: "मैं सीईओ हूं", weight: 0.90, category: authority}
+  - {pattern: "सीबीआई", weight: 0.92, category: authority}
+  - {pattern: "आरबीआई", weight: 0.85, category: authority}
+  - {pattern: "आयकर विभाग", weight: 0.90, category: authority}
+  - {pattern: "पुलिस", weight: 0.60, category: authority}
+  - {pattern: "गिरफ्तारी वारंट", weight: 0.95, category: authority}
+  - {pattern: "डिजिटल गिरफ्तारी", weight: 0.96, category: authority}
+  - {pattern: "अदालती मामला", weight: 0.75, category: authority}
+  - {pattern: "प्रबंध निदेशक", weight: 0.85, category: authority}
+
+  # --- COERCION ---
+  - {pattern: "आप जिम्मेदार होंगे", weight: 0.92, category: coercion}
+  - {pattern: "खाता फ्रीज", weight: 0.90, category: coercion}
+  - {pattern: "गिरफ्तार", weight: 0.85, category: coercion}
+  - {pattern: "मुसीबत", weight: 0.80, category: coercion}
+  - {pattern: "पुलिस स्टेशन", weight: 0.85, category: coercion}
+  - {pattern: "अस्पताल", weight: 0.30, category: coercion}
+  - {pattern: "दुर्घटना", weight: 0.28, category: coercion}
+  - {pattern: "जमानत", weight: 0.82, category: coercion}
+  - {pattern: "आपातकाल", weight: 0.28, category: coercion}
+  - {pattern: "नौकरी चली जाएगी", weight: 0.88, category: coercion}

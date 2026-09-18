@@ -1,0 +1,51 @@
+# Scenario 4 — Hinglish grandparent scam (Context §14). Senior Shield + family SOS.
+id: hinglish-grandparent
+title: Hinglish grandparent scam (UPI bail)
+description: >
+  Cloned grandson voice — "bail ke liye turant ₹25,000 UPI kar do".
+  Risk 0.35→0.81; Senior Shield red alert + family SOS.
+expectedTrajectory:
+  - { tSec: 0,  risk: 0.35, level: LEVEL_2_SOFT_NUDGE,  corroboration: false }
+  - { tSec: 8,  risk: 0.58, level: LEVEL_3_STEP_UP_MFA, corroboration: true }
+  - { tSec: 18, risk: 0.81, level: LEVEL_4_AUTO_HOLD,   corroboration: true }
+channelProfile: PSTN_NARROWBAND
+caller:
+  cli: "+91-98765-43210"
+  trunkClass: PSTN
+  claimedIdentity: "Rohan Sharma"
+  claimedRole: "Grandson"
+  employeeId: null
+callee:
+  cli: "+91-22-6655-9001"
+  employeeId: EMP-SENIOR-01
+  name: "Kamala Devi"
+directoryOverrides:
+  - employeeId: EMP-SENIOR-01
+    name: "Kamala Devi"
+    role: "Retail Customer (Senior Shield)"
+    department: "Retail Banking"
+    primaryCli: "+91-22-6655-9001"
+    extension: "9001"
+    verbalAuthorityLimitInr: 0
+    permittedChannels: "BRANCH,UPI"
+    presenceStatus: AVAILABLE
+    calendarLocation: "Andheri Branch — Senior desk"
+    managerEmployeeId: EMP-40030
+    hierarchyLevel: 99
+    passportEnrolled: false
+relationshipEdges: []
+crossChannelEvents:
+  - id: cc-upi-smish-kamala
+    channel: SMS
+    targetEmployeeId: EMP-SENIOR-01
+    occurredHoursAgo: 1
+    severity: HIGH
+    indicator: "+91-98765-43210"
+    campaignId: SENIOR-UPI-2026-09
+    description: Smishing SMS priming UPI bail narrative before the voice call
+audio:
+  source: scenarios/audio/04-hinglish-grandparent.wav
+  liveAllowed: true
+expectedFinalLevel: LEVEL_4_AUTO_HOLD
+seniorShield: true
+teachingPoint: Social impact; code-switch Hinglish handling under Senior Shield.

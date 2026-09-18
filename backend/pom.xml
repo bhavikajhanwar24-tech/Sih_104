@@ -61,6 +61,10 @@
             <version>1.5.4</version>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
@@ -68,6 +72,20 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Repo-root scenarios/*.yaml on the classpath for tests & packaged JAR -->
+            <resource>
+                <directory>${project.basedir}/../scenarios</directory>
+                <targetPath>scenarios</targetPath>
+                <includes>
+                    <include>*.yaml</include>
+                    <include>*.yml</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

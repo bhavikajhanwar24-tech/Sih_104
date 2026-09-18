@@ -1,0 +1,41 @@
+# Scenario 3 — Liveness challenge (Context §14). RVC attacker fails phrase + latency → L5.
+id: liveness-challenge
+title: Liveness challenge (Amber Falcon 72)
+description: >
+  RVC attacker asked to repeat a random phrase. Measured latency ~3.8 s vs 1.8 s
+  human threshold; content/acoustic fail → L5 terminate.
+expectedTrajectory:
+  - { tSec: 0,  risk: 0.48, level: LEVEL_2_SOFT_NUDGE,  corroboration: false }
+  - { tSec: 6,  risk: 0.62, level: LEVEL_3_STEP_UP_MFA, corroboration: true }
+  - { tSec: 14, risk: 0.82, level: LEVEL_4_AUTO_HOLD,   corroboration: true }
+  - { tSec: 20, risk: 0.93, level: LEVEL_5_TERMINATE,   corroboration: true, confirmL5: true }
+channelProfile: VOIP_WIDEBAND
+caller:
+  cli: "+91-80-4000-9911"
+  trunkClass: EXTERNAL_SIP
+  claimedIdentity: "Rajesh Kumar"
+  claimedRole: "Chief Financial Officer"
+  employeeId: EMP-10492
+callee:
+  cli: "+91-22-6655-5040"
+  employeeId: EMP-50040
+  name: "Sunita Rao"
+directoryOverrides: []
+relationshipEdges: []
+crossChannelEvents:
+  - id: cc-challenge-precursor
+    channel: EMAIL
+    targetEmployeeId: EMP-50040
+    occurredHoursAgo: 12
+    severity: MEDIUM
+    indicator: "urgent-wire@secure-finance-mail.com"
+    campaignId: CHALLENGE-DEMO-2026
+    description: Precursor BEC before the challenged deepfake call
+audio:
+  source: scenarios/audio/03-liveness-challenge.wav
+  liveAllowed: true
+expectedFinalLevel: LEVEL_5_TERMINATE
+challenge:
+  phraseHint: "Amber Falcon 72"
+  expectedLatencyMs: 3800
+teachingPoint: Real-time interactivity defeats pre-rendered RVC attacks.
