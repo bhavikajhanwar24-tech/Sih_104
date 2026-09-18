@@ -19,6 +19,7 @@ from app.routes.enrol import router as enrol_router
 from app.routes.redteam import router as redteam_router
 from app.scheduler import SessionScheduler
 from app.session import registry
+from app.slow_path import SlowPathRunner
 from app.types import ChannelProfile, IngestHello
 from app.vad import is_speech
 
@@ -30,6 +31,7 @@ logger = logging.getLogger("sentinelvoice.ml")
 
 emitter = FeatureEmitter()
 scheduler = SessionScheduler(registry, emitter)
+slow_path = SlowPathRunner(registry)
 _emitter_task: asyncio.Task[None] | None = None
 
 
@@ -66,6 +68,23 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logger.exception("antispoof_warmup_failed — spoofProbability unavailable until trained")
 
+    # Slow-path ASR (faster-whisper) — load once; log size/device (Context §7.2).
+    if settings.asr_enabled:
+        try:
+            from app.modules import asr as asr_mod
+
+            winfo = asr_mod.warmup()
+            logger.info(
+                "asr_warmup ready=%s size=%s device=%s compute=%s warmup_ms=%s",
+                winfo.get("ready"),
+                winfo.get("model_size"),
+                winfo.get("device"),
+                winfo.get("compute_type"),
+                winfo.get("warmup_ms"),
+            )
+        except Exception:
+            logger.exception("asr_warmup_failed — linguistic ASR unavailable until fixed")
+
     if settings.emit_enabled:
         _emitter_task = asyncio.create_task(emitter.run(), name="feature-emitter")
         logger.info("lifespan_start emit_enabled=true url=%s", emitter.url)
@@ -74,6 +93,7 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        await slow_path.stop_all()
         await scheduler.stop_all()
         await emitter.stop()
         if _emitter_task is not None:
@@ -106,7 +126,22 @@ def diagnostics(sid: str) -> dict[str, Any]:
     session = registry.get(sid)
     if session is None:
         raise HTTPException(status_code=404, detail="session_not_found")
-    return session.fast_path.diagnostics()
+    out = session.fast_path.diagnostics()
+    out["slowPath"] = {
+        "latencyMs": session.slow_path_latency_ms,
+        "linguisticAvailable": bool(
+            (session.slow_path_linguistic or {}).get("available")
+        ),
+        "language": (session.slow_path_linguistic or {}).get("language"),
+        "codeSwitchDetected": session.asr_state.code_switch_detected,
+        "redactedDelta": (session.slow_path_linguistic or {}).get("redactedDelta"),
+        "redactedSnippet": (session.slow_path_linguistic or {}).get("redactedSnippet"),
+        "asr": {
+            "modelSize": settings.asr_model_size,
+            "enabled": settings.asr_enabled,
+        },
+    }
+    return out
 
 
 @app.post("/session/{sid}/open")
@@ -115,12 +150,14 @@ async def open_session(
 ) -> dict[str, Any]:
     session = registry.create(sid, profile=profile)
     await scheduler.start(sid)
+    await slow_path.start(sid)
     logger.info("session_open session_id=%s profile=%s", sid, session.profile.value)
     return {"status": "open", "sessionId": sid, "profile": session.profile.value}
 
 
 @app.post("/session/{sid}/close")
 async def close_session(sid: str) -> dict[str, Any]:
+    await slow_path.stop(sid)
     await scheduler.stop(sid)
     redteam_state.clear_config(sid)
     closed = registry.close(sid)
@@ -171,6 +208,7 @@ async def ingest(websocket: WebSocket, sid: str) -> None:
         session = registry.create(sid)
         logger.info("session_open_via_ws session_id=%s", sid)
     await scheduler.start(sid)
+    await slow_path.start(sid)
 
     hello: IngestHello | None = None
     frames = 0

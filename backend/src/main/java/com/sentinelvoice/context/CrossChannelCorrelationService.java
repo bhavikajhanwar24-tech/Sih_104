@@ -8,6 +8,7 @@ import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.repository.CrossChannelEventRepository;
 import com.sentinelvoice.service.CallSessionManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,7 @@ public class CrossChannelCorrelationService {
     private final SentinelProperties.RelationshipScoring relationshipWeights;
     private final Clock clock;
 
+    @Autowired
     public CrossChannelCorrelationService(
             CrossChannelEventRepository repository,
             CallSessionManager callSessionManager,

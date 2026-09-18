@@ -481,6 +481,10 @@
         },
         "redactedSnippet": {
           "type": "string"
+        },
+        "redactedDelta": {
+          "type": "string",
+          "description": "Redacted transcript delta since the previous slow-path emission. Optional; rolling context remains in redactedSnippet."
         }
       },
       "allOf": [

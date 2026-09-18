@@ -16,17 +16,37 @@ Requires-Dist: pydantic-settings<3,>=2
 Requires-Dist: python-multipart<1,>=0.0.9
 Requires-Dist: httpx<1,>=0.27
 Requires-Dist: pytest<9,>=8
+Requires-Dist: jsonschema<5,>=4.23
+Requires-Dist: praat-parselmouth<1,>=0.4
 Requires-Dist: webrtcvad<3,>=2.0.10; python_version < "3.13"
 Requires-Dist: webrtcvad-wheels>=2.0.14; python_version >= "3.13"
+Requires-Dist: imageio-ffmpeg<1,>=0.5
+Requires-Dist: torch<3,>=2.1
+Requires-Dist: torchaudio<3,>=2.1
+Requires-Dist: speechbrain<2,>=1.0
+Requires-Dist: scikit-learn<2,>=1.3
+Requires-Dist: matplotlib<4,>=3.8
+Requires-Dist: faster-whisper<2,>=1.0
 Provides-Extra: dev
 Requires-Dist: pytest<9,>=8; extra == "dev"
 Requires-Dist: httpx<1,>=0.27; extra == "dev"
 
 # SentinelVoice Inference Plane (`ml-engine`)
 
-Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice. P2.1 is audio plumbing only: codec normaliser, bounded ring buffer, VAD, session registry, ingest WebSocket. No feature extraction yet.
+Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice.
 
 Raw PCM exists **only** in `RingBuffer`: fixed 8 s of float32, overwritten in place, never grown, never written to disk or logs. `close()` calls `zeroise()`. See Context §6.3.
+
+## DSP modules (P4.1–P4.2)
+
+```bash
+python -m scripts.inspect_features path/to.wav --profile narrowband
+python -m scripts.inspect_features --compare bonafide.wav spoof.wav --profile wideband
+```
+
+- Spectral / phase: LFCC, STFT stats, dual-profile bands, CQT periodicity, IPD entropy
+- Prosody / breath: Praat jitter/shimmer/HNR (librosa fallback), unnaturalness_score, breath detection
+  (`SENTINELVOICE_ML_USE_PARSELMOUTH=false` forces the fallback)
 
 ## Run
 
@@ -37,9 +57,12 @@ pytest
 uvicorn app.main:app --reload --port 8000
 ```
 
-- `GET /health` → `{status, version, active_sessions}`
-- `POST /session/{sid}/open` creates a `PipelineSession`
+- `GET /health` → `{status, version, active_sessions, emitter_connected, dropped_frames, sent_frames}`
+- `POST /session/{sid}/open` creates a `PipelineSession` and starts the 500 ms FeatureFrame scheduler
 - `POST /session/{sid}/close` zeroises the ring buffer and drops the session
 - `WS /ingest/{sid}` JSON hello, then binary frames (`pcm_s16le`, `pcm_f32le`, `mulaw`, `alaw`, `slin16`). Ack every 10 frames.
+- Stub FeatureFrames are pushed to Java at `ws://127.0.0.1:8080/ws/features` (P2.2). Real features arrive in P4.x.
+
+Create the matching Decision Plane session first (`POST /api/v1/session/start`) or Java will drop unknown `sessionId`s.
 
 Logs record lengths and counters only — never audio bytes.

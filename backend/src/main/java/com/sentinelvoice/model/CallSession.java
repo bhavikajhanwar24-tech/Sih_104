@@ -1,8 +1,10 @@
 package com.sentinelvoice.model;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -39,6 +41,23 @@ public class CallSession {
      * make every frame look stale vs {@link #createdAt}.
      */
     private volatile Long mediaOriginEpochMs;
+    /**
+     * Every reason code that fired during the session (cumulative), for forensic evidence.
+     * Deduped by code+observedAt bucket; never contains audio or verbatim unredacted transcript.
+     */
+    private final List<FiredReason> firedReasons = new CopyOnWriteArrayList<>();
+
+    /** One evidence row retained on the Decision Plane (scores / enums / narratives only). */
+    public record FiredReason(
+            String reasonCode,
+            String severity,
+            String family,
+            long observedAtEpochMs,
+            String measuredValue,
+            String humanBaseline,
+            String narrative
+    ) {
+    }
 
     public CallSession(
             String sessionId,
@@ -88,6 +107,34 @@ public class CallSession {
         if (this.state == SessionState.INITIALISING) {
             this.state = SessionState.ACTIVE;
         }
+    }
+
+    /**
+     * Append reason codes that fired on this frame. Cumulative across the call so the
+     * forensic dossier evidence table is not limited to the latest TelemetryFrame.topReasons.
+     */
+    public void recordFiredReasons(long observedAtEpochMs, List<FiredReason> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return;
+        }
+        for (FiredReason r : reasons) {
+            if (r == null || r.reasonCode() == null || r.reasonCode().isBlank()) {
+                continue;
+            }
+            firedReasons.add(new FiredReason(
+                    r.reasonCode(),
+                    r.severity() == null ? "INFO" : r.severity(),
+                    r.family(),
+                    observedAtEpochMs,
+                    r.measuredValue(),
+                    r.humanBaseline(),
+                    r.narrative()
+            ));
+        }
+    }
+
+    public List<FiredReason> getFiredReasons() {
+        return List.copyOf(firedReasons);
     }
 
     public FeatureFrame getLastFeatureFrame() {

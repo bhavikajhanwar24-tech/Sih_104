@@ -6,6 +6,8 @@ import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.ChainVerificationResult;
 import com.sentinelvoice.identity.IdentityVerdict;
 import com.sentinelvoice.model.ChannelProfile;
+import com.sentinelvoice.model.AuditBlock;
+import com.sentinelvoice.repository.AuditBlockRepository;
 import com.sentinelvoice.repository.VoicePassportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +57,9 @@ class VoicePassportTest {
 
     @Autowired
     private AuditLedgerService auditLedgerService;
+
+    @Autowired
+    private AuditBlockRepository auditBlockRepository;
 
     private MockRestServiceServer mlServer;
     private float[] speakerEmbedding;
@@ -166,29 +171,59 @@ class VoicePassportTest {
         );
         assertThat(passportRepository.findById(profileId)).isEmpty();
 
-        ChainVerificationResult chain = auditLedgerService.verify(
-                VoicePassportService.auditSessionId(employeeId)
-        );
+        String sessionId = VoicePassportService.auditSessionId(employeeId);
+        ChainVerificationResult chain = auditLedgerService.verify(sessionId);
         assertThat(chain.valid()).isTrue();
         assertThat(chain.blockCount()).isGreaterThanOrEqualTo(2);
 
-        boolean tombstoneSeen = auditLedgerService.verify(VoicePassportService.auditSessionId(employeeId)).valid();
-        assertThat(tombstoneSeen).isTrue();
-        // Confirm PASSPORT_ERASED payload carries the tombstone hash via ledger append side-effect
+        AuditBlock erasedBlock = auditBlockRepository.findBySessionIdOrderByBlockIndexAsc(sessionId).stream()
+                .filter(b -> AuditEventType.PASSPORT_ERASED.name().equals(b.getEventType()))
+                .filter(b -> b.getBlockIndex() == cert.auditBlockIndex())
+                .findFirst()
+                .orElseThrow();
+        assertThat(erasedBlock.getDetails()).contains(expectedTombstone);
         assertThat(cert.tombstoneHash()).isEqualTo(expectedTombstone);
         assertThat(cert.auditBlockIndex()).isGreaterThanOrEqualTo(0);
     }
 
     @Test
-    void verify_missingChannelProfile_returnsChannelMismatch() {
+    void verify_missingChannelProfile_returnsChannelMismatch() throws Exception {
+        String employeeId = "EMP-CHMISMATCH";
+        grantConsent(employeeId);
+        stubMlEnrol();
+        MvcResult enrolResult = mockMvc.perform(post("/api/v1/passport/enrol")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"employeeId":"EMP-CHMISMATCH","channelProfile":"WEBRTC_WIDEBAND","audioRef":"synthetic:m"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        PassportDtos.EnrolResponse enrol = objectMapper.readValue(
+                enrolResult.getResponse().getContentAsString(),
+                PassportDtos.EnrolResponse.class
+        );
+        // Leave only WEBRTC — prove we never fall back to another channel's passport.
+        for (int i = 0; i < enrol.profileIds().size(); i++) {
+            if (!"WEBRTC_WIDEBAND".equals(enrol.channelProfiles().get(i))) {
+                passportRepository.deleteById(enrol.profileIds().get(i));
+            }
+        }
+
         PassportDtos.VerifyResult result = voicePassportService.verify(
-                "EMP-NOSUCH",
-                unitEmbedding(1),
+                employeeId,
+                speakerEmbedding,
                 ChannelProfile.PSTN_NARROWBAND
         );
         assertThat(result.verdict()).isEqualTo(IdentityVerdict.INCONCLUSIVE);
         assertThat(result.reason()).isEqualTo("CHANNEL_MISMATCH");
         assertThat(result.cosine()).isNull();
+
+        PassportDtos.VerifyResult match = voicePassportService.verify(
+                employeeId,
+                speakerEmbedding,
+                ChannelProfile.WEBRTC_WIDEBAND
+        );
+        assertThat(match.cosine()).isGreaterThan(0.70);
     }
 
     private void grantConsent(String employeeId) throws Exception {
