@@ -93,6 +93,15 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/diagnostics/{sid}")
+def diagnostics(sid: str) -> dict[str, Any]:
+    """Per-module availability, last error, and rolling p50/p95 latency."""
+    session = registry.get(sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session_not_found")
+    return session.fast_path.diagnostics()
+
+
 @app.post("/session/{sid}/open")
 async def open_session(
     sid: str, profile: ChannelProfile = ChannelProfile.WEBRTC_WIDEBAND
