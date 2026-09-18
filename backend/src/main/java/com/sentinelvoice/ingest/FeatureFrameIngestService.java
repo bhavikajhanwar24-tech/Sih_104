@@ -1,4 +1,4 @@
-﻿package com.sentinelvoice.ingest;
+package com.sentinelvoice.ingest;
 
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
@@ -40,6 +40,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +48,7 @@ import java.util.Optional;
 
 /**
  * Per-frame Decision Plane pipeline (P5.4):
- * validate ΓåÆ update session ΓåÆ fuse ΓåÆ FSM ΓåÆ reasons ΓåÆ async audit ΓåÆ TelemetryFrame ΓåÆ STOMP.
+ * validate → update session → fuse → FSM → reasons → async audit → TelemetryFrame → STOMP.
  *
  * <p>Audit is queued ({@link AuditWriteDispatcher}) so ledger I/O never blocks the broadcast.
  */
@@ -120,7 +121,7 @@ public class FeatureFrameIngestService {
                 .description("FeatureFrames dropped for exceeding frameStalenessMs")
                 .register(meterRegistry);
         this.pipelineTimer = Timer.builder("sentinel.pipeline.latency")
-                .description("FeatureFrame ingest pipeline latency (fuseΓåÆFSMΓåÆreasonsΓåÆbroadcast); p95 < 15ms")
+                .description("FeatureFrame ingest pipeline latency (fuse→FSM→reasons→broadcast); p95 < 15ms")
                 .publishPercentileHistogram()
                 .register(meterRegistry);
     }
@@ -259,6 +260,26 @@ public class FeatureFrameIngestService {
                 )
         );
 
+        // Cumulative evidence for forensic dossier (every firing, not just latest topReasons).
+        List<CallSession.FiredReason> fired = new ArrayList<>(reasons.size());
+        for (ReasonGenerator.GeneratedReason r : reasons) {
+            if (r == null || r.code() == null) {
+                continue;
+            }
+            String code = r.code().name();
+            String text = r.text();
+            fired.add(new CallSession.FiredReason(
+                    code,
+                    r.severity() == null ? "INFO" : r.severity().name(),
+                    r.family() == null ? "UNKNOWN" : r.family().name(),
+                    nowMs,
+                    text == null || text.isBlank() ? "—" : (text.length() <= 80 ? text : text.substring(0, 77) + "..."),
+                    baselineForReasonCode(code),
+                    text
+            ));
+        }
+        session.recordFiredReasons(nowMs, fired);
+
         Map<String, Object> auditPayload = new LinkedHashMap<>();
         auditPayload.put("seq", frame.seq());
         auditPayload.put("instantaneous", fusion.instantaneous());
@@ -344,5 +365,18 @@ public class FeatureFrameIngestService {
             session.setMediaOriginEpochMs(mediaOrigin);
         }
         return now - (mediaOrigin + windowEnd);
+    }
+
+    private static String baselineForReasonCode(String code) {
+        return switch (code == null ? "" : code) {
+            case "VOICEPRINT_FAIL" -> "match cosine ≥ 0.70";
+            case "NO_BREATH" -> "8–20 breaths/min";
+            case "OVERSMOOTH_PROSODY" -> "jitter 0.5–1.5%";
+            case "NO_ROOM_ACOUSTICS" -> "T60 ≳ 30 ms";
+            case "DOUBLE_COMPRESSION" -> "score < 0.55";
+            case "SYNTHETIC_ARTIFACTS" -> "spoofProbability < 0.60";
+            case "POLICY_VIOLATION" -> "within verbalAuthorityLimit";
+            default -> "see methodology appendix";
+        };
     }
 }

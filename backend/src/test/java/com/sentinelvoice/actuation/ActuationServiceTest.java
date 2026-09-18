@@ -64,7 +64,11 @@ class ActuationServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-09-18T12:00:00Z"), ZoneOffset.UTC);
         // Run sync on calling thread so assertions see results immediately.
         Executor sync = Runnable::run;
-        service = new ActuationService(port, oobMfa, cbs, audit, sync, clock, props);
+        @SuppressWarnings("unchecked")
+        org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.forensics.ForensicDossierService> dossiers =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(dossiers.getIfAvailable()).thenReturn(null);
+        service = new ActuationService(port, oobMfa, cbs, audit, sync, clock, props, dossiers);
     }
 
     @Test
@@ -144,7 +148,8 @@ class ActuationServiceTest {
                 audit,
                 Runnable::run,
                 Clock.systemUTC(),
-                props
+                props,
+                dossiersProvider()
         );
         assertThatCode(() -> {
             noopService.applySync("demo", InterventionLevel.LEVEL_2_SOFT_NUDGE);
@@ -177,5 +182,13 @@ class ActuationServiceTest {
                         ActuationAction.BENEFICIARY_FROZEN,
                         ActuationAction.DOSSIER_GENERATED
                 );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.forensics.ForensicDossierService> dossiersProvider() {
+        org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.forensics.ForensicDossierService> provider =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        return provider;
     }
 }

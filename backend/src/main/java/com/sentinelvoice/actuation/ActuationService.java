@@ -3,9 +3,11 @@ package com.sentinelvoice.actuation;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.forensics.ForensicDossierService;
 import com.sentinelvoice.model.InterventionLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,7 @@ public class ActuationService {
     private final Executor actuationExecutor;
     private final Clock clock;
     private final String supervisorEndpoint;
+    private final ObjectProvider<ForensicDossierService> forensicDossierService;
     private final ConcurrentMap<String, Set<ActuationAction>> firedBySession = new ConcurrentHashMap<>();
 
     public ActuationService(
@@ -52,7 +55,8 @@ public class ActuationService {
             AuditWriteDispatcher auditWriteDispatcher,
             @Qualifier("actuationExecutor") Executor actuationExecutor,
             Clock clock,
-            SentinelProperties properties
+            SentinelProperties properties,
+            ObjectProvider<ForensicDossierService> forensicDossierService
     ) {
         this.callControl = callControl;
         this.oobMfaService = oobMfaService;
@@ -61,6 +65,7 @@ public class ActuationService {
         this.actuationExecutor = actuationExecutor;
         this.clock = clock;
         this.supervisorEndpoint = properties.actuation().supervisorEndpoint();
+        this.forensicDossierService = forensicDossierService;
     }
 
     /**
@@ -220,8 +225,12 @@ public class ActuationService {
                 yield ok ? ActionResult.SUCCESS : ActionResult.FAILURE;
             }
             case DOSSIER_GENERATED -> {
-                // Forensic dossier pipeline (P9.1) — record intent; full builder lands later.
-                log.info("actuation DOSSIER_GENERATED sessionId={} (stub dossier marker)", sessionId);
+                ForensicDossierService dossier = forensicDossierService.getIfAvailable();
+                if (dossier != null) {
+                    dossier.renderPdf(sessionId, "actuation-L5");
+                } else {
+                    log.info("actuation DOSSIER_GENERATED sessionId={} (dossier service unavailable)", sessionId);
+                }
                 yield ActionResult.SUCCESS;
             }
             case HOLD, UNHOLD, WHISPER, ANNOUNCE, BRIDGE_SUPERVISOR, TERMINATE -> ActionResult.UNSUPPORTED;

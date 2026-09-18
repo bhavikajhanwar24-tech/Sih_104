@@ -3,10 +3,11 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from app.config import settings
 from app.fast_path import FastPathState
+from app.modules.asr import AsrSessionState
 from app.ring_buffer import RingBuffer
 from app.types import ChannelProfile
 
@@ -22,9 +23,16 @@ class PipelineSession:
     last_emitted_samples: int = -1
     created_at: float = field(default_factory=time.time)
     fast_path: FastPathState = field(init=False)
+    asr_state: AsrSessionState = field(init=False)
+    # Latest slow-path publish snapshot (redacted linguistic + latency).
+    slow_path_linguistic: dict[str, Any] = field(
+        default_factory=lambda: {"available": False}
+    )
+    slow_path_latency_ms: float = 0.0
 
     def __post_init__(self) -> None:
         self.fast_path = FastPathState(session_id=self.session_id)
+        self.asr_state = AsrSessionState(session_id=self.session_id)
 
 
 class SessionRegistry:
@@ -61,6 +69,11 @@ class SessionRegistry:
             session = self._sessions.pop(session_id, None)
         if session is None:
             return False
+        from app.modules import asr as asr_mod
+
+        asr_mod.reset_session_state(session.asr_state)
+        session.slow_path_linguistic = {"available": False}
+        session.slow_path_latency_ms = 0.0
         session.ring_buffer.zeroise()
         return True
 

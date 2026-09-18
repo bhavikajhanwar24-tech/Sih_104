@@ -96,6 +96,8 @@ class LinguisticFamily(BaseModel):
     claimedIdentity: Optional[str] = None
     claimedRole: Optional[str] = None
     redactedSnippet: Optional[str] = None
+    # New text since last slow-path emission (already redacted). Optional for back-compat.
+    redactedDelta: Optional[str] = None
 
 
 class LatencyMs(BaseModel):

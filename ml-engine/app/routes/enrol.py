@@ -1,8 +1,11 @@
 """Voice Passport enrolment — ECAPA embed, dual channel profiles, zeroise buffers.
 
-POST /enrol accepts JSON ``{audioRef}`` (fixture path or ``synthetic:…``) or multipart
-``file`` WAV upload. Returns wideband + narrowband 192-d embeddings. Audio is held only
-in memory and zeroised before return — never written to disk.
+POST /enrol accepts:
+  - JSON ``{audioRef}`` (fixture path or ``synthetic:…``) — used by the Java Decision Plane
+  - multipart ``file`` WAV upload on the same path — local tooling / acceptance
+
+Also exposed as POST /enrol/upload for back-compat. Returns wideband + narrowband 192-d
+embeddings. Audio is held only in memory and zeroised before return — never written to disk.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.modules import speaker as speaker_mod
@@ -122,15 +125,52 @@ def _embed_dual(audio: np.ndarray, sr: int) -> dict[str, Any]:
     }
 
 
-@router.post("/enrol")
-def enrol_json(request: EnrolJsonRequest) -> dict[str, Any]:
-    """JSON enrolment used by the Java Decision Plane (audioRef only — no PCM proxy)."""
-    audio: Optional[np.ndarray] = None
+def _enrol_from_audio(audio: np.ndarray, sr: int) -> dict[str, Any]:
     try:
-        audio, sr = _resolve_audio_ref(request.audioRef)
         result = _embed_dual(audio, sr)
         logger.info("enrol_ok model=%s profiles=%s", result["modelId"], sorted(result["embeddings"]))
         return result
+    finally:
+        _zeroise(audio)
+
+
+async def _enrol_from_upload_bytes(data: bytes) -> dict[str, Any]:
+    audio: Optional[np.ndarray] = None
+    try:
+        audio, sr = _read_wav_bytes(data)
+        return _enrol_from_audio(audio, sr)
+    finally:
+        if audio is not None:
+            _zeroise(audio)
+
+
+@router.post("/enrol")
+async def enrol(request: Request) -> dict[str, Any]:
+    """JSON ``{audioRef}`` or multipart WAV upload — never writes the upload to disk."""
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None or not hasattr(upload, "read"):
+            raise HTTPException(status_code=400, detail="multipart_missing_file")
+        data = await upload.read()  # type: ignore[union-attr]
+        return await _enrol_from_upload_bytes(data)
+
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="expected_json_or_multipart") from exc
+
+    try:
+        parsed = EnrolJsonRequest.model_validate(body)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="invalid_enrol_json") from exc
+
+    audio: Optional[np.ndarray] = None
+    try:
+        audio, sr = _resolve_audio_ref(parsed.audioRef)
+        return _enrol_from_audio(audio, sr)
     finally:
         if audio is not None:
             _zeroise(audio)
@@ -138,15 +178,6 @@ def enrol_json(request: EnrolJsonRequest) -> dict[str, Any]:
 
 @router.post("/enrol/upload")
 async def enrol_upload(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Multipart WAV upload path for local tooling. Buffer zeroised; never written to disk."""
-    audio: Optional[np.ndarray] = None
-    try:
-        data = await file.read()
-        audio, sr = _read_wav_bytes(data)
-        del data
-        result = _embed_dual(audio, sr)
-        logger.info("enrol_upload_ok model=%s", result["modelId"])
-        return result
-    finally:
-        if audio is not None:
-            _zeroise(audio)
+    """Back-compat alias for multipart WAV upload (same semantics as POST /enrol with file)."""
+    data = await file.read()
+    return await _enrol_from_upload_bytes(data)

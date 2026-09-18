@@ -46,5 +46,17 @@ class Settings(BaseSettings):
     speaker_latency_budget_ms: float = 40.0
     java_passport_url: str = "http://127.0.0.1:8080/api/v1/passport/register"
 
+    # Slow-path ASR (Context §7.2 / §10.6) — faster-whisper / CTranslate2.
+    asr_enabled: bool = True
+    # sweet spot on CPU: small + int8 (~4× real-time). Use medium on GPU.
+    asr_model_size: str = "small"
+    asr_device: str = "auto"  # auto | cpu | cuda
+    asr_compute_type: str = "default"  # default → int8 (cpu) / float16 (cuda)
+    asr_window_seconds: float = 6.0
+    asr_interval_ms: int = 2500
+    asr_vad_speech_ratio_min: float = 0.3
+    asr_snippet_chars: int = 160
+    asr_latency_budget_ms: float = 900.0
+
 
 settings = Settings()

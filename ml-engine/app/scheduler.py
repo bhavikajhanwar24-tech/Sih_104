@@ -40,6 +40,11 @@ def build_feature_frame(session: PipelineSession, window: np.ndarray) -> Feature
     )
     # Prefer orchestrator wall time; fall back to measured total.
     fast_ms = float(extracted.get("fastPathMs") or 0.0)
+    # Slow-path linguistic is published asynchronously; never block here.
+    linguistic_payload = session.slow_path_linguistic or extracted.get("linguistic") or {
+        "available": False
+    }
+    slow_ms = float(session.slow_path_latency_ms or 0.0)
     sr = session.ring_buffer.sample_rate
     window_end_ms = int(session.ring_buffer.total_samples_written * 1000 / sr)
     window_start_ms = max(0, window_end_ms - int(settings.window_seconds * 1000))
@@ -57,9 +62,9 @@ def build_feature_frame(session: PipelineSession, window: np.ndarray) -> Feature
         prosody=_family(ProsodyFamily, extracted["prosody"]),
         speaker=_family(SpeakerFamily, extracted["speaker"]),
         watermark=_family(WatermarkFamily, extracted["watermark"]),
-        linguistic=_family(LinguisticFamily, extracted["linguistic"]),
+        linguistic=_family(LinguisticFamily, linguistic_payload),
         # Frozen schema: only fastPath/slowPath — module breakdown is on /diagnostics.
-        latencyMs=LatencyMs(fastPath=fast_ms, slowPath=0.0),
+        latencyMs=LatencyMs(fastPath=fast_ms, slowPath=slow_ms),
     )
 
 

@@ -39,7 +39,21 @@ public record ForensicDossier(
         analystActions = analystActions == null ? List.of() : List.copyOf(analystActions);
         challengeResults = challengeResults == null ? List.of() : List.copyOf(challengeResults);
         methodology = methodology == null ? List.of() : List.copyOf(methodology);
-        identity = identity == null ? Map.of() : Map.copyOf(identity);
+        identity = copyIdentity(identity);
+    }
+
+    private static Map<String, Object> copyIdentity(Map<String, Object> identity) {
+        if (identity == null || identity.isEmpty()) {
+            return Map.of();
+        }
+        // Map.copyOf rejects null values — identity optionals may be null.
+        java.util.LinkedHashMap<String, Object> copy = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : identity.entrySet()) {
+            if (e.getKey() != null) {
+                copy.put(e.getKey(), e.getValue());
+            }
+        }
+        return java.util.Collections.unmodifiableMap(copy);
     }
 
     public ForensicDossier withDigests(String manifestSha256, String pdfSha256) {
@@ -100,7 +114,18 @@ public record ForensicDossier(
             Map<String, Object> payload
     ) {
         public ChallengeEvent {
-            payload = payload == null ? Map.of() : Map.copyOf(payload);
+            // Payload may contain null optionals — avoid Map.copyOf.
+            if (payload == null || payload.isEmpty()) {
+                payload = Map.of();
+            } else {
+                java.util.LinkedHashMap<String, Object> copy = new java.util.LinkedHashMap<>();
+                for (Map.Entry<String, Object> e : payload.entrySet()) {
+                    if (e.getKey() != null) {
+                        copy.put(e.getKey(), e.getValue());
+                    }
+                }
+                payload = java.util.Collections.unmodifiableMap(copy);
+            }
         }
     }
 
