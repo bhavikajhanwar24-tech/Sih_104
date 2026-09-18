@@ -13,7 +13,10 @@ from app import __version__
 from app.config import settings
 from app.emitter import FeatureEmitter
 from app.normaliser import normalise
+from app import redteam_state
+from app.modules.adversarial import apply as apply_perturbation
 from app.routes.enrol import router as enrol_router
+from app.routes.redteam import router as redteam_router
 from app.scheduler import SessionScheduler
 from app.session import registry
 from app.types import ChannelProfile, IngestHello
@@ -82,6 +85,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="SentinelVoice Inference Plane", version=__version__, lifespan=lifespan)
 app.include_router(enrol_router)
+app.include_router(redteam_router)
 
 
 @app.get("/health")
@@ -118,6 +122,7 @@ async def open_session(
 @app.post("/session/{sid}/close")
 async def close_session(sid: str) -> dict[str, Any]:
     await scheduler.stop(sid)
+    redteam_state.clear_config(sid)
     closed = registry.close(sid)
     if not closed:
         raise HTTPException(status_code=404, detail="session_not_found")
@@ -140,6 +145,9 @@ async def push_pcm(sid: str, request: Request) -> dict[str, Any]:
     if len(raw) % 4:
         raw = raw[: len(raw) - (len(raw) % 4)]
     pcm = np.frombuffer(raw, dtype="<f4").astype(np.float32, copy=True)
+    rt_cfg = redteam_state.get_config(sid)
+    if rt_cfg.enabled:
+        pcm = apply_perturbation(pcm, settings.sample_rate, rt_cfg)
     session.ring_buffer.write(pcm)
     session.seq += 1
     if is_speech(pcm):
@@ -151,6 +159,7 @@ async def push_pcm(sid: str, request: Request) -> dict[str, Any]:
         "sessionId": sid,
         "samples": int(pcm.size),
         "seq": session.seq,
+        "perturbed": bool(rt_cfg.enabled),
     }
 
 
@@ -202,6 +211,10 @@ async def ingest(websocket: WebSocket, sid: str) -> None:
                 source=hello.source,
             )
             session.profile = profile
+            # Defensive red-team: apply live perturbations before ring write (never persist).
+            rt_cfg = redteam_state.get_config(sid)
+            if rt_cfg.enabled:
+                pcm = apply_perturbation(pcm, settings.sample_rate, rt_cfg)
             session.ring_buffer.write(pcm)
             session.seq += 1
             frames += 1

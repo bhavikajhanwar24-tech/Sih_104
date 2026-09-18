@@ -4,6 +4,16 @@ Python 3.11+ FastAPI service that holds **all raw PCM** for SentinelVoice.
 
 Raw PCM exists **only** in `RingBuffer`: fixed 8 s of float32, overwritten in place, never grown, never written to disk or logs. `close()` calls `zeroise()`. See Context §6.3.
 
+## Red-team / robustness evaluator (defensive only)
+
+`app/modules/adversarial.py` and `POST/PUT /redteam/{sid}/*` are a **defensive testing tool**.
+They perturb *existing* audio (noise, pitch/time warps, codec round-trip, reverb, breath-like
+bursts, packet loss, band-limiting) so you can watch acoustic family scores degrade while
+contextual families hold — Context §9.3 / §16.2.
+
+**This is not an attack toolkit.** There is no voice-clone generation, RVC, TTS, or speaker
+embedding transfer in this module. See `GET /redteam/capabilities` (`clone_generation: false`).
+
 ## DSP modules (P4.1–P4.2)
 
 ```bash
