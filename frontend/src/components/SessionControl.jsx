@@ -23,6 +23,7 @@ export function SessionControl({ className = '' }) {
   const {
     sessionId,
     isRunning,
+    awaitingSip,
     channelProfile,
     scenarioId,
     startedAtMs,
@@ -106,9 +107,15 @@ export function SessionControl({ className = '' }) {
         <Stat label="Session ID" value={sessionId ?? '—'} variant="mono" />
         <Stat label="Elapsed" value={elapsed} variant="mono" />
         <Badge variant={isRunning ? 'live' : 'neutral'}>
-          {isRunning ? 'live' : 'idle'}
+          {isRunning ? (awaitingSip ? 'waiting sip' : 'live') : 'idle'}
         </Badge>
       </div>
+      {awaitingSip ? (
+        <p className="mt-2 text-xs text-sv-muted">
+          Dial <span className="font-mono text-sv-fg">1002</span> from the caller softphone — Analyst
+          attaches when the AudioSocket tap opens.
+        </p>
+      ) : null}
       {sessionError ? (
         <p className="mt-2 text-xs text-sv-fault" role="alert">
           {sessionError}

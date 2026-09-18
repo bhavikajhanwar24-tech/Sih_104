@@ -1,12 +1,16 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CHANNEL_PROFILES } from '@/contracts';
 import { SEED_SCENARIOS } from '@/theme.js';
+
+/** Softphone / AudioSocket path — attach to Decision Plane session opened by the bridge. */
+export const SIP_SCENARIO_ID = 'pstn-narrowband';
 
 /**
  * @typedef {Object} SessionContextValue
  * @property {string | null} sessionId
  * @property {boolean} isRunning
+ * @property {boolean} awaitingSip  true while listening for a SIP/AudioSocket session
  * @property {string} channelProfile
  * @property {string} scenarioId
  * @property {number | null} startedAtMs
@@ -30,17 +34,73 @@ const SessionContext = createContext(/** @type {SessionContextValue | null} */ (
 export function SessionProvider({ children }) {
   const [sessionId, setSessionId] = useState(/** @type {string | null} */ (null));
   const [isRunning, setIsRunning] = useState(false);
+  const [awaitingSip, setAwaitingSip] = useState(false);
   const [channelProfile, setChannelProfile] = useState(CHANNEL_PROFILES.WEBRTC_WIDEBAND);
-  const [scenarioId, setScenarioId] = useState(SEED_SCENARIOS[0].id);
+  const [scenarioId, setScenarioIdState] = useState(SEED_SCENARIOS[0].id);
   const [startedAtMs, setStartedAtMs] = useState(/** @type {number | null} */ (null));
   const [highlightedReasonCode, setHighlightedReasonCode] = useState(
     /** @type {string | null} */ (null),
   );
   const [sessionError, setSessionError] = useState(/** @type {string | null} */ (null));
+  const sipOwnedRef = useRef(false);
+  const knownAtListenRef = useRef(/** @type {Set<string>} */ (new Set()));
+
+  const setScenarioId = useCallback((id) => {
+    setScenarioIdState(id);
+    if (id === SIP_SCENARIO_ID) {
+      setChannelProfile(CHANNEL_PROFILES.PSTN_NARROWBAND);
+    } else if (id === 'live-browser') {
+      setChannelProfile(CHANNEL_PROFILES.WEBRTC_WIDEBAND);
+    }
+  }, []);
+
+  const stopSession = useCallback(async () => {
+    const id = sessionId;
+    const sipOwned = sipOwnedRef.current;
+    setIsRunning(false);
+    setAwaitingSip(false);
+    setStartedAtMs(null);
+    setHighlightedReasonCode(null);
+    setSessionError(null);
+    setSessionId(null);
+    sipOwnedRef.current = false;
+    knownAtListenRef.current = new Set();
+    // SIP sessions are owned by the AudioSocket bridge — UI only detaches.
+    if (!id || sipOwned) return;
+    try {
+      await fetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
+    } catch {
+      /* UI already stopped; backend close is best-effort */
+    }
+  }, [sessionId]);
 
   const startSession = useCallback(async () => {
     setSessionError(null);
+    setHighlightedReasonCode(null);
+
+    if (scenarioId === SIP_SCENARIO_ID) {
+      // Listen for a Decision Plane session created by gateway/asterisk_bridge.py
+      try {
+        const snap = await fetch('/api/v1/session');
+        const body = snap.ok ? await snap.json().catch(() => ({})) : {};
+        const existing = Array.isArray(body.sessions) ? body.sessions : [];
+        knownAtListenRef.current = new Set(
+          existing.map((s) => (s && typeof s.sessionId === 'string' ? s.sessionId : '')).filter(Boolean),
+        );
+      } catch {
+        knownAtListenRef.current = new Set();
+      }
+      sipOwnedRef.current = true;
+      setSessionId(null);
+      setAwaitingSip(true);
+      setIsRunning(true);
+      setStartedAtMs(Date.now());
+      return;
+    }
+
     const id = `sv-${scenarioId}-${Date.now().toString(36)}`;
+    sipOwnedRef.current = false;
+    setAwaitingSip(false);
     try {
       const res = await fetch('/api/v1/session/start', {
         method: 'POST',
@@ -63,7 +123,6 @@ export function SessionProvider({ children }) {
       setSessionId(resolvedId);
       setStartedAtMs(Date.now());
       setIsRunning(true);
-      setHighlightedReasonCode(null);
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'session start failed');
       setIsRunning(false);
@@ -72,25 +131,44 @@ export function SessionProvider({ children }) {
     }
   }, [channelProfile, scenarioId]);
 
-  const stopSession = useCallback(async () => {
-    const id = sessionId;
-    setIsRunning(false);
-    setStartedAtMs(null);
-    setHighlightedReasonCode(null);
-    setSessionError(null);
-    setSessionId(null);
-    if (!id) return;
-    try {
-      await fetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
-    } catch {
-      /* UI already stopped; backend close is best-effort */
-    }
-  }, [sessionId]);
+  // Poll Decision Plane for a new SIP/AudioSocket session while awaiting.
+  useEffect(() => {
+    if (!awaitingSip || !isRunning) return undefined;
+
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch('/api/v1/session');
+        if (!res.ok || cancelled) return;
+        const body = await res.json().catch(() => ({}));
+        const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+        const candidate = sessions.find((s) => {
+          if (!s || typeof s.sessionId !== 'string') return false;
+          if (knownAtListenRef.current.has(s.sessionId)) return false;
+          return s.channelProfile === CHANNEL_PROFILES.PSTN_NARROWBAND;
+        });
+        if (!candidate || cancelled) return;
+        setSessionId(candidate.sessionId);
+        setAwaitingSip(false);
+        setSessionError(null);
+      } catch {
+        /* keep polling */
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [awaitingSip, isRunning]);
 
   const value = useMemo(
     () => ({
       sessionId,
       isRunning,
+      awaitingSip,
       channelProfile,
       scenarioId,
       startedAtMs,
@@ -105,11 +183,13 @@ export function SessionProvider({ children }) {
     [
       sessionId,
       isRunning,
+      awaitingSip,
       channelProfile,
       scenarioId,
       startedAtMs,
       highlightedReasonCode,
       sessionError,
+      setScenarioId,
       startSession,
       stopSession,
     ],

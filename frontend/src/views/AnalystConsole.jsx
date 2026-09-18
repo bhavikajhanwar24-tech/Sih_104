@@ -21,7 +21,7 @@ import { INTERVENTION_LEVELS } from '@/contracts';
  *   [ live transcript ][ reasons list        ]
  */
 export function AnalystConsole() {
-  const { sessionId, isRunning, sessionError } = useSession();
+  const { sessionId, isRunning, sessionError, scenarioId, awaitingSip } = useSession();
   const { latest, error: telemetryError } = useTelemetrySocket(sessionId);
   const [overrideOpen, setOverrideOpen] = useState(false);
 
@@ -34,8 +34,13 @@ export function AnalystConsole() {
         ? 'ready'
         : 'empty';
 
-  const emptyMsg = !isRunning ? 'Start a session to begin' : 'waiting for audio';
+  const emptyMsg = !isRunning
+    ? 'Start a session to begin'
+    : awaitingSip
+      ? 'Waiting for SIP call… dial 1002 from softphone'
+      : 'waiting for audio';
   const errMsg = sessionError || telemetryError || 'Telemetry error';
+  const showMic = Boolean(sessionId) && scenarioId === 'live-browser';
 
   async function postRelease() {
     if (!sessionId) return;
@@ -55,7 +60,7 @@ export function AnalystConsole() {
     <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-2 p-2 md:gap-3 md:p-3">
       <div className="flex shrink-0 flex-col gap-2 lg:flex-row">
         <SessionControl className="min-w-0 flex-1" />
-        {sessionId ? (
+        {showMic ? (
           <div className="w-full shrink-0 lg:w-72">
             <MicControl sessionId={sessionId} autoStart />
           </div>
