@@ -84,6 +84,21 @@ public class CallSessionController {
         return ResponseEntity.ok(descriptor(session, "started"));
     }
 
+    /**
+     * List active Decision Plane sessions (newest first). Analyst uses this to attach
+     * to a SIP/AudioSocket session opened by the gateway bridge.
+     */
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> listSessions() {
+        List<Map<String, Object>> items = callSessionManager.listSessions().stream()
+                .map(session -> descriptor(session, "ok"))
+                .toList();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sessions", items);
+        body.put("count", items.size());
+        return ResponseEntity.ok(body);
+    }
+
     @GetMapping("/{sessionId}")
     public ResponseEntity<Map<String, Object>> getSession(@PathVariable String sessionId) {
         return callSessionManager.getSession(sessionId)

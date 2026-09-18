@@ -14,6 +14,53 @@ from gateway.protocol.audiosocket import FRAME_AUDIO, FRAME_TERMINATE, FRAME_UUI
 
 
 @pytest.mark.asyncio
+async def test_handle_client_opens_decision_plane() -> None:
+    uid = uuid.uuid4()
+    audio = b"\x00\x00" * 160
+    blob = (
+        encode_frame(FRAME_UUID, uid.bytes)
+        + encode_frame(FRAME_AUDIO, audio)
+        + encode_frame(FRAME_TERMINATE, b"")
+    )
+    reader = asyncio.StreamReader()
+    reader.feed_data(blob)
+    reader.feed_eof()
+
+    class _Writer:
+        def write(self, data: bytes) -> None:
+            return None
+
+        async def drain(self) -> None:
+            return None
+
+        def get_extra_info(self, _name: str) -> tuple:
+            return ("127.0.0.1", 12345)
+
+        def close(self) -> None:
+            return None
+
+        async def wait_closed(self) -> None:
+            return None
+
+    metrics = Metrics()
+    ml = MlEngineClient("http://ml.test", metrics)
+    ml.open_session = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    ml.close_session = AsyncMock()  # type: ignore[method-assign]
+    ml.push_pcm = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    decision = AsyncMock()
+    decision.open_session = AsyncMock(return_value=True)
+    decision.close_session = AsyncMock()
+
+    with patch("gateway.asterisk_bridge.normalise") as norm:
+        pcm = np.zeros(320, dtype=np.float32)
+        norm.return_value = (pcm, "PSTN_NARROWBAND")
+        await handle_client(reader, _Writer(), ml, metrics, decision)  # type: ignore[arg-type]
+
+    decision.open_session.assert_awaited_once_with(str(uid))
+    decision.close_session.assert_awaited_once_with(str(uid))
+
+
+@pytest.mark.asyncio
 async def test_handle_client_opens_normalises_and_closes() -> None:
     uid = uuid.uuid4()
     # 20 ms SLIN16 silence

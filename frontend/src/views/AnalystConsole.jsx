@@ -1,25 +1,41 @@
+import { useState } from 'react';
 import PropTypes from 'prop-types';
+<<<<<<< HEAD
 import { IdentityCard } from '@/components/IdentityCard.jsx';
 import { MicControl } from '@/components/MicControl.jsx';
 import { ReasonsList } from '@/components/ReasonsList.jsx';
+=======
+import { InterventionBar } from '@/components/InterventionBar.jsx';
+import { MicControl } from '@/components/MicControl.jsx';
+import { OverrideDialog } from '@/components/OverrideDialog.jsx';
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
 import { RiskGauge } from '@/components/RiskGauge.jsx';
 import { RiskTimeline } from '@/components/RiskTimeline.jsx';
 import { SessionControl } from '@/components/SessionControl.jsx';
+import { SupervisorAlert } from '@/components/SupervisorAlert.jsx';
+import { TransactionPanel } from '@/components/TransactionPanel.jsx';
 import { Panel } from '@/components/ui/Panel.jsx';
 import { useSession } from '@/context/SessionContext.jsx';
 import { useTelemetrySocket } from '@/hooks/useTelemetrySocket.js';
+import { INTERVENTION_LEVELS } from '@/contracts';
 
 /**
  * Analyst operations view — named grid slots for later widgets.
  *
  * Layout (1280×720 safe):
  *   [ identity ][ risk gauge ][ intervention ]
- *   [ spectrogram     ][ evidence panel      ]
+ *   [ spectrogram     ][ transaction panel   ]
  *   [ live transcript ][ reasons list        ]
  */
 export function AnalystConsole() {
+<<<<<<< HEAD
   const { sessionId, isRunning, sessionError, highlightedFamily } = useSession();
   const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
+=======
+  const { sessionId, isRunning, sessionError, scenarioId, awaitingSip } = useSession();
+  const { latest, error: telemetryError } = useTelemetrySocket(sessionId);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
 
   const hasFrame = latest != null;
   const bootStatus = !isRunning
@@ -30,14 +46,33 @@ export function AnalystConsole() {
         ? 'ready'
         : 'empty';
 
-  const emptyMsg = !isRunning ? 'Start a session to begin' : 'waiting for audio';
+  const emptyMsg = !isRunning
+    ? 'Start a session to begin'
+    : awaitingSip
+      ? 'Waiting for SIP call… dial 1002 from softphone'
+      : 'waiting for audio';
   const errMsg = sessionError || telemetryError || 'Telemetry error';
+  const showMic = Boolean(sessionId) && scenarioId === 'live-browser';
+
+  async function postRelease() {
+    if (!sessionId) return;
+    const reason = window.prompt(
+      'Release hold — mandatory audit reason (≥10 chars):',
+      'Supervisor released auto-hold after review',
+    );
+    if (!reason || reason.trim().length < 10) return;
+    await fetch(`/api/v1/intervention/${encodeURIComponent(sessionId)}/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ analystId: 'supervisor-demo', reason: reason.trim() }),
+    });
+  }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 p-2 md:gap-3 md:p-3">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-2 p-2 md:gap-3 md:p-3">
       <div className="flex shrink-0 flex-col gap-2 lg:flex-row">
         <SessionControl className="min-w-0 flex-1" />
-        {sessionId ? (
+        {showMic ? (
           <div className="w-full shrink-0 lg:w-72">
             <MicControl sessionId={sessionId} autoStart />
           </div>
@@ -74,9 +109,10 @@ export function AnalystConsole() {
         <Panel
           title="Intervention"
           slot="intervention"
-          status={bootStatus}
+          status={bootStatus === 'error' ? 'error' : isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
+<<<<<<< HEAD
           className="col-span-12 h-[16rem] sm:col-span-4 sm:h-[18rem]"
         >
           <PlaceholderBody
@@ -86,6 +122,17 @@ export function AnalystConsole() {
               `prev ${latest?.intervention?.previousLevel ?? '—'}`,
             ]}
           />
+=======
+          className="col-span-12 h-[11rem] sm:col-span-4"
+          variant="flush"
+        >
+          <div className="h-full p-2">
+            <InterventionBar
+              frame={latest}
+              onOverrideClick={sessionId ? () => setOverrideOpen(true) : undefined}
+            />
+          </div>
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
         </Panel>
 
         <Panel
@@ -94,19 +141,21 @@ export function AnalystConsole() {
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[12rem] md:col-span-7"
+          className="col-span-12 h-[14rem] md:col-span-7"
         >
           <PlaceholderBody lines={['Spectrogram canvas — P6.x']} />
         </Panel>
 
         <Panel
-          title="Evidence"
-          slot="evidence"
-          status={bootStatus}
+          title="Transaction"
+          slot="transaction"
+          status={isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[12rem] md:col-span-5"
+          className="col-span-12 h-[14rem] md:col-span-5"
+          variant="flush"
         >
+<<<<<<< HEAD
           <PlaceholderBody
             lines={[
               highlightedFamily
@@ -115,6 +164,11 @@ export function AnalystConsole() {
               'Click a reason to highlight its family',
             ]}
           />
+=======
+          <div className="h-full overflow-auto p-2">
+            <TransactionPanel sessionId={sessionId} frame={latest} />
+          </div>
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
         </Panel>
 
         <Panel
@@ -143,11 +197,41 @@ export function AnalystConsole() {
           className="col-span-12 h-[10rem] md:col-span-5"
           variant="flush"
         >
+<<<<<<< HEAD
           <div className="p-2">
             <ReasonsList frame={latest} />
           </div>
+=======
+          <PlaceholderBody
+            lines={
+              Array.isArray(latest?.topReasons) && latest.topReasons.length > 0
+                ? latest.topReasons.map((r) => `${r.code ?? '?'} — ${r.text ?? ''}`)
+                : ['Reasons list — empty until fusion emits']
+            }
+          />
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
         </Panel>
       </div>
+
+      <SupervisorAlert
+        frame={latest}
+        sessionId={sessionId}
+        onAccept={() => {
+          /* hold acknowledged — lock remains server-side */
+        }}
+        onRelease={() => {
+          void postRelease();
+        }}
+      />
+
+      {sessionId ? (
+        <OverrideDialog
+          open={overrideOpen}
+          onClose={() => setOverrideOpen(false)}
+          sessionId={sessionId}
+          currentLevel={latest?.intervention?.level ?? INTERVENTION_LEVELS.LEVEL_1_SILENT}
+        />
+      ) : null}
     </div>
   );
 }
