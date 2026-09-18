@@ -128,7 +128,7 @@ export function CrossChannelTimeline({ sessionId, callStartedAtMs, className = '
   return (
     <div className={`flex h-full min-h-0 flex-col gap-2 p-1 ${className}`} data-testid="cross-channel-timeline">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-sv-muted">
+        <p className="font-display text-xs font-semibold text-sv-fg">
           This attack started ~{formatHours(hoursAgo)} ago
         </p>
         <p className="font-mono text-[10px] tabular-nums text-sv-muted">
@@ -138,6 +138,13 @@ export function CrossChannelTimeline({ sessionId, callStartedAtMs, className = '
           ) : null}
         </p>
       </div>
+
+      <p className="px-1 text-[10px] leading-snug text-sv-muted">
+        {precursors.map((n) => CHANNEL_LABEL[n.channel] ?? n.channel).join(' → ')} → Call
+        {payload?.matchingCampaign
+          ? ' — same campaign ID on precursors (CROSS_CHANNEL_PRECURSOR HIGH)'
+          : ''}
+      </p>
 
       <div className="relative flex min-h-[4.5rem] flex-1 items-center px-2">
         <div className="absolute left-4 right-4 top-1/2 h-px -translate-y-1/2 bg-sv-border" />

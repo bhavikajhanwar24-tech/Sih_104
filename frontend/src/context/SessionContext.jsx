@@ -215,6 +215,15 @@ SessionProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
+/** Scenario 2 demo aliases — CFO/deepfake wire against Sunita Rao. */
+function isScenario2Wire(scenarioId) {
+  return (
+    scenarioId === 'cfo-wire-inr' ||
+    scenarioId === 'deepfake-ceo-wire' ||
+    scenarioId === 'deepfake-cfo-wire'
+  );
+}
+
 /**
  * @returns {SessionContextValue}
  */
