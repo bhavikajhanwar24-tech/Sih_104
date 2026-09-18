@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>In-memory session state for fusion, intervention, and the analyst console.
  * Telemetry history is a bounded ring of scores and enums only.
  *
- * <p>TODO(P8): identity/context fields (directory match, claimed role, voice-passport verdict, presence).
+ * <p>Identity/context fields are resolved per frame by {@code IdentityResolutionService} (P8.1).
  */
 public class CallSession {
 

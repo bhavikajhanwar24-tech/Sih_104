@@ -275,7 +275,14 @@ public class FusionEngineTest {
                 ),
                 new SentinelProperties.Ml("http://localhost:8000", "ws://localhost:8000/ingest", 2000, 1500),
                 new SentinelProperties.Session(30, 100),
-                new SentinelProperties.Audit("SENTINELVOICE-GENESIS-v1")
+                new SentinelProperties.Audit("SENTINELVOICE-GENESIS-v1"),
+                new SentinelProperties.Identity(
+                        "^(ext-)?\\d{3,5}$",
+                        java.util.List.of("+91-22-6655-0100", "+91-22-6655-0001"),
+                        0.70,
+                        0.50,
+                        0.60
+                )
         );
     }
 

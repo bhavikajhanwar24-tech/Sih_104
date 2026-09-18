@@ -14,6 +14,10 @@ spring:
       ddl-auto: update
     database-platform: org.hibernate.dialect.H2Dialect
     show-sql: false
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
   h2:
     console:
       enabled: true
@@ -113,3 +117,25 @@ sentinelvoice:
     max-concurrent: 100
   audit:
     genesis-prefix: SENTINELVOICE-GENESIS-v1
+  identity:
+    # Internal PBX extensions (3–5 digits) or ext-NNNN
+    internal-extension-pattern: "^(ext-)?\\d{3,5}$"
+    registered-external-clis:
+      - "+91-22-6655-0001"
+      - "+91-22-6655-0100"
+      - "+91-22-6655-0003"
+      - "+91-22-6655-0004"
+      - "+91-22-6655-2010"
+      - "+91-22-6655-2011"
+      - "+91-22-6655-3020"
+      - "+91-22-6655-3021"
+      - "+91-22-6655-4030"
+      - "+91-22-6655-4031"
+      - "+91-22-6655-5040"
+      - "+91-22-6655-5041"
+      - "+91-22-6655-5042"
+      - "+91-22-6655-6050"
+      - "+91-22-6655-6051"
+    cosine-match-min: 0.70
+    cosine-mismatch-max: 0.50
+    spoof-high-threshold: 0.60
