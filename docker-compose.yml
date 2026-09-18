@@ -28,6 +28,8 @@ services:
       - ./gateway/asterisk/config/modules.conf:/etc/asterisk/modules.conf:ro
       - ./gateway/asterisk/config/logger.conf:/etc/asterisk/logger.conf:ro
       - ./gateway/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
+      # P7.3 actuation sounds (sound:sentinel-hold / sound:sentinel-whisper-warning)
+      - ./gateway/asterisk/sounds:/var/lib/asterisk/sounds/en:ro
     # Configs are also baked into the image; mounts win for live edits.
 
   ml-engine:

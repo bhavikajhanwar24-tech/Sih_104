@@ -166,3 +166,17 @@ sentinelvoice:
         - "vendor account ending 8821"
         - "payroll suspense 1001"
         - "rbi settlement pool"
+  # P7.3 — call actuation. Default noop is safe for unit tests / no telephony.
+  # For live SIP: set adapter=asterisk (ARI at ari-base-url with basic auth).
+  actuation:
+    adapter: asterisk
+    ari-base-url: http://127.0.0.1:8088/ari
+    ari-user: sentinel
+    ari-password: sentineldemo
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+    supervisor-endpoint: PJSIP/supervisor
+    cbs-freeze-url: http://127.0.0.1:8080/mock-cbs/freeze
+    mfa-timeout-ms: 90000
+    hold-sound-id: sentinel-hold
+    whisper-sound-id: sentinel-whisper-warning

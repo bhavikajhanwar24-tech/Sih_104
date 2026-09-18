@@ -28,7 +28,8 @@ public record SentinelProperties(
         @NotNull @Valid Session session,
         @NotNull @Valid Audit audit,
         @NotNull @Valid Identity identity,
-        @NotNull @Valid ContextScoring context
+        @NotNull @Valid ContextScoring context,
+        @NotNull @Valid Actuation actuation
 ) {
 
     private static final Set<String> REQUIRED_FAMILIES = Set.of(
@@ -179,6 +180,25 @@ public record SentinelProperties(
             @DecimalMin("1.0") double largeAmountThresholdInr,
             @Min(1) int velocityHighValueLimit,
             @NotNull List<String> knownBeneficiaryHints
+    ) {
+    }
+
+    /**
+     * Call actuation (P7.3). Default adapter {@code noop} is safe for tests;
+     * set {@code asterisk} for live SIP ARI hold/terminate.
+     */
+    public record Actuation(
+            @NotBlank String adapter,
+            @NotBlank String ariBaseUrl,
+            @NotBlank String ariUser,
+            @NotBlank String ariPassword,
+            @Min(1) int connectTimeoutMs,
+            @Min(1) int readTimeoutMs,
+            @NotBlank String supervisorEndpoint,
+            @NotBlank String cbsFreezeUrl,
+            @Min(1) long mfaTimeoutMs,
+            @NotBlank String holdSoundId,
+            @NotBlank String whisperSoundId
     ) {
     }
 

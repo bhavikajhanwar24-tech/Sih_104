@@ -1,5 +1,6 @@
 package com.sentinelvoice.ingest;
 
+import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
@@ -63,6 +64,7 @@ public class FeatureFrameIngestService {
     private final TransactionPolicyService transactionPolicyService;
     private final DirectoryService directoryService;
     private final AuditWriteDispatcher auditWriteDispatcher;
+    private final ActuationService actuationService;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final Clock clock;
@@ -82,6 +84,7 @@ public class FeatureFrameIngestService {
             TransactionPolicyService transactionPolicyService,
             DirectoryService directoryService,
             AuditWriteDispatcher auditWriteDispatcher,
+            ActuationService actuationService,
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
             MeterRegistry meterRegistry,
@@ -97,6 +100,7 @@ public class FeatureFrameIngestService {
         this.transactionPolicyService = transactionPolicyService;
         this.directoryService = directoryService;
         this.auditWriteDispatcher = auditWriteDispatcher;
+        this.actuationService = actuationService;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.clock = clock;
@@ -226,6 +230,12 @@ public class FeatureFrameIngestService {
                         nowMs
                 )
         );
+
+        // L5 only reaches the FSM after analyst confirm; treat LEVEL_5 as confirmed for actuation.
+        if (decision.changed()) {
+            boolean analystConfirmed = decision.level() == InterventionLevel.LEVEL_5_TERMINATE;
+            actuationService.apply(session.getSessionId(), decision.level(), analystConfirmed);
+        }
 
         List<ReasonGenerator.GeneratedReason> reasons = reasonGenerator.generate(
                 fusionContext,

@@ -56,7 +56,7 @@ async def test_handle_client_opens_decision_plane() -> None:
         norm.return_value = (pcm, "PSTN_NARROWBAND")
         await handle_client(reader, _Writer(), ml, metrics, decision)  # type: ignore[arg-type]
 
-    decision.open_session.assert_awaited_once_with(str(uid))
+    decision.open_session.assert_awaited_once_with(str(uid), channel_id=None)
     decision.close_session.assert_awaited_once_with(str(uid))
 
 

@@ -185,7 +185,7 @@ class DecisionPlaneClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def open_session(self, sid: str) -> bool:
+    async def open_session(self, sid: str, channel_id: str | None = None) -> bool:
         url = f"{self.base_url}/api/v1/session/start"
         body = {
             "schema": "sentinelvoice.SessionStartRequest/1",
@@ -199,10 +199,14 @@ class DecisionPlaneClient:
             r = await self._client.post(url, json=body)
             if r.status_code == 200:
                 LOG.info("decision_session_open sid=%s profile=PSTN_NARROWBAND", sid)
+                if channel_id:
+                    await self.register_channel_map(sid, channel_id)
                 return True
             # Idempotent: session may already exist from a prior attach / retry.
             if r.status_code == 400 and "already exists" in (r.text or "").lower():
                 LOG.info("decision_session_exists sid=%s", sid)
+                if channel_id:
+                    await self.register_channel_map(sid, channel_id)
                 return True
             LOG.error(
                 "FAIL-OPEN: Decision Plane open returned %s — gauge will not move sid=%s body=%s",
@@ -216,6 +220,28 @@ class DecisionPlaneClient:
                 sid,
             )
         return False
+
+    async def register_channel_map(self, sid: str, channel_id: str) -> None:
+        """Register sessionId → Asterisk channelId for ARI actuation (P7.3)."""
+        if not sid or not channel_id:
+            return
+        url = f"{self.base_url}/api/v1/actuation/channel-map"
+        try:
+            r = await self._client.post(
+                url, json={"sessionId": sid, "channelId": channel_id}
+            )
+            if r.status_code == 200:
+                LOG.info("channel_map_ok sid=%s channelId=%s", sid, channel_id)
+                return
+            LOG.warning(
+                "channel_map_failed sid=%s channelId=%s status=%s body=%s",
+                sid,
+                channel_id,
+                r.status_code,
+                (r.text or "")[:200],
+            )
+        except Exception:
+            LOG.exception("channel_map_exception sid=%s channelId=%s", sid, channel_id)
 
     async def close_session(self, sid: str) -> None:
         url = f"{self.base_url}/api/v1/session/{sid}/close"
@@ -245,6 +271,7 @@ async def handle_client(
     ml: MlEngineClient,
     metrics: Metrics,
     decision: Optional[DecisionPlaneClient] = None,
+    ari: Optional[AriSnoopController] = None,
 ) -> None:
     peer = writer.get_extra_info("peername")
     LOG.info("audiosocket_connect peer=%s", peer)
@@ -274,9 +301,13 @@ async def handle_client(
 
         sid = _sid_from_uuid_payload(first.payload)
         _uuid_to_sid[sid] = sid
+        channel_id = ari.channel_for_session(sid) if ari is not None else None
         ml_open = await ml.open_session(sid)
         if decision is not None:
-            decision_open = await decision.open_session(sid)
+            decision_open = await decision.open_session(sid, channel_id=channel_id)
+            # If ARI already mapped the caller channel, re-register after session open.
+            if channel_id:
+                await decision.register_channel_map(sid, channel_id)
 
         while True:
             try:
@@ -381,20 +412,33 @@ class AriSnoopController:
     BridgeEnter events; polling /channels catches live caller legs reliably.
     """
 
-    def __init__(self, ari_url: str, user: str, password: str, app: str) -> None:
+    def __init__(
+        self,
+        ari_url: str,
+        user: str,
+        password: str,
+        app: str,
+        decision: DecisionPlaneClient | None = None,
+    ) -> None:
         self.ari_url = ari_url.rstrip("/")
         self.user = user
         self.password = password
         self.app = app
+        self.decision = decision
         self._http = httpx.AsyncClient(
             base_url=self.ari_url,
             auth=(user, password),
             timeout=5.0,
         )
         self._snooped: set[str] = set()
+        # sessionId → caller channel id (for ARI hold/terminate on the bridged leg)
+        self._sid_to_channel: dict[str, str] = {}
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    def channel_for_session(self, sid: str) -> Optional[str]:
+        return self._sid_to_channel.get(sid)
 
     async def _get_var(self, channel_id: str, name: str) -> Optional[str]:
         try:
@@ -439,6 +483,7 @@ class AriSnoopController:
                 )
                 return
             self._snooped.add(channel_id)
+            self._sid_to_channel[sid] = channel_id
             LOG.info(
                 "ari_snoop_ok channel=%s name=%s snoop=%s sid=%s",
                 channel_id,
@@ -446,6 +491,9 @@ class AriSnoopController:
                 snoop_id,
                 sid,
             )
+            # Prefer the bridged caller channel for hold/terminate (not the snoop leg).
+            if self.decision is not None:
+                await self.decision.register_channel_map(sid, channel_id)
         except Exception:
             LOG.exception("ari_snoop_exception channel=%s", channel_id)
 
@@ -607,9 +655,11 @@ async def run_server(
     decision = DecisionPlaneClient(decision_url)
     ari: Optional[AriSnoopController] = None
     ari_task: Optional[asyncio.Task[None]] = None
+    if enable_ari:
+        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP, decision=decision)
 
     async def _on_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        await handle_client(reader, writer, ml, metrics, decision)
+        await handle_client(reader, writer, ml, metrics, decision, ari)
 
     server = await asyncio.start_server(_on_connect, host, port)
     addrs = ", ".join(str(s.getsockname()) for s in server.sockets or [])
@@ -618,8 +668,7 @@ async def run_server(
         "Design: fail open, not closed — ml-engine outages discard samples; calls stay up"
     )
     metrics_task = asyncio.create_task(metrics_logger(metrics, METRICS_INTERVAL_S))
-    if enable_ari:
-        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP)
+    if ari is not None:
         ari_task = asyncio.create_task(ari.run())
     try:
         async with server:

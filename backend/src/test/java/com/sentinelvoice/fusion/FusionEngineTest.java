@@ -292,6 +292,19 @@ public class FusionEngineTest {
                                 100_000.0, 5_000_000.0, 3,
                                 java.util.List.of("vendor account ending 8821", "payroll suspense 1001")
                         )
+                ),
+                new SentinelProperties.Actuation(
+                        "noop",
+                        "http://127.0.0.1:8088/ari",
+                        "sentinel",
+                        "sentineldemo",
+                        2000,
+                        3000,
+                        "PJSIP/supervisor",
+                        "http://127.0.0.1:8080/mock-cbs/freeze",
+                        90_000L,
+                        "sentinel-hold",
+                        "sentinel-whisper-warning"
                 )
         );
     }

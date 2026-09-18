@@ -115,6 +115,11 @@ ml-engine\.venv\Scripts\python.exe gateway/asterisk_bridge.py
 - On UUID: opens **ml-engine** + **Decision Plane** sessions (same `sessionId`) so FeatureFrames are not dropped
 - Dialplan `[sentinel-snoop]` connects to `host.docker.internal:9092`
 - ARI snoop attaches a media **copy** so caller↔agent two-way audio stays clean
+- On snoop success (and AudioSocket UUID open when channel is known), bridge POSTs
+  `/api/v1/actuation/channel-map` so Decision Plane can hold/terminate via ARI
+- Actuation sounds (`gateway/asterisk/sounds/*.wav`, 8 kHz mono) mount into
+  `/var/lib/asterisk/sounds/en` — ARI plays `sound:sentinel-hold` /
+  `sound:sentinel-whisper-warning`
 - If ml-engine / Decision Plane is down the bridge **fail-opens** (accepts/discards audio; call stays up)
 - Analyst scenario **Live SIP (AudioSocket)** polls `/api/v1/session` and attaches when the call appears
 

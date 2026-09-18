@@ -8,10 +8,13 @@ LABEL org.opencontainers.image.description="Local SIP PBX with caller/agent endp
 
 # Keep lab configs out of the path the image may reset, then copy in via our wrapper.
 COPY config/ /opt/sentinelvoice/asterisk-config/
+COPY sounds/ /opt/sentinelvoice/asterisk-sounds/
 COPY docker-entrypoint-sentinel.sh /docker-entrypoint-sentinel.sh
 RUN sed -i 's/\r$//' /docker-entrypoint-sentinel.sh \
  && chmod +x /docker-entrypoint-sentinel.sh \
- && cp -f /opt/sentinelvoice/asterisk-config/*.conf /etc/asterisk/
+ && cp -f /opt/sentinelvoice/asterisk-config/*.conf /etc/asterisk/ \
+ && mkdir -p /var/lib/asterisk/sounds/en \
+ && cp -f /opt/sentinelvoice/asterisk-sounds/*.wav /var/lib/asterisk/sounds/en/ 2>/dev/null || true
 
 # Health: Asterisk CLI responds (ARI checked by scripts/test-sip-call.sh).
 HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=5 \

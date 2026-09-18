@@ -137,6 +137,7 @@ class PipelineLatencyTest {
                 transaction,
                 mock(DirectoryService.class),
                 auditDispatcher,
+                mock(com.sentinelvoice.actuation.ActuationService.class),
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
                 meters,
