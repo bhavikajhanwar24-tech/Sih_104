@@ -17,4 +17,6 @@ public interface VoicePassportRepository extends JpaRepository<VoicePassport, St
     List<VoicePassport> findByEmployeeIdAndActiveTrue(String employeeId);
 
     Optional<VoicePassport> findByProfileIdAndActiveTrue(String profileId);
+
+    long countByActiveTrue();
 }

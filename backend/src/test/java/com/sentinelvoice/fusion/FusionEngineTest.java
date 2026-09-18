@@ -305,6 +305,13 @@ public class FusionEngineTest {
                         ),
                         "http://127.0.0.1:8080/mock-cbs/freeze",
                         "PJSIP/agent"
+                ),
+                new SentinelProperties.Compliance(
+                        90,
+                        7,
+                        24,
+                        "../benchmarks/results.json",
+                        "ml-engine/app/ring_buffer.py"
                 )
         );
     }

@@ -104,6 +104,22 @@ public class VoicePassportService {
         return consentRepository.save(record);
     }
 
+    @Transactional(readOnly = true)
+    public List<ConsentRecord> listConsents() {
+        return consentRepository.findAllByOrderByGrantedAtDesc();
+    }
+
+    @Transactional
+    public ConsentRecord withdrawConsent(long consentId) {
+        ConsentRecord record = consentRepository.findById(consentId)
+                .orElseThrow(() -> new NoSuchElementException("consent not found: " + consentId));
+        if (record.getWithdrawnAt() == null) {
+            record.setWithdrawnAt(Instant.now());
+            record = consentRepository.save(record);
+        }
+        return record;
+    }
+
     @Transactional
     public PassportDtos.EnrolResponse enrol(PassportDtos.EnrolRequest request) {
         if (request.employeeId() == null || request.employeeId().isBlank()) {

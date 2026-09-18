@@ -90,3 +90,35 @@ INSERT INTO interaction_edges (
  TIMESTAMP '2025-01-20 10:00:00', TIMESTAMP '2026-09-11 10:30:00', 10, 120),
 ('EMP-10003', 'EMP-30021', 22,
  TIMESTAMP '2025-05-01 15:00:00', TIMESTAMP '2026-08-28 15:10:00', 15, 280);
+
+-- DPDP §4/§6 consent register seeds for the compliance portal.
+INSERT INTO consent_records (
+  employee_id, purpose, notice_version, granted_at, granted_by, withdrawn_at, method
+)
+SELECT 'EMP-10492', 'VOICE_PASSPORT_ENROLMENT', 'notice-v1-2026',
+       TIMESTAMP '2026-08-01 10:00:00', 'EMP-10492', NULL, 'AFFIRMATIVE_UI'
+WHERE NOT EXISTS (
+  SELECT 1 FROM consent_records
+  WHERE employee_id = 'EMP-10492' AND purpose = 'VOICE_PASSPORT_ENROLMENT' AND withdrawn_at IS NULL
+);
+
+INSERT INTO consent_records (
+  employee_id, purpose, notice_version, granted_at, granted_by, withdrawn_at, method
+)
+SELECT 'EMP-20010', 'VOICE_PASSPORT_ENROLMENT', 'notice-v1-2026',
+       TIMESTAMP '2026-08-05 11:30:00', 'EMP-20010', NULL, 'AFFIRMATIVE_UI'
+WHERE NOT EXISTS (
+  SELECT 1 FROM consent_records
+  WHERE employee_id = 'EMP-20010' AND purpose = 'VOICE_PASSPORT_ENROLMENT' AND withdrawn_at IS NULL
+);
+
+INSERT INTO consent_records (
+  employee_id, purpose, notice_version, granted_at, granted_by, withdrawn_at, method
+)
+SELECT 'EMP-30020', 'VOICE_PASSPORT_ENROLMENT', 'notice-v1-2026',
+       TIMESTAMP '2026-07-20 09:15:00', 'compliance-officer',
+       TIMESTAMP '2026-09-01 16:00:00', 'AFFIRMATIVE_UI'
+WHERE NOT EXISTS (
+  SELECT 1 FROM consent_records
+  WHERE employee_id = 'EMP-30020' AND purpose = 'VOICE_PASSPORT_ENROLMENT'
+);

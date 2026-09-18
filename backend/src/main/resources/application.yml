@@ -185,3 +185,11 @@ sentinelvoice:
     # In-process MOCK CBS freeze sink (see MockCbsController).
     cbs-freeze-url: http://127.0.0.1:${server.port:8080}/mock-cbs/freeze
     supervisor-endpoint: PJSIP/agent
+  compliance:
+    telemetry-ttl-days: 90
+    audit-retention-years: 7
+    purge-interval-hours: 24
+    purge-interval-ms: 86400000
+    # P12 harness writes here; portal shows "evaluation not yet run" if missing.
+    fairness-results-path: ../benchmarks/results.json
+    raw-audio-enforcing-path: ml-engine/app/ring_buffer.py

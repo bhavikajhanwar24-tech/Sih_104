@@ -29,7 +29,8 @@ public record SentinelProperties(
         @NotNull @Valid Audit audit,
         @NotNull @Valid Identity identity,
         @NotNull @Valid ContextScoring context,
-        @NotNull @Valid Actuation actuation
+        @NotNull @Valid Actuation actuation,
+        @NotNull @Valid Compliance compliance
 ) {
 
     private static final Set<String> REQUIRED_FAMILIES = Set.of(
@@ -216,6 +217,18 @@ public record SentinelProperties(
             @NotBlank String password,
             @Min(1) int connectTimeoutMs,
             @Min(1) int readTimeoutMs
+    ) {
+    }
+
+    /**
+     * DPDP / RBI retention + fairness artefact paths (Context §13.3 / §13.5).
+     */
+    public record Compliance(
+            @Min(1) int telemetryTtlDays,
+            @Min(1) int auditRetentionYears,
+            @Min(1) long purgeIntervalHours,
+            @NotBlank String fairnessResultsPath,
+            @NotBlank String rawAudioEnforcingPath
     ) {
     }
 

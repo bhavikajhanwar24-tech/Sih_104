@@ -26,4 +26,6 @@ public interface ConsentRecordRepository extends JpaRepository<ConsentRecord, Lo
         List<ConsentRecord> list = findActive(employeeId, purpose);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.getFirst());
     }
+
+    List<ConsentRecord> findAllByOrderByGrantedAtDesc();
 }
