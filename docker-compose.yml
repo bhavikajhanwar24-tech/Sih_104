@@ -1,11 +1,34 @@
-# SentinelVoice — four-plane stack (stubs; implementations land in later phases)
+# SentinelVoice — four-plane stack
 # Services: asterisk (media) → ml-engine (inference) → backend (decision) → frontend (presentation)
 
 services:
   asterisk:
-    # Implemented in Phase 7 (P7.1 — Asterisk in Docker + softphones)
+    # P7.1 — Asterisk 20 LTS + caller/agent SIP + ARI (Context §11.3)
     build: ./gateway/asterisk
-    network_mode: host
+    container_name: sentinelvoice-asterisk
+    restart: unless-stopped
+    # Docker Desktop (Windows/Mac): host networking does NOT attach to the Windows
+    # localhost namespace — SIP/ARI on 127.0.0.1 look "up" in logs but are unreachable
+    # from softphones/curl on the host. Use published ports instead.
+    #
+    # Linux venue laptop: you may switch to `network_mode: host` and remove `ports:`
+    # (then ARI stays on 127.0.0.1 inside http.conf).
+    ports:
+      - "127.0.0.1:8088:8088"           # ARI (localhost only on the host)
+      - "5060:5060/udp"                 # SIP
+      - "10000-10100:10000-10100/udp"   # RTP
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Bind-mount lab configs so the image cannot reset http bindaddr to 127.0.0.1
+      - ./gateway/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
+      - ./gateway/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./gateway/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./gateway/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./gateway/asterisk/config/modules.conf:/etc/asterisk/modules.conf:ro
+      - ./gateway/asterisk/config/logger.conf:/etc/asterisk/logger.conf:ro
+      - ./gateway/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
+    # Configs are also baked into the image; mounts win for live edits.
 
   ml-engine:
     # Implemented in Phase 2 (P2.1 — FastAPI scaffold + ring buffer)
