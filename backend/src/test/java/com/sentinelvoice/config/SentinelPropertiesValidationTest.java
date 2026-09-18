@@ -76,11 +76,16 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.context.relationship.weight-hierarchy=0.35",
             "sentinelvoice.context.relationship.weight-off-hours=0.05",
             "sentinelvoice.context.relationship.weight-duration-anomaly=0.05",
+            "sentinelvoice.context.relationship.weight-cross-channel=0.40",
             "sentinelvoice.context.relationship.hierarchy-normalize-levels=6",
             "sentinelvoice.context.relationship.business-hour-start=9",
             "sentinelvoice.context.relationship.business-hour-end=18",
             "sentinelvoice.context.relationship.typical-hour-deviation-hours=4",
             "sentinelvoice.context.relationship.duration-anomaly-ratio=2.0",
+            "sentinelvoice.context.cross-channel.window-hours=48",
+            "sentinelvoice.context.cross-channel.matching-campaign-boost=0.35",
+            "sentinelvoice.context.cross-channel.indicator-match-boost=0.15",
+            "sentinelvoice.context.cross-channel.multi-channel-boost=0.10",
             "sentinelvoice.context.transaction.policy-violation-score=0.98",
             "sentinelvoice.context.transaction.weight-channel-denied=0.25",
             "sentinelvoice.context.transaction.weight-beneficiary-novel=0.20",
@@ -97,7 +102,12 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.actuation.ari.connect-timeout-ms=2000",
             "sentinelvoice.actuation.ari.read-timeout-ms=3000",
             "sentinelvoice.actuation.cbs-freeze-url=http://127.0.0.1:8080/mock-cbs/freeze",
-            "sentinelvoice.actuation.supervisor-endpoint=PJSIP/agent"
+            "sentinelvoice.actuation.supervisor-endpoint=PJSIP/agent",
+            "sentinelvoice.compliance.telemetry-ttl-days=90",
+            "sentinelvoice.compliance.audit-retention-years=7",
+            "sentinelvoice.compliance.purge-interval-hours=24",
+            "sentinelvoice.compliance.fairness-results-path=../ml-engine/benchmarks/results.json",
+            "sentinelvoice.compliance.raw-audio-enforcing-path=ml-engine/app/ring_buffer.py"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()

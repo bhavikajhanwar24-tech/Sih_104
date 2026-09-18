@@ -310,7 +310,7 @@ public class FusionEngineTest {
                         90,
                         7,
                         24,
-                        "../benchmarks/results.json",
+                        "../ml-engine/benchmarks/results.json",
                         "ml-engine/app/ring_buffer.py"
                 )
         );

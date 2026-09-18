@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev backend ml frontend asterisk test eval demo clean
+.PHONY: help dev backend ml frontend asterisk test eval codec-study demo clean
 
 help:
 	@echo "SentinelVoice - available targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make asterisk   - start the Asterisk container"
 	@echo "  make test       - run all test suites"
 	@echo "  make eval       - run the ML benchmark suite"
+	@echo "  make codec-study - codec robustness before/after table (§15.3)"
 	@echo "  make demo       - seed scenarios and start everything"
 	@echo "  make clean      - remove build artifacts"
 
@@ -37,6 +38,9 @@ test:
 
 eval:
 	cd ml-engine && python -m benchmarks.run_eval --limit 40 --synthetic --seed 42 --train-epochs 2
+
+codec-study:
+	cd ml-engine && python -m benchmarks.codec_study --limit 40 --synthetic --epochs 4 --seed 42 --retrain
 
 demo:
 	@echo "TODO: seed scenarios and start everything (preflight + up + seed)"

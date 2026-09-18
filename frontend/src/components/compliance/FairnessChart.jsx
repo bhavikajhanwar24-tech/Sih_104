@@ -35,14 +35,29 @@ export function FairnessChart() {
     if (!results) return [];
     /** @type {Array<{ label: string, fpr: number, facet: string }>} */
     const out = [];
-    for (const row of results.byLanguageGroup ?? []) {
-      out.push({ label: row.group, fpr: Number(row.fpr), facet: 'language' });
-    }
-    for (const row of results.byGender ?? []) {
-      out.push({ label: row.group, fpr: Number(row.fpr), facet: 'gender' });
-    }
-    for (const row of results.byChannelProfile ?? []) {
-      out.push({ label: row.group, fpr: Number(row.fpr), facet: 'channel' });
+    const push = (rows, facet) => {
+      for (const row of rows ?? []) {
+        if (row?.fpr == null || Number.isNaN(Number(row.fpr))) continue;
+        out.push({ label: String(row.group ?? '?'), fpr: Number(row.fpr), facet });
+      }
+    };
+    // Prefer portal-shaped payload from ComplianceMetricsService; fall back to raw P12 groups.
+    if (results.byLanguageGroup || results.byGender || results.byChannelProfile) {
+      push(results.byLanguageGroup, 'language');
+      push(results.byGender, 'gender');
+      push(results.byAgeBand, 'age');
+      push(results.byChannelProfile, 'channel');
+    } else if (Array.isArray(results.fairness?.groups)) {
+      for (const row of results.fairness.groups) {
+        const name = String(row.group ?? '');
+        const facet = name.includes('gender')
+          ? 'gender'
+          : name.includes('age')
+            ? 'age'
+            : 'language';
+        if (row.fpr == null) continue;
+        out.push({ label: name, fpr: Number(row.fpr), facet });
+      }
     }
     return out;
   }, [report]);
@@ -125,6 +140,7 @@ function drawBars(ctx, w, h, series) {
   const colours = {
     language: '#c45c26',
     gender: '#2a6f6f',
+    age: '#7c6cf0',
     channel: '#d4a017',
   };
 

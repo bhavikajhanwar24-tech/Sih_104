@@ -150,8 +150,9 @@ public class CrossChannelCorrelationService {
         if (session == null) {
             return null;
         }
-        // Scenario 2 seed path — CFO wire targets Sunita Rao.
-        if ("cfo-wire-inr".equals(session.getScenarioId())) {
+        // Scenario 2 (Context §14 / demo alias) — CFO wire targets Sunita Rao (EMP-50040).
+        String scenarioId = session.getScenarioId();
+        if (isScenario2WireFraud(scenarioId)) {
             return DEMO_CALLEE_EMPLOYEE_ID;
         }
         String callee = session.getCalleeId();
@@ -163,6 +164,16 @@ public class CrossChannelCorrelationService {
         }
         Optional<DirectoryRecord> byCli = directoryService.findByCli(callee);
         return byCli.map(DirectoryRecord::getEmployeeId).orElse(null);
+    }
+
+    private static boolean isScenario2WireFraud(String scenarioId) {
+        if (scenarioId == null || scenarioId.isBlank()) {
+            return false;
+        }
+        String id = scenarioId.trim().toLowerCase(Locale.ROOT);
+        return "cfo-wire-inr".equals(id)
+                || "deepfake-ceo-wire".equals(id)
+                || "deepfake-cfo-wire".equals(id);
     }
 
     private static boolean hasMatchingCampaign(List<CrossChannelEvent> events) {

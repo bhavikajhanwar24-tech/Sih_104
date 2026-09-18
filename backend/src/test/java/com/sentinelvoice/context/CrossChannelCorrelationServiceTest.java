@@ -102,6 +102,22 @@ class CrossChannelCorrelationServiceTest {
         assertThat(result.events()).isEmpty();
     }
 
+  @Test
+    void deepfakeCeoWireScenarioResolvesSunita() {
+        CallSession session = new CallSession(
+                "sid-df", "+91-unreg", "+91-22-6655-5040",
+                ChannelProfile.PSTN_NARROWBAND, "deepfake-ceo-wire"
+        );
+        when(sessions.requireSession("sid-df")).thenReturn(session);
+        when(repository.findByTargetEmployeeIdAndOccurredAtGreaterThanEqualOrderByOccurredAtAsc(
+                eq(CrossChannelCorrelationService.DEMO_CALLEE_EMPLOYEE_ID), any()
+        )).thenReturn(List.of());
+
+        CorrelationResult result = service.correlateSession("sid-df", 48);
+        assertThat(result.targetEmployeeId())
+                .isEqualTo(CrossChannelCorrelationService.DEMO_CALLEE_EMPLOYEE_ID);
+    }
+
     private static CrossChannelEvent event(
             CrossChannelEvent.Channel channel,
             Instant at,
