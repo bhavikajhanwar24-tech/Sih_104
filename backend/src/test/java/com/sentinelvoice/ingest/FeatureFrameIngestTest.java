@@ -329,6 +329,21 @@ class FeatureFrameIngestTest {
         assertEquals(0.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
     }
 
+    @Test
+    void acceptsRelativeWindowAfterDelayedMicStart() {
+        // windowEndMs is media-relative; first frame locks media origin so a
+        // multi-second gap after Start session does not mark frames stale.
+        sessions.createSession(start("delayed-mic"));
+        FeatureFrame first = stubFrame("delayed-mic", 1, 2_000);
+        ingest.ingest(first);
+        assertEquals(1.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
+        assertEquals(0.0, meters.find("sentinel.frames.stale").counter().count(), 1e-9);
+
+        FeatureFrame second = stubFrame("delayed-mic", 2, 2_500);
+        ingest.ingest(second);
+        assertEquals(2.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
+    }
+
     private static SessionStartRequest start(String sessionId) {
         return new SessionStartRequest(
                 "sentinelvoice.SessionStartRequest/1",

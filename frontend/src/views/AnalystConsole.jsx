@@ -36,7 +36,7 @@ export function AnalystConsole() {
         <SessionControl className="min-w-0 flex-1" />
         {sessionId ? (
           <div className="w-full shrink-0 lg:w-72">
-            <MicControl sessionId={sessionId} />
+            <MicControl sessionId={sessionId} autoStart />
           </div>
         ) : null}
       </div>

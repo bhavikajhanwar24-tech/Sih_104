@@ -108,11 +108,18 @@ class SessionScheduler:
         if session is None:
             return None
         needed = int(settings.window_seconds * session.ring_buffer.sample_rate)
-        if session.ring_buffer.total_samples_written < needed:
+        written = session.ring_buffer.total_samples_written
+        if written < needed:
+            return None
+        # Skip when the ring has not advanced — re-emitting the same windowEndMs
+        # makes Java ageMs climb while the mic is paused.
+        last_emitted = session.last_emitted_samples
+        if written == last_emitted:
             return None
         window = session.ring_buffer.read_window(settings.window_seconds, hop_offset_s=0.0)
         # DSP releases the GIL; keep the event loop free.
         frame = await asyncio.to_thread(build_feature_frame, session, window)
+        session.last_emitted_samples = written
         await self.emitter.emit(frame)
         logger.info(
             "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s",
@@ -127,7 +134,13 @@ class SessionScheduler:
         interval = settings.emit_interval_ms / 1000.0
         try:
             while True:
-                await self.tick(session_id)
+                try:
+                    await self.tick(session_id)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Fail-open: one bad window must not kill the session scheduler.
+                    logger.exception("scheduler_tick_failed session_id=%s", session_id)
                 await asyncio.sleep(interval)
         except asyncio.CancelledError:
             raise

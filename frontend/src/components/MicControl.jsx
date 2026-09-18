@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useAudioCapture } from '@/hooks/useAudioCapture.js';
 import { Badge } from '@/components/ui/Badge.jsx';
@@ -8,9 +9,15 @@ import { Badge } from '@/components/ui/Badge.jsx';
  * @param {Object} props
  * @param {string} [props.sessionId='browser-dev']
  * @param {string} [props.wsUrl]
+ * @param {boolean} [props.autoStart=false]  start capture when sessionId is set
  * @param {string} [props.className]
  */
-export function MicControl({ sessionId = 'browser-dev', wsUrl, className = '' }) {
+export function MicControl({
+  sessionId = 'browser-dev',
+  wsUrl,
+  autoStart = false,
+  className = '',
+}) {
   const {
     start,
     stop,
@@ -21,6 +28,22 @@ export function MicControl({ sessionId = 'browser-dev', wsUrl, className = '' })
     warning,
     browserProcessing,
   } = useAudioCapture({ sessionId, wsUrl });
+
+  useEffect(() => {
+    if (!autoStart || !sessionId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!cancelled) await start();
+      } catch {
+        /* onError already surfaced via capture hook */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [autoStart, sessionId, start, stop]);
 
   const meterPct = Math.min(100, Math.round(level * 100 * 4));
   const processingOn = browserProcessing?.anyEnabled === true;
@@ -95,5 +118,6 @@ export function MicControl({ sessionId = 'browser-dev', wsUrl, className = '' })
 MicControl.propTypes = {
   sessionId: PropTypes.string,
   wsUrl: PropTypes.string,
+  autoStart: PropTypes.bool,
   className: PropTypes.string,
 };

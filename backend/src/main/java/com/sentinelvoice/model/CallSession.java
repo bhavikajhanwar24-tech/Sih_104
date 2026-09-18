@@ -33,6 +33,12 @@ public class CallSession {
     private volatile long cumulativeSpeechMs;
     private volatile FeatureFrame lastFeatureFrame;
     private volatile int lastFeatureSeq = -1;
+    /**
+     * Wall-clock epoch ms corresponding to call-relative {@code windowEndMs == 0}.
+     * Locked on the first relative FeatureFrame so a delayed mic start does not
+     * make every frame look stale vs {@link #createdAt}.
+     */
+    private volatile Long mediaOriginEpochMs;
 
     public CallSession(
             String sessionId,
@@ -90,6 +96,16 @@ public class CallSession {
 
     public int getLastFeatureSeq() {
         return lastFeatureSeq;
+    }
+
+    public Long getMediaOriginEpochMs() {
+        return mediaOriginEpochMs;
+    }
+
+    public void setMediaOriginEpochMs(long mediaOriginEpochMs) {
+        if (this.mediaOriginEpochMs == null) {
+            this.mediaOriginEpochMs = mediaOriginEpochMs;
+        }
     }
 
     public void close() {
