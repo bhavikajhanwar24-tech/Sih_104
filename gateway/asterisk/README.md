@@ -112,9 +112,13 @@ ml-engine\.venv\Scripts\python.exe gateway/asterisk_bridge.py
 ```
 
 - Listens on `0.0.0.0:9092`
+- On UUID: opens **ml-engine** + **Decision Plane** sessions (same `sessionId`) so FeatureFrames are not dropped
 - Dialplan `[sentinel-snoop]` connects to `host.docker.internal:9092`
 - ARI snoop attaches a media **copy** so caller↔agent two-way audio stays clean
-- If ml-engine is down the bridge **fail-opens** (accepts/discards audio; call stays up)
+- If ml-engine / Decision Plane is down the bridge **fail-opens** (accepts/discards audio; call stays up)
+- Analyst scenario **Live SIP (AudioSocket)** polls `/api/v1/session` and attaches when the call appears
+
+**Analyst check:** Scenario `Live SIP (AudioSocket)` → Start session → dial **1002** from caller softphone → speak → Risk gauge should move.
 
 Unit tests: `pytest gateway/tests -q`
 

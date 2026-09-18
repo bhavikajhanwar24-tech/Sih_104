@@ -71,8 +71,8 @@ export const SEED_SCENARIOS = Object.freeze([
   }),
   Object.freeze({
     id: 'pstn-narrowband',
-    title: 'PSTN narrowband',
-    description: 'G.711 / AudioSocket path — channel-forensics heavy',
+    title: 'Live SIP (AudioSocket)',
+    description: 'Softphone → Asterisk tap — Analyst attaches; gauge follows the call',
   }),
 ]);
 

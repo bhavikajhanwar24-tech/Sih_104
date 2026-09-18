@@ -68,6 +68,13 @@ public class CallSessionManager {
         return Optional.ofNullable(sessions.get(sessionId));
     }
 
+    /** Active Decision Plane sessions (newest first) — used by Analyst SIP attach. */
+    public List<CallSession> listSessions() {
+        List<CallSession> copy = new ArrayList<>(sessions.values());
+        copy.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+        return List.copyOf(copy);
+    }
+
     public CallSession requireSession(String sessionId) {
         return getSession(sessionId).orElseThrow(
                 () -> new NoSuchElementException("session not found: " + sessionId)

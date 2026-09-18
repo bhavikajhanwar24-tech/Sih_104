@@ -54,6 +54,7 @@ LOG = logging.getLogger("sentinelvoice.audiosocket")
 DEFAULT_HOST = os.environ.get("AUDIOSOCKET_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.environ.get("AUDIOSOCKET_PORT", "9092"))
 DEFAULT_ML = os.environ.get("ML_ENGINE_URL", "http://127.0.0.1:8000")
+DEFAULT_DECISION = os.environ.get("DECISION_PLANE_URL", "http://127.0.0.1:8080")
 DEFAULT_ARI = os.environ.get("ARI_URL", "http://127.0.0.1:8088/ari")
 DEFAULT_ARI_USER = os.environ.get("ARI_USER", "sentinel")
 DEFAULT_ARI_PASS = os.environ.get("ARI_PASS", "sentineldemo")
@@ -174,6 +175,60 @@ class MlEngineClient:
         return False
 
 
+class DecisionPlaneClient:
+    """Open/close Decision Plane sessions so FeatureFrames are not dropped as unknown_session."""
+
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._client = httpx.AsyncClient(timeout=3.0)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def open_session(self, sid: str) -> bool:
+        url = f"{self.base_url}/api/v1/session/start"
+        body = {
+            "schema": "sentinelvoice.SessionStartRequest/1",
+            "sessionId": sid,
+            "callerId": "sip-caller",
+            "calleeId": "sip-agent",
+            "channelProfile": "PSTN_NARROWBAND",
+            "scenarioId": "pstn-narrowband",
+        }
+        try:
+            r = await self._client.post(url, json=body)
+            if r.status_code == 200:
+                LOG.info("decision_session_open sid=%s profile=PSTN_NARROWBAND", sid)
+                return True
+            # Idempotent: session may already exist from a prior attach / retry.
+            if r.status_code == 400 and "already exists" in (r.text or "").lower():
+                LOG.info("decision_session_exists sid=%s", sid)
+                return True
+            LOG.error(
+                "FAIL-OPEN: Decision Plane open returned %s — gauge will not move sid=%s body=%s",
+                r.status_code,
+                sid,
+                (r.text or "")[:200],
+            )
+        except Exception:
+            LOG.exception(
+                "FAIL-OPEN: Decision Plane unreachable on open — call continues, no gauge sid=%s",
+                sid,
+            )
+        return False
+
+    async def close_session(self, sid: str) -> None:
+        url = f"{self.base_url}/api/v1/session/{sid}/close"
+        try:
+            r = await self._client.post(url)
+            if r.status_code in (200, 404):
+                LOG.info("decision_session_close sid=%s status=%s", sid, r.status_code)
+                return
+            LOG.error("Decision Plane close returned %s sid=%s", r.status_code, sid)
+        except Exception:
+            LOG.exception("FAIL-OPEN: Decision Plane close failed sid=%s", sid)
+
+
 # uuid (wire) -> sessionId (ml-engine). Same string: UUID hex.
 _uuid_to_sid: dict[str, str] = {}
 
@@ -189,11 +244,13 @@ async def handle_client(
     writer: asyncio.StreamWriter,
     ml: MlEngineClient,
     metrics: Metrics,
+    decision: Optional[DecisionPlaneClient] = None,
 ) -> None:
     peer = writer.get_extra_info("peername")
     LOG.info("audiosocket_connect peer=%s", peer)
     sid: Optional[str] = None
     ml_open = False
+    decision_open = False
     await metrics.session_delta(1)
 
     try:
@@ -218,6 +275,8 @@ async def handle_client(
         sid = _sid_from_uuid_payload(first.payload)
         _uuid_to_sid[sid] = sid
         ml_open = await ml.open_session(sid)
+        if decision is not None:
+            decision_open = await decision.open_session(sid)
 
         while True:
             try:
@@ -279,6 +338,8 @@ async def handle_client(
                 await metrics.bump_drop()
 
     finally:
+        if sid and decision_open and decision is not None:
+            await decision.close_session(sid)
         if sid and ml_open:
             await ml.close_session(sid)
         if sid:
@@ -535,6 +596,7 @@ async def run_server(
     port: int,
     ml_url: str,
     *,
+    decision_url: str = DEFAULT_DECISION,
     ari_url: str = DEFAULT_ARI,
     ari_user: str = DEFAULT_ARI_USER,
     ari_pass: str = DEFAULT_ARI_PASS,
@@ -542,15 +604,16 @@ async def run_server(
 ) -> None:
     metrics = Metrics()
     ml = MlEngineClient(ml_url, metrics)
+    decision = DecisionPlaneClient(decision_url)
     ari: Optional[AriSnoopController] = None
     ari_task: Optional[asyncio.Task[None]] = None
 
     async def _on_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        await handle_client(reader, writer, ml, metrics)
+        await handle_client(reader, writer, ml, metrics, decision)
 
     server = await asyncio.start_server(_on_connect, host, port)
     addrs = ", ".join(str(s.getsockname()) for s in server.sockets or [])
-    LOG.info("AudioSocket bridge listening on %s  ml-engine=%s", addrs, ml_url)
+    LOG.info("AudioSocket bridge listening on %s  ml-engine=%s decision=%s", addrs, ml_url, decision_url)
     LOG.info(
         "Design: fail open, not closed — ml-engine outages discard samples; calls stay up"
     )
@@ -567,6 +630,7 @@ async def run_server(
             ari_task.cancel()
         if ari is not None:
             await ari.aclose()
+        await decision.aclose()
         await ml.aclose()
 
 
@@ -575,6 +639,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--ml-engine", default=DEFAULT_ML)
+    parser.add_argument("--decision-plane", default=DEFAULT_DECISION)
     parser.add_argument("--ari-url", default=DEFAULT_ARI)
     parser.add_argument("--no-ari", action="store_true", help="Disable ARI snoop helper")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -590,6 +655,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 args.host,
                 args.port,
                 args.ml_engine,
+                decision_url=args.decision_plane,
                 ari_url=args.ari_url,
                 enable_ari=not args.no_ari and ENABLE_ARI_SNOOP,
             )
