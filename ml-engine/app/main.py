@@ -31,6 +31,21 @@ _emitter_task: asyncio.Task[None] | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _emitter_task
+    # ECAPA-TDNN singleton — load once; never per window (Context §10.5).
+    try:
+        from app.modules import speaker as speaker_mod
+
+        info = speaker_mod.warmup()
+        logger.info(
+            "speaker_warmup ready=%s warmup_ms=%s embed_latency_ms=%s stride=%s",
+            info.get("ready"),
+            info.get("warmup_ms"),
+            info.get("embed_latency_ms"),
+            info.get("window_stride"),
+        )
+    except Exception:
+        logger.exception("speaker_warmup_failed — speaker features unavailable until fixed")
+
     if settings.emit_enabled:
         _emitter_task = asyncio.create_task(emitter.run(), name="feature-emitter")
         logger.info("lifespan_start emit_enabled=true url=%s", emitter.url)

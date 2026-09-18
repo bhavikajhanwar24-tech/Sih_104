@@ -37,5 +37,14 @@ class Settings(BaseSettings):
     min_voiced_seconds: float = 0.5
     breath_min_cumulative_speech_s: float = 15.0
 
+    # Speaker / Voice Passport (Context §10.5) — recalibrate on your data.
+    # Channel mismatch shifts these sharply; enrol per channel profile.
+    speaker_match_threshold: float = 0.70
+    speaker_mismatch_threshold: float = 0.50
+    speaker_model_id: str = "speechbrain/spkrec-ecapa-voxceleb"
+    speaker_min_speech_s: float = 1.5
+    speaker_latency_budget_ms: float = 40.0
+    java_passport_url: str = "http://127.0.0.1:8080/api/v1/passport/register"
+
 
 settings = Settings()

@@ -1,0 +1,6 @@
+{
+  "matched_channel_cosine": 0.9841,
+  "cross_channel_clean_vs_mulaw_cosine": 0.6943,
+  "channel_mismatch_drop": 0.2898,
+  "note": "Context \u00a710.5/\u00a712: enrol per channel profile. Cross-channel cosine drops sharply on a genuine speaker \u2014 never report this as MISMATCH; return INCONCLUSIVE / CHANNEL_MISMATCH instead."
+}
