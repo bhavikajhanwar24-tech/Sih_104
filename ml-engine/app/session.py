@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.config import settings
+from app.fast_path import FastPathState
 from app.ring_buffer import RingBuffer
 from app.types import ChannelProfile
 
@@ -19,6 +20,10 @@ class PipelineSession:
     emit_seq: int = 0
     cumulative_speech_ms: int = 0
     created_at: float = field(default_factory=time.time)
+    fast_path: FastPathState = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.fast_path = FastPathState(session_id=self.session_id)
 
 
 class SessionRegistry:

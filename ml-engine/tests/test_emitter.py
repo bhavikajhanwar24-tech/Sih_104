@@ -23,19 +23,16 @@ def _loud_window(seconds: float = 2.0, sr: int = 16000) -> np.ndarray:
     return (0.4 * np.sin(2.0 * np.pi * 440.0 * t)).astype(np.float32)
 
 
-def test_fast_path_stub_rms_is_deterministic() -> None:
+def test_fast_path_returns_family_blocks() -> None:
     silent = np.zeros(16000, dtype=np.float32)
-    loud = _loud_window(1.0)
+    loud = _loud_window(2.0)
     quiet = extract(silent, 16000, ChannelProfile.WEBRTC_WIDEBAND)
     voiced = extract(loud, 16000, ChannelProfile.WEBRTC_WIDEBAND)
-    assert quiet["voice"]["available"] is True
-    assert voiced["voice"]["available"] is True
-    assert voiced["voice"]["spoofProbability"] > quiet["voice"]["spoofProbability"]
-    assert quiet["prosody"] == {"available": False}
-    assert quiet["channel"]["available"] is False
-    assert quiet["speaker"]["available"] is False
-    assert quiet["watermark"]["available"] is False
-    assert quiet["linguistic"]["available"] is False
+    assert "voice" in quiet and "prosody" in quiet and "channel" in quiet
+    assert quiet["linguistic"] == {"available": False}
+    assert "watermark" in voiced
+    # Linguistic remains slow-path (unavailable on fast path).
+    assert voiced["linguistic"]["available"] is False
 
 
 def test_built_frame_matches_frozen_schema() -> None:
@@ -49,7 +46,10 @@ def test_built_frame_matches_frozen_schema() -> None:
     validate_feature_frame(payload)
     assert payload["schema"] == "sentinelvoice.FeatureFrame/1"
     assert payload["seq"] == 1
-    assert "f0MeanHz" not in payload["prosody"]
+    assert "fastPath" in payload["latencyMs"]
+    assert "slowPath" in payload["latencyMs"]
+    # No invented latency breakdown keys on the wire contract.
+    assert set(payload["latencyMs"].keys()) == {"fastPath", "slowPath"}
 
 
 def test_invalid_frame_fails_validation_loudly() -> None:

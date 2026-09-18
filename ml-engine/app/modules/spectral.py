@@ -201,11 +201,21 @@ def _cqt_periodicity(audio: NDArray[np.floating], sr: int) -> dict[str, float]:
     return _stft_periodicity(cqt, hop=hop)
 
 
-def _maybe_cqt(audio: NDArray[np.floating], sr: int, mag: NDArray[np.floating], force: bool = False) -> dict[str, float]:
+def _maybe_cqt(
+    audio: NDArray[np.floating],
+    sr: int,
+    mag: NDArray[np.floating],
+    force: bool = False,
+    *,
+    skip_cqt: bool = False,
+) -> dict[str, float]:
     global _cqt_state
     _cqt_state["tick"] = int(_cqt_state["tick"]) + 1
     tick = int(_cqt_state["tick"])
     cached = _cqt_state["features"]
+    if skip_cqt:
+        # Latency shed: reuse STFT periodicity only (Context §8.1 / 120 ms budget).
+        return dict(_stft_periodicity(mag))
     refresh = force or cached is None or (tick % _CQT_EVERY == 1)
     if refresh:
         try:
@@ -230,6 +240,7 @@ def extract(
     profile: ChannelProfile | str,
     *,
     force_cqt: bool = False,
+    skip_cqt: bool = False,
 ) -> dict[str, Any]:
     """Extract spectral features for one window. Always sets available=True when audio is usable."""
     samples = np.asarray(audio, dtype=np.float64).reshape(-1)
@@ -303,5 +314,5 @@ def extract(
     else:
         out["high_band_ratio_gt_4k"] = out_high_gt4
 
-    out.update(_maybe_cqt(samples.astype(np.float32), sr, mag, force=force_cqt))
+    out.update(_maybe_cqt(samples.astype(np.float32), sr, mag, force=force_cqt, skip_cqt=skip_cqt))
     return out

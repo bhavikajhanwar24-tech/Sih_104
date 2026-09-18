@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Optional
 
 import numpy as np
@@ -30,9 +29,17 @@ def _family(model, payload: dict):
 
 
 def build_feature_frame(session: PipelineSession, window: np.ndarray) -> FeatureFrame:
-    started = time.perf_counter()
-    extracted = extract(window, session.ring_buffer.sample_rate, session.profile)
-    fast_ms = (time.perf_counter() - started) * 1000.0
+    state = session.fast_path
+    state.emit_seq = session.emit_seq + 1
+    state.cumulative_speech_ms = session.cumulative_speech_ms
+    extracted = extract(
+        window,
+        session.ring_buffer.sample_rate,
+        session.profile,
+        session_state=state,
+    )
+    # Prefer orchestrator wall time; fall back to measured total.
+    fast_ms = float(extracted.get("fastPathMs") or 0.0)
     sr = session.ring_buffer.sample_rate
     window_end_ms = int(session.ring_buffer.total_samples_written * 1000 / sr)
     window_start_ms = max(0, window_end_ms - int(settings.window_seconds * 1000))
@@ -51,12 +58,13 @@ def build_feature_frame(session: PipelineSession, window: np.ndarray) -> Feature
         speaker=_family(SpeakerFamily, extracted["speaker"]),
         watermark=_family(WatermarkFamily, extracted["watermark"]),
         linguistic=_family(LinguisticFamily, extracted["linguistic"]),
+        # Frozen schema: only fastPath/slowPath — module breakdown is on /diagnostics.
         latencyMs=LatencyMs(fastPath=fast_ms, slowPath=0.0),
     )
 
 
 class SessionScheduler:
-    """Per-session 500 ms ticks: 2.0 s ring window → stub fast_path → FeatureFrame emit."""
+    """Per-session 500 ms ticks: 2.0 s ring window → fast_path → FeatureFrame emit."""
 
     def __init__(self, registry: SessionRegistry, emitter: FeatureEmitter) -> None:
         self.registry = registry
@@ -103,7 +111,8 @@ class SessionScheduler:
         if session.ring_buffer.total_samples_written < needed:
             return None
         window = session.ring_buffer.read_window(settings.window_seconds, hop_offset_s=0.0)
-        frame = build_feature_frame(session, window)
+        # DSP releases the GIL; keep the event loop free.
+        frame = await asyncio.to_thread(build_feature_frame, session, window)
         await self.emitter.emit(frame)
         logger.info(
             "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s",
