@@ -121,18 +121,25 @@ when `gateway/asterisk_bridge.py` listens on `127.0.0.1:9092`.
   or publish `5060:5060/udp` + RTP range (last resort; prefer host mode on Linux).
 - CLI: `pjsip set logger on` then retry register; watch 401/403.
 
-### 2) One-way audio
+### 2) One-way / no audio (call connects, silence both sides)
 
 - Usually RTP blocked or wrong address in SDP. We set `rtp_symmetric=yes`,
   `force_rport=yes`, `rewrite_contact=yes`, `direct_media=no` for the lab.
+- **Docker Desktop:** SDP must not advertise the container IP (`172.18.0.2`). We set
+  endpoint `media_address=<Wi‑Fi IPv4>` plus transport `external_*`. Check with
+  `docker compose logs asterisk` for `c=IN IP4` — it must be your LAN IP. After IP
+  change: edit `pjsip.conf`, `docker compose restart asterisk`, re-register softphones.
 - Disable softphone STUN/ICE on a pure LAN lab.
-- Allow UDP **10000–10100** on the host firewall (see `rtp.conf`).
+- Allow UDP **10000–10020** on the host firewall (see `rtp.conf`; narrow range for Docker Desktop).
+- If softphones show packets TX/RX but silence: confirm `bridge_native_rtp` is noloaded
+  (Docker NAT needs Asterisk to relay RTP via `simple_bridge`).
 - Confirm both endpoints Avail and a channel exists: `core show channels`.
 
 ### 3) NAT / “works on laptop A, dies on LAN”
 
 - Softphones on another device must use the **LAN IP** of the Asterisk host, not
-  `127.0.0.1`.
+  `127.0.0.1`, and set `external_media_address` / `external_signaling_address` to
+  that same LAN IP (not loopback).
 - Host firewall must allow UDP 5060 and UDP 10000–10100.
 - Docker Desktop (Mac/Win) without real host-network: RTP hairpinning fails often —
   venue demo should use Linux + `network_mode: host`.
