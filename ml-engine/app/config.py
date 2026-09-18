@@ -19,5 +19,23 @@ class Settings(BaseSettings):
     validate_frames: bool = False
     debug: bool = False
 
+    # Prefer Praat (parselmouth) for jitter/shimmer/HNR; False forces librosa fallback.
+    use_parselmouth: bool = True
+
+    # Human ranges for unnaturalness_score (Context §10.3 / Teixeira et al. / Baken & Orlikoff).
+    # Jitter local: typical conversational ~0.5–1.5% (0.005–0.015 as fraction).
+    jitter_local_min: float = 0.005
+    jitter_local_max: float = 0.015
+    # Shimmer local: typical ~3–8% (0.03–0.08 as fraction).
+    shimmer_local_min: float = 0.03
+    shimmer_local_max: float = 0.08
+    # HNR: human conversational often ~15–25 dB; >28 dB is suspiciously clean (synthetic tell).
+    hnr_too_clean_db: float = 28.0
+    # F0 relative std below this fraction of mean → over-smooth contour.
+    f0_rel_std_min: float = 0.02
+
+    min_voiced_seconds: float = 0.5
+    breath_min_cumulative_speech_s: float = 15.0
+
 
 settings = Settings()

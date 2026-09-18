@@ -1,0 +1,51 @@
+[
+  {
+    "file": "clip01.wav",
+    "breaths": [
+      {
+        "start_s": 0.4,
+        "end_s": 0.75
+      }
+    ]
+  },
+  {
+    "file": "clip02.wav",
+    "breaths": [
+      {
+        "start_s": 0.55,
+        "end_s": 0.8300000000000001
+      }
+    ]
+  },
+  {
+    "file": "clip03.wav",
+    "breaths": [
+      {
+        "start_s": 0.3,
+        "end_s": 0.7
+      }
+    ]
+  },
+  {
+    "file": "clip04.wav",
+    "breaths": [
+      {
+        "start_s": 0.7,
+        "end_s": 0.95
+      }
+    ]
+  },
+  {
+    "file": "clip05.wav",
+    "breaths": [
+      {
+        "start_s": 0.25,
+        "end_s": 0.55
+      },
+      {
+        "start_s": 1.1,
+        "end_s": 1.4500000000000002
+      }
+    ]
+  }
+]
