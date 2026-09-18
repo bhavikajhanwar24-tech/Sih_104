@@ -202,6 +202,7 @@ class FeatureFrameIngestTest {
                 actuationService,
                 new TelemetryFrameBuilder(),
                 broadcaster,
+                mock(ActuationService.class),
                 meters,
                 clock
         );

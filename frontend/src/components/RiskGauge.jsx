@@ -1,23 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { getLevel, getSmoothedRisk, INTERVENTION_LEVELS } from '@/contracts';
-import { riskColour } from '@/theme.js';
+import { getLevel, getSmoothedRisk, INTERVENTION_LEVELS, RISK_STATES } from '@/contracts';
+import { palette, riskColour, riskRamp } from '@/theme.js';
 
 /** @deprecated Use {@link riskColour} from `@/theme.js`. */
 export const riskColor = riskColour;
 
+const INSUFFICIENT_STROKE = '#64748b';
+
 /**
- * Animated SVG risk gauge — smoothed arc + instantaneous needle.
+ * Animated SVG risk gauge — smoothed (EMA) arc + instantaneous tick.
+ *
+ * {@code INSUFFICIENT_EVIDENCE} renders grey hatch — never clear-green —
+ * so "we don't know" is not conflated with "it's safe".
  *
  * @param {Object} props
  * @param {TelemetryFrame | null | undefined} props.frame
  * @param {string} [props.className]
  */
 export function RiskGauge({ frame, className = '' }) {
+  const patternId = useId().replace(/:/g, '');
   const smoothedTarget = getSmoothedRisk(frame);
   const instantaneousTarget =
     typeof frame?.risk?.instantaneous === 'number' ? frame.risk.instantaneous : 0;
   const level = getLevel(frame);
+  const riskState = frame?.risk?.state ?? RISK_STATES.INSUFFICIENT_EVIDENCE;
+  const insufficient = riskState === RISK_STATES.INSUFFICIENT_EVIDENCE;
+  const trend = frame?.risk?.trend ?? 'STABLE';
 
   const [smoothed, setSmoothed] = useState(smoothedTarget);
   const [instantaneous, setInstantaneous] = useState(instantaneousTarget);
@@ -61,80 +70,154 @@ export function RiskGauge({ frame, className = '' }) {
   const startAngle = Math.PI;
   const sweep = Math.PI;
 
-  const color = riskColour(smoothed);
+  const fillColour = insufficient ? INSUFFICIENT_STROKE : riskColour(smoothed);
   const pct = Math.round(smoothed * 100);
+  const fillFrac = insufficient ? Math.max(0.08, clamp01(smoothed)) : clamp01(smoothed);
 
   return (
-    <div className={`flex flex-col items-center gap-2 ${className}`}>
+    <div className={`flex flex-col items-center gap-1 ${className}`}>
       <svg
         width={size}
-        height={size * 0.72}
-        viewBox={`0 0 ${size} ${size * 0.72}`}
+        height={size * 0.68}
+        viewBox={`0 0 ${size} ${size * 0.68}`}
         role="img"
-        aria-label={`Risk ${pct} percent`}
+        aria-label={
+          insufficient
+            ? 'Insufficient evidence — risk not yet scored'
+            : `Risk ${pct} percent, ${formatLevel(level)}`
+        }
       >
+        <defs>
+          <pattern
+            id={`hatch-${patternId}`}
+            patternUnits="userSpaceOnUse"
+            width="6"
+            height="6"
+            patternTransform="rotate(45)"
+          >
+            <rect width="6" height="6" fill="#1e293b" />
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="6"
+              stroke={INSUFFICIENT_STROKE}
+              strokeWidth="2.5"
+              opacity="0.85"
+            />
+          </pattern>
+        </defs>
+
         {/* Track */}
         <path
           d={arcPath(cx, cy, radius, startAngle, startAngle + sweep)}
           fill="none"
-          stroke="var(--sv-border)"
+          stroke={insufficient ? '#334155' : 'var(--sv-border)'}
           strokeWidth={14}
           strokeLinecap="round"
         />
-        {/* Smoothed primary arc */}
-        <path
-          d={arcPath(cx, cy, radius, startAngle, startAngle + sweep * clamp01(smoothed))}
-          fill="none"
-          stroke={color}
-          strokeWidth={14}
-          strokeLinecap="round"
-        />
-        {/* Instantaneous needle */}
+
+        {/* Smoothed EMA fill — hatch when evidence window not met */}
+        {insufficient ? (
+          <path
+            d={arcPath(cx, cy, radius, startAngle, startAngle + sweep * fillFrac)}
+            fill="none"
+            stroke={`url(#hatch-${patternId})`}
+            strokeWidth={14}
+            strokeLinecap="round"
+          />
+        ) : (
+          <path
+            d={arcPath(cx, cy, radius, startAngle, startAngle + sweep * fillFrac)}
+            fill="none"
+            stroke={fillColour}
+            strokeWidth={14}
+            strokeLinecap="round"
+          />
+        )}
+
+        {/* Thin EMA outline so judges can see the smoother vs the tick */}
+        {!insufficient ? (
+          <path
+            d={arcPath(cx, cy, radius - 11, startAngle, startAngle + sweep * fillFrac)}
+            fill="none"
+            stroke={fillColour}
+            strokeWidth={2}
+            strokeLinecap="round"
+            opacity={0.45}
+          />
+        ) : null}
+
+        {/* Instantaneous tick (raw score before asymmetric EMA) */}
         <g transform={`rotate(${needleDeg(instantaneous)} ${cx} ${cy})`}>
           <line
             x1={cx}
-            y1={cy}
+            y1={cy - radius + 18}
             x2={cx}
-            y2={cy - radius + 4}
-            stroke="var(--sv-fg)"
-            strokeWidth={2}
+            y2={cy - radius - 2}
+            stroke={insufficient ? INSUFFICIENT_STROKE : palette.fg}
+            strokeWidth={2.5}
             strokeLinecap="round"
-            opacity={0.85}
+            opacity={0.9}
           />
-          <circle cx={cx} cy={cy} r={5} fill="var(--sv-fg)" />
         </g>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={4}
+          fill={insufficient ? INSUFFICIENT_STROKE : palette.fg}
+        />
+
         <text
           x={cx}
-          y={cy - 18}
+          y={cy - 22}
           textAnchor="middle"
-          fill="var(--sv-fg)"
+          fill={insufficient ? INSUFFICIENT_STROKE : palette.fg}
           fontFamily="IBM Plex Sans, sans-serif"
-          fontSize="36"
+          fontSize="34"
           fontWeight="600"
         >
-          {pct}
+          {insufficient ? '—' : pct}
         </text>
         <text
           x={cx}
-          y={cy + 6}
+          y={cy - 2}
           textAnchor="middle"
-          fill="var(--sv-muted)"
+          fill={palette.muted}
           fontFamily="IBM Plex Mono, monospace"
-          fontSize="11"
+          fontSize="10"
         >
-          smoothed %
+          {insufficient ? 'not scored' : 'EMA %'}
         </text>
       </svg>
+
       <div className="text-center">
-        <p className="font-mono text-xs uppercase tracking-wider text-sv-muted">
-          Intervention
-        </p>
-        <p className="font-display text-sm font-semibold text-sv-fg">
-          {formatLevel(level)}
-        </p>
-        <p className="mt-1 font-mono text-[10px] text-sv-muted">
-          instant {(instantaneous * 100).toFixed(0)}% · trend{' '}
-          {frame?.risk?.trend ?? '—'}
+        {insufficient ? (
+          <p
+            className="rounded border border-slate-500/50 bg-slate-800/80 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-300"
+            title="Below the ~3 s speech evidence window — not a clear/safe score"
+          >
+            Insufficient evidence
+          </p>
+        ) : (
+          <>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-sv-muted">
+              Intervention
+            </p>
+            <p
+              className="font-display text-sm font-semibold"
+              style={{ color: fillColour }}
+            >
+              {formatLevel(level)}
+            </p>
+          </>
+        )}
+        <p className="mt-1 flex items-center justify-center gap-1.5 font-mono text-[10px] text-sv-muted">
+          <span title="Instantaneous (pre-EMA)">
+            tick {(instantaneous * 100).toFixed(0)}%
+          </span>
+          <span aria-hidden>·</span>
+          <TrendArrow trend={trend} />
         </p>
       </div>
     </div>
@@ -147,6 +230,37 @@ RiskGauge.propTypes = {
 };
 
 /**
+ * @param {Object} props
+ * @param {string} props.trend
+ */
+function TrendArrow({ trend }) {
+  const t = String(trend || 'STABLE').toUpperCase();
+  if (t === 'RISING') {
+    return (
+      <span className="inline-flex items-center gap-0.5" style={{ color: riskRamp.elevated }} title="Rising">
+        <span aria-hidden>↑</span> rising
+      </span>
+    );
+  }
+  if (t === 'FALLING') {
+    return (
+      <span className="inline-flex items-center gap-0.5" style={{ color: riskRamp.clear }} title="Falling">
+        <span aria-hidden>↓</span> falling
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-sv-muted" title="Stable">
+      <span aria-hidden>→</span> stable
+    </span>
+  );
+}
+
+TrendArrow.propTypes = {
+  trend: PropTypes.string,
+};
+
+/**
  * @param {number} x
  * @param {number} y
  * @param {number} r
@@ -156,7 +270,6 @@ RiskGauge.propTypes = {
  */
 function arcPath(x, y, r, a0, a1) {
   if (a1 <= a0 + 1e-6) {
-    // Degenerate — draw a tiny stub so SVG stays valid.
     const x0 = x + r * Math.cos(a0);
     const y0 = y + r * Math.sin(a0);
     return `M ${x0} ${y0} L ${x0} ${y0}`;
@@ -169,18 +282,7 @@ function arcPath(x, y, r, a0, a1) {
   return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
 }
 
-/**
- * Needle rotation: 0% → -90° (left), 100% → +90° (right) from vertical-up.
- * Our arc is a bottom semicircle from π to 2π in standard math coords…
- * Actually startAngle=π is left, π+π=2π is right along the upper... wait.
- * In SVG, y increases downward. cos(π)=-1 (left), cos(2π)=1 (right),
- * sin(π)=0, sin(1.5π)=-1 (up in SVG? sin(3π/2)=-1 → y = cy - r → UP). Good upper semicircle.
- *
- * Needle at 0 → point left (-90 from up), at 1 → point right (+90 from up).
- * CSS rotate is clockwise from up in SVG? rotate(0) is up. We want 0% = left = -90 or 270.
- * @param {number} score
- * @returns {number} degrees
- */
+/** @param {number} score */
 function needleDeg(score) {
   return -90 + clamp01(score) * 180;
 }

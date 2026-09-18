@@ -1,5 +1,6 @@
 package com.sentinelvoice.ingest;
 
+import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.context.RelationshipGraphService;
@@ -140,6 +141,7 @@ class PipelineLatencyTest {
                 mock(com.sentinelvoice.actuation.ActuationService.class),
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
+                mock(ActuationService.class),
                 meters,
                 clock
         );

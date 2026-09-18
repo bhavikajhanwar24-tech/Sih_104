@@ -295,16 +295,15 @@ public class FusionEngineTest {
                 ),
                 new SentinelProperties.Actuation(
                         "noop",
-                        "http://127.0.0.1:8088/ari",
-                        "sentinel",
-                        "sentineldemo",
-                        2000,
-                        3000,
-                        "PJSIP/supervisor",
+                        new SentinelProperties.Ari(
+                                "http://127.0.0.1:8088/ari",
+                                "sentinel",
+                                "sentineldemo",
+                                2000,
+                                3000
+                        ),
                         "http://127.0.0.1:8080/mock-cbs/freeze",
-                        90_000L,
-                        "sentinel-hold",
-                        "sentinel-whisper-warning"
+                        "PJSIP/agent"
                 )
         );
     }

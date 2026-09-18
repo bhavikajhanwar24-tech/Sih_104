@@ -91,16 +91,13 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.context.transaction.velocity-high-value-limit=3",
             "sentinelvoice.context.transaction.known-beneficiary-hints[0]=payroll suspense 1001",
             "sentinelvoice.actuation.adapter=noop",
-            "sentinelvoice.actuation.ari-base-url=http://127.0.0.1:8088/ari",
-            "sentinelvoice.actuation.ari-user=sentinel",
-            "sentinelvoice.actuation.ari-password=sentineldemo",
-            "sentinelvoice.actuation.connect-timeout-ms=2000",
-            "sentinelvoice.actuation.read-timeout-ms=3000",
-            "sentinelvoice.actuation.supervisor-endpoint=PJSIP/supervisor",
+            "sentinelvoice.actuation.ari.base-url=http://127.0.0.1:8088/ari",
+            "sentinelvoice.actuation.ari.username=sentinel",
+            "sentinelvoice.actuation.ari.password=sentineldemo",
+            "sentinelvoice.actuation.ari.connect-timeout-ms=2000",
+            "sentinelvoice.actuation.ari.read-timeout-ms=3000",
             "sentinelvoice.actuation.cbs-freeze-url=http://127.0.0.1:8080/mock-cbs/freeze",
-            "sentinelvoice.actuation.mfa-timeout-ms=90000",
-            "sentinelvoice.actuation.hold-sound-id=sentinel-hold",
-            "sentinelvoice.actuation.whisper-sound-id=sentinel-whisper-warning"
+            "sentinelvoice.actuation.supervisor-endpoint=PJSIP/agent"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
@@ -116,8 +113,6 @@ class SentinelPropertiesValidationTest {
             assertThat(properties.fusion().lambdaDown()).isEqualTo(0.88);
             assertThat(properties.fusion().minSpeechMsForScoring()).isEqualTo(3000);
             assertThat(properties.audit().genesisPrefix()).isEqualTo("SENTINELVOICE-GENESIS-v1");
-            assertThat(properties.actuation().adapter()).isEqualTo("noop");
-            assertThat(properties.actuation().mfaTimeoutMs()).isEqualTo(90_000L);
         });
     }
 

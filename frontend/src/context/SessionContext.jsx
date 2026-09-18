@@ -15,10 +15,11 @@ export const SIP_SCENARIO_ID = 'pstn-narrowband';
  * @property {string} scenarioId
  * @property {number | null} startedAtMs
  * @property {string | null} highlightedReasonCode
+ * @property {string | null} highlightedFamily   evidence radar axis (P6.3)
  * @property {string | null} sessionError
  * @property {(profile: string) => void} setChannelProfile
  * @property {(scenarioId: string) => void} setScenarioId
- * @property {(code: string | null) => void} setHighlightedReasonCode
+ * @property {(code: string | null, family?: string | null) => void} setHighlightedReason
  * @property {() => Promise<void>} startSession
  * @property {() => Promise<void>} stopSession
  */
@@ -39,6 +40,9 @@ export function SessionProvider({ children }) {
   const [scenarioId, setScenarioIdState] = useState(SEED_SCENARIOS[0].id);
   const [startedAtMs, setStartedAtMs] = useState(/** @type {number | null} */ (null));
   const [highlightedReasonCode, setHighlightedReasonCode] = useState(
+    /** @type {string | null} */ (null),
+  );
+  const [highlightedFamily, setHighlightedFamily] = useState(
     /** @type {string | null} */ (null),
   );
   const [sessionError, setSessionError] = useState(/** @type {string | null} */ (null));
@@ -74,6 +78,11 @@ export function SessionProvider({ children }) {
     }
   }, [sessionId]);
 
+  const setHighlightedReason = useCallback((code, family = null) => {
+    setHighlightedReasonCode(code);
+    setHighlightedFamily(family ?? null);
+  }, []);
+
   const startSession = useCallback(async () => {
     setSessionError(null);
     setHighlightedReasonCode(null);
@@ -108,7 +117,7 @@ export function SessionProvider({ children }) {
         body: JSON.stringify({
           schema: 'sentinelvoice.SessionStartRequest/1',
           sessionId: id,
-          callerId: 'browser-agent',
+          callerId: scenarioId === 'cfo-wire-inr' ? '+91-unreg-sip-unknown' : 'browser-agent',
           calleeId: 'desk-1',
           channelProfile,
           scenarioId,
@@ -123,14 +132,34 @@ export function SessionProvider({ children }) {
       setSessionId(resolvedId);
       setStartedAtMs(Date.now());
       setIsRunning(true);
+<<<<<<< HEAD
+      setHighlightedReason(null, null);
+=======
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'session start failed');
       setIsRunning(false);
       setSessionId(null);
       setStartedAtMs(null);
     }
-  }, [channelProfile, scenarioId]);
+  }, [channelProfile, scenarioId, setHighlightedReason]);
 
+<<<<<<< HEAD
+  const stopSession = useCallback(async () => {
+    const id = sessionId;
+    setIsRunning(false);
+    setStartedAtMs(null);
+    setHighlightedReason(null, null);
+    setSessionError(null);
+    setSessionId(null);
+    if (!id) return;
+    try {
+      await fetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
+    } catch {
+      /* UI already stopped; backend close is best-effort */
+    }
+  }, [sessionId, setHighlightedReason]);
+=======
   // Poll Decision Plane for a new SIP/AudioSocket session while awaiting.
   useEffect(() => {
     if (!awaitingSip || !isRunning) return undefined;
@@ -163,6 +192,7 @@ export function SessionProvider({ children }) {
       clearInterval(id);
     };
   }, [awaitingSip, isRunning]);
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
 
   const value = useMemo(
     () => ({
@@ -173,10 +203,11 @@ export function SessionProvider({ children }) {
       scenarioId,
       startedAtMs,
       highlightedReasonCode,
+      highlightedFamily,
       sessionError,
       setChannelProfile,
       setScenarioId,
-      setHighlightedReasonCode,
+      setHighlightedReason,
       startSession,
       stopSession,
     }),
@@ -188,8 +219,13 @@ export function SessionProvider({ children }) {
       scenarioId,
       startedAtMs,
       highlightedReasonCode,
+      highlightedFamily,
       sessionError,
+<<<<<<< HEAD
+      setHighlightedReason,
+=======
       setScenarioId,
+>>>>>>> 71eb66253f752bfec3d76ea2ed5ec6f0c21113d2
       startSession,
       stopSession,
     ],

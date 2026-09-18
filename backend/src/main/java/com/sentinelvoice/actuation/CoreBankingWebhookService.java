@@ -1,79 +1,91 @@
 package com.sentinelvoice.actuation;
 
-import com.sentinelvoice.config.SentinelProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Posts a beneficiary/account freeze instruction to a configurable CBS webhook.
- * Lab default: {@code http://127.0.0.1:8080/mock-cbs/freeze}.
+ * POSTs a beneficiary freeze instruction to a configurable CBS webhook (Context §11.6).
+ * Default URL hits the in-process {@code /mock-cbs/freeze} endpoint — labelled MOCK everywhere.
  */
-@Service
 public class CoreBankingWebhookService {
 
     private static final Logger log = LoggerFactory.getLogger(CoreBankingWebhookService.class);
 
+    private final RestTemplate restTemplate;
+    private final Clock clock;
     private final String freezeUrl;
-    private final HttpClient httpClient;
+    /** In-process mock recorder (also used by MockCbsController). */
+    private final CopyOnWriteArrayList<Map<String, Object>> mockFreezeLog = new CopyOnWriteArrayList<>();
 
-    public CoreBankingWebhookService(SentinelProperties properties) {
-        this.freezeUrl = properties.actuation().cbsFreezeUrl();
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
-                .build();
+    public CoreBankingWebhookService(RestTemplate restTemplate, Clock clock, String freezeUrl) {
+        this.restTemplate = restTemplate;
+        this.clock = clock;
+        this.freezeUrl = freezeUrl;
     }
 
-    public ActuationResult freezeBeneficiary(String sessionId, String reason) {
+    public boolean freezeBeneficiary(String sessionId, String beneficiaryHint, String reason) {
+        long started = clock.millis();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("schema", "sentinelvoice.MockCbsFreeze/1");
+        body.put("mock", true);
+        body.put("label", "MOCK_CBS — demo only, not a real core-banking system");
+        body.put("sessionId", sessionId);
+        body.put("beneficiary", beneficiaryHint == null ? "unknown" : beneficiaryHint);
+        body.put("reason", reason == null ? "L5_TERMINATE" : reason);
+        body.put("requestedAtMs", started);
+
+        // In-process mock path: no HTTP needed (works in unit tests + same JVM).
+        if (freezeUrl != null && freezeUrl.contains("/mock-cbs/freeze")) {
+            recordMockFreeze(body);
+            log.info("MOCK_CBS_FREEZE in-process sessionId={} url={}", sessionId, freezeUrl);
+            return true;
+        }
+
+        boolean success;
+        String detail;
         try {
-            String body = """
-                    {"sessionId":"%s","action":"FREEZE","reason":"%s","source":"SentinelVoice"}
-                    """.formatted(
-                    escape(sessionId),
-                    escape(reason == null ? "L5_TERMINATE" : reason)
-            ).trim();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(freezeUrl))
-                    .timeout(Duration.ofSeconds(3))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.info("cbs_freeze_ok sessionId={} url={} status={}", sessionId, freezeUrl, response.statusCode());
-                return ActuationResult.success("cbs-freeze-" + response.statusCode());
-            }
-            log.warn(
-                    "cbs_freeze_failed sessionId={} status={} body={}",
-                    sessionId,
-                    response.statusCode(),
-                    response.body()
-            );
-            return ActuationResult.failure("CBS " + response.statusCode());
-        } catch (Exception ex) {
-            log.warn("cbs_freeze_exception sessionId={} cause={}", sessionId, ex.toString());
-            return ActuationResult.failure(ex.getMessage());
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            restTemplate.postForEntity(freezeUrl, new HttpEntity<>(body, headers), Map.class);
+            success = true;
+            detail = "accepted";
+            log.info("MOCK_CBS_FREEZE ok sessionId={} url={}", sessionId, freezeUrl);
+        } catch (RestClientException ex) {
+            success = false;
+            detail = ex.toString();
+            log.warn("MOCK_CBS_FREEZE failed sessionId={} err={}", sessionId, ex.toString());
         }
+
+        long latencyMs = clock.millis() - started;
+        log.debug("MOCK_CBS_FREEZE detail={} latencyMs={}", detail, latencyMs);
+        return success;
     }
 
-    private static String escape(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    /** Record a freeze call received by the in-process mock endpoint. */
+    public void recordMockFreeze(Map<String, Object> request) {
+        Map<String, Object> copy = new LinkedHashMap<>(request);
+        copy.put("receivedAtMs", clock.millis());
+        mockFreezeLog.add(copy);
     }
 
-    public Map<String, Object> describeConfig() {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("cbsFreezeUrl", freezeUrl);
-        return m;
+    public List<Map<String, Object>> mockFreezeLog() {
+        return Collections.unmodifiableList(new ArrayList<>(mockFreezeLog));
+    }
+
+    public void clearMockLog() {
+        mockFreezeLog.clear();
     }
 }

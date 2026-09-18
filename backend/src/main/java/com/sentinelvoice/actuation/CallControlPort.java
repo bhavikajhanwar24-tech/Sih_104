@@ -3,24 +3,25 @@ package com.sentinelvoice.actuation;
 import java.util.Set;
 
 /**
- * Telephony call-control port. Implementations: Asterisk ARI, WebRTC STOMP, or no-op.
+ * Telephony actuation port — Asterisk ARI, WebRTC signalling, or noop (Context §11.6).
+ * Implementations must never throw into the fusion pipeline; callers treat failures as audit results.
  */
 public interface CallControlPort {
 
-    ActuationResult hold(String sessionId);
+    void hold(String sessionId);
 
-    ActuationResult unhold(String sessionId);
+    void unhold(String sessionId);
 
-    ActuationResult whisperToAgent(String sessionId, String soundId);
+    void whisperToAgent(String sessionId, String soundId);
 
-    ActuationResult bridgeSupervisor(String sessionId, String supervisorEndpoint);
+    void bridgeSupervisor(String sessionId, String supervisorEndpoint);
 
-    ActuationResult announce(String sessionId, String soundId);
+    void announce(String sessionId, String soundId);
 
-    ActuationResult terminate(String sessionId, String reason);
+    void terminate(String sessionId, String reason);
 
     Set<ActuationAction> capabilities();
 
-    /** Adapter name recorded in audit payloads ({@code asterisk}|{@code webrtc}|{@code noop}). */
+    /** Adapter name recorded in INTERVENTION_ACTION_FIRED audit blocks. */
     String adapterName();
 }

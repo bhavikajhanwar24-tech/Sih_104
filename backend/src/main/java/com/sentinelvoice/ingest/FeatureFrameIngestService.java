@@ -1,4 +1,4 @@
-package com.sentinelvoice.ingest;
+﻿package com.sentinelvoice.ingest;
 
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
@@ -34,6 +34,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -44,7 +45,7 @@ import java.util.Optional;
 
 /**
  * Per-frame Decision Plane pipeline (P5.4):
- * validate → update session → fuse → FSM → reasons → async audit → TelemetryFrame → STOMP.
+ * validate ΓåÆ update session ΓåÆ fuse ΓåÆ FSM ΓåÆ reasons ΓåÆ async audit ΓåÆ TelemetryFrame ΓåÆ STOMP.
  *
  * <p>Audit is queued ({@link AuditWriteDispatcher}) so ledger I/O never blocks the broadcast.
  */
@@ -64,9 +65,9 @@ public class FeatureFrameIngestService {
     private final TransactionPolicyService transactionPolicyService;
     private final DirectoryService directoryService;
     private final AuditWriteDispatcher auditWriteDispatcher;
-    private final ActuationService actuationService;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
+    private final ActuationService actuationService;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -84,9 +85,9 @@ public class FeatureFrameIngestService {
             TransactionPolicyService transactionPolicyService,
             DirectoryService directoryService,
             AuditWriteDispatcher auditWriteDispatcher,
-            ActuationService actuationService,
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
+            @Lazy ActuationService actuationService,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -100,9 +101,9 @@ public class FeatureFrameIngestService {
         this.transactionPolicyService = transactionPolicyService;
         this.directoryService = directoryService;
         this.auditWriteDispatcher = auditWriteDispatcher;
-        this.actuationService = actuationService;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
+        this.actuationService = actuationService;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -114,7 +115,7 @@ public class FeatureFrameIngestService {
                 .description("FeatureFrames dropped for exceeding frameStalenessMs")
                 .register(meterRegistry);
         this.pipelineTimer = Timer.builder("sentinel.pipeline.latency")
-                .description("FeatureFrame ingest pipeline latency (fuse→FSM→reasons→broadcast); p95 < 15ms")
+                .description("FeatureFrame ingest pipeline latency (fuseΓåÆFSMΓåÆreasonsΓåÆbroadcast); p95 < 15ms")
                 .publishPercentileHistogram()
                 .register(meterRegistry);
     }
@@ -231,12 +232,6 @@ public class FeatureFrameIngestService {
                 )
         );
 
-        // L5 only reaches the FSM after analyst confirm; treat LEVEL_5 as confirmed for actuation.
-        if (decision.changed()) {
-            boolean analystConfirmed = decision.level() == InterventionLevel.LEVEL_5_TERMINATE;
-            actuationService.apply(session.getSessionId(), decision.level(), analystConfirmed);
-        }
-
         List<ReasonGenerator.GeneratedReason> reasons = reasonGenerator.generate(
                 fusionContext,
                 fusion.families(),
@@ -293,6 +288,19 @@ public class FeatureFrameIngestService {
         );
 
         telemetryBroadcaster.publish(telemetry);
+        if (decision.changed()) {
+            try {
+                actuationService.onLevelChanged(session.getSessionId(), previousLevel, decision.level());
+            } catch (Exception ex) {
+                log.error(
+                        "actuation_invoke_failed sessionId={} level={} err={}",
+                        session.getSessionId(),
+                        decision.level(),
+                        ex.toString(),
+                        ex
+                );
+            }
+        }
         log.info(
                 "telemetry_built sessionId={} seq={} smoothed={} level={} reasons={}",
                 session.getSessionId(),

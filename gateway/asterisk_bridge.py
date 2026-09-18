@@ -1,17 +1,17 @@
-"""
-Asterisk AudioSocket bridge — media tap into the inference plane (P7.2 / Context §11.3).
+﻿"""
+Asterisk AudioSocket bridge ΓÇö media tap into the inference plane (P7.2 / Context ┬º11.3).
 
 Listens on TCP :9092 for AudioSocket clients. For each call:
-  UUID frame → POST /session/{sid}/open?profile=PSTN_NARROWBAND
-  AUDIO frames → normalise(slin16/8k) → POST /session/{sid}/pcm  (ring buffer)
-  TERMINATE / EOF / read-timeout → POST /session/{sid}/close
+  UUID frame ΓåÆ POST /session/{sid}/open?profile=PSTN_NARROWBAND
+  AUDIO frames ΓåÆ normalise(slin16/8k) ΓåÆ POST /session/{sid}/pcm  (ring buffer)
+  TERMINATE / EOF / read-timeout ΓåÆ POST /session/{sid}/close
 
 FAIL OPEN, NOT CLOSED
 ~~~~~~~~~~~~~~~~~~~~~
 If the ml-engine is down or slow, this bridge still accepts the AudioSocket TCP
 connection, echoes audio back to Asterisk (so the dialplan tap cannot mute the
 call), and DISCARDS inference samples. A monitoring system must never be able to
-drop a bank's calls. Judges ask about this — the answer is deliberate.
+drop a bank's calls. Judges ask about this ΓÇö the answer is deliberate.
 
 Usage (repo root, ml-engine venv):
   python -m gateway.asterisk_bridge
@@ -130,13 +130,13 @@ class MlEngineClient:
                 LOG.info("ml_session_open sid=%s profile=PSTN_NARROWBAND", sid)
                 return True
             LOG.error(
-                "FAIL-OPEN: ml-engine open returned %s — discarding audio for sid=%s",
+                "FAIL-OPEN: ml-engine open returned %s ΓÇö discarding audio for sid=%s",
                 r.status_code,
                 sid,
             )
         except Exception:
             LOG.exception(
-                "FAIL-OPEN: ml-engine unreachable on open — call continues, audio discarded sid=%s",
+                "FAIL-OPEN: ml-engine unreachable on open ΓÇö call continues, audio discarded sid=%s",
                 sid,
             )
         await self.metrics.bump_drop()
@@ -165,12 +165,12 @@ class MlEngineClient:
             if r.status_code == 200:
                 return True
             LOG.error(
-                "FAIL-OPEN: pcm push %s sid=%s — discarding frame",
+                "FAIL-OPEN: pcm push %s sid=%s ΓÇö discarding frame",
                 r.status_code,
                 sid,
             )
         except Exception:
-            LOG.exception("FAIL-OPEN: pcm push failed sid=%s — discarding frame", sid)
+            LOG.exception("FAIL-OPEN: pcm push failed sid=%s ΓÇö discarding frame", sid)
         await self.metrics.bump_drop()
         return False
 
@@ -185,7 +185,7 @@ class DecisionPlaneClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def open_session(self, sid: str, channel_id: str | None = None) -> bool:
+    async def open_session(self, sid: str) -> bool:
         url = f"{self.base_url}/api/v1/session/start"
         body = {
             "schema": "sentinelvoice.SessionStartRequest/1",
@@ -199,49 +199,23 @@ class DecisionPlaneClient:
             r = await self._client.post(url, json=body)
             if r.status_code == 200:
                 LOG.info("decision_session_open sid=%s profile=PSTN_NARROWBAND", sid)
-                if channel_id:
-                    await self.register_channel_map(sid, channel_id)
                 return True
             # Idempotent: session may already exist from a prior attach / retry.
             if r.status_code == 400 and "already exists" in (r.text or "").lower():
                 LOG.info("decision_session_exists sid=%s", sid)
-                if channel_id:
-                    await self.register_channel_map(sid, channel_id)
                 return True
             LOG.error(
-                "FAIL-OPEN: Decision Plane open returned %s — gauge will not move sid=%s body=%s",
+                "FAIL-OPEN: Decision Plane open returned %s ΓÇö gauge will not move sid=%s body=%s",
                 r.status_code,
                 sid,
                 (r.text or "")[:200],
             )
         except Exception:
             LOG.exception(
-                "FAIL-OPEN: Decision Plane unreachable on open — call continues, no gauge sid=%s",
+                "FAIL-OPEN: Decision Plane unreachable on open ΓÇö call continues, no gauge sid=%s",
                 sid,
             )
         return False
-
-    async def register_channel_map(self, sid: str, channel_id: str) -> None:
-        """Register sessionId → Asterisk channelId for ARI actuation (P7.3)."""
-        if not sid or not channel_id:
-            return
-        url = f"{self.base_url}/api/v1/actuation/channel-map"
-        try:
-            r = await self._client.post(
-                url, json={"sessionId": sid, "channelId": channel_id}
-            )
-            if r.status_code == 200:
-                LOG.info("channel_map_ok sid=%s channelId=%s", sid, channel_id)
-                return
-            LOG.warning(
-                "channel_map_failed sid=%s channelId=%s status=%s body=%s",
-                sid,
-                channel_id,
-                r.status_code,
-                (r.text or "")[:200],
-            )
-        except Exception:
-            LOG.exception("channel_map_exception sid=%s channelId=%s", sid, channel_id)
 
     async def close_session(self, sid: str) -> None:
         url = f"{self.base_url}/api/v1/session/{sid}/close"
@@ -253,6 +227,29 @@ class DecisionPlaneClient:
             LOG.error("Decision Plane close returned %s sid=%s", r.status_code, sid)
         except Exception:
             LOG.exception("FAIL-OPEN: Decision Plane close failed sid=%s", sid)
+
+    async def bind_channel(self, sid: str, channel_id: str, role: str = "caller") -> None:
+        """Populate Decision Plane sessionIdΓåÆchannelId map for ARI hold/terminate/whisper."""
+        url = f"{self.base_url}/api/v1/actuation/{sid}/channel"
+        body = {"channelId": channel_id, "role": role}
+        try:
+            r = await self._client.post(url, json=body)
+            if r.status_code == 200:
+                LOG.info(
+                    "decision_channel_bound sid=%s channel=%s role=%s",
+                    sid,
+                    channel_id,
+                    role,
+                )
+                return
+            LOG.warning(
+                "decision_channel_bind status=%s sid=%s body=%s",
+                r.status_code,
+                sid,
+                (r.text or "")[:200],
+            )
+        except Exception:
+            LOG.exception("FAIL-OPEN: channel bind failed sid=%s channel=%s", sid, channel_id)
 
 
 # uuid (wire) -> sessionId (ml-engine). Same string: UUID hex.
@@ -271,7 +268,6 @@ async def handle_client(
     ml: MlEngineClient,
     metrics: Metrics,
     decision: Optional[DecisionPlaneClient] = None,
-    ari: Optional[AriSnoopController] = None,
 ) -> None:
     peer = writer.get_extra_info("peername")
     LOG.info("audiosocket_connect peer=%s", peer)
@@ -293,7 +289,7 @@ async def handle_client(
 
         if not first.is_uuid:
             LOG.error(
-                "expected UUID frame, got type=0x%02x peer=%s — closing",
+                "expected UUID frame, got type=0x%02x peer=%s ΓÇö closing",
                 first.type,
                 peer,
             )
@@ -301,21 +297,17 @@ async def handle_client(
 
         sid = _sid_from_uuid_payload(first.payload)
         _uuid_to_sid[sid] = sid
-        channel_id = ari.channel_for_session(sid) if ari is not None else None
         ml_open = await ml.open_session(sid)
         if decision is not None:
-            decision_open = await decision.open_session(sid, channel_id=channel_id)
-            # If ARI already mapped the caller channel, re-register after session open.
-            if channel_id:
-                await decision.register_channel_map(sid, channel_id)
+            decision_open = await decision.open_session(sid)
 
         while True:
             try:
                 frame = await read_frame(reader, timeout=READ_TIMEOUT_S)
             except asyncio.TimeoutError:
-                # Client died without TERMINATE — common on hangup races.
+                # Client died without TERMINATE ΓÇö common on hangup races.
                 LOG.warning(
-                    "audiosocket_read_timeout sid=%s — treating as hangup (no TERMINATE)",
+                    "audiosocket_read_timeout sid=%s ΓÇö treating as hangup (no TERMINATE)",
                     sid,
                 )
                 break
@@ -357,7 +349,7 @@ async def handle_client(
                     profile="PSTN_NARROWBAND",
                 )
             except Exception:
-                LOG.exception("normalise_failed sid=%s — drop frame", sid)
+                LOG.exception("normalise_failed sid=%s ΓÇö drop frame", sid)
                 await metrics.bump_drop()
                 continue
 
@@ -403,9 +395,9 @@ async def metrics_logger(metrics: Metrics, interval: float) -> None:
 
 class AriSnoopController:
     """
-    Non-destructive media tap: ARI snoop → dialplan [sentinel-snoop] → AudioSocket.
+    Non-destructive media tap: ARI snoop ΓåÆ dialplan [sentinel-snoop] ΓåÆ AudioSocket.
 
-    Keeps PJSIP/caller ↔ PJSIP/agent on a normal bridge (two-way audio intact) while
+    Keeps PJSIP/caller Γåö PJSIP/agent on a normal bridge (two-way audio intact) while
     a snoop channel carries a copy into AudioSocket toward this process :9092.
 
     Event WS + HTTP poll fallback: Docker Desktop / ARI WS often delivers no
@@ -418,7 +410,7 @@ class AriSnoopController:
         user: str,
         password: str,
         app: str,
-        decision: DecisionPlaneClient | None = None,
+        decision: Optional["DecisionPlaneClient"] = None,
     ) -> None:
         self.ari_url = ari_url.rstrip("/")
         self.user = user
@@ -431,14 +423,9 @@ class AriSnoopController:
             timeout=5.0,
         )
         self._snooped: set[str] = set()
-        # sessionId → caller channel id (for ARI hold/terminate on the bridged leg)
-        self._sid_to_channel: dict[str, str] = {}
 
     async def aclose(self) -> None:
         await self._http.aclose()
-
-    def channel_for_session(self, sid: str) -> Optional[str]:
-        return self._sid_to_channel.get(sid)
 
     async def _get_var(self, channel_id: str, name: str) -> Optional[str]:
         try:
@@ -459,7 +446,7 @@ class AriSnoopController:
         if not sid:
             sid = str(uuid.uuid4())
             LOG.warning(
-                "ari_snoop missing SV_SESSION on %s — generated sid=%s",
+                "ari_snoop missing SV_SESSION on %s ΓÇö generated sid=%s",
                 name,
                 sid,
             )
@@ -483,7 +470,6 @@ class AriSnoopController:
                 )
                 return
             self._snooped.add(channel_id)
-            self._sid_to_channel[sid] = channel_id
             LOG.info(
                 "ari_snoop_ok channel=%s name=%s snoop=%s sid=%s",
                 channel_id,
@@ -491,9 +477,9 @@ class AriSnoopController:
                 snoop_id,
                 sid,
             )
-            # Prefer the bridged caller channel for hold/terminate (not the snoop leg).
-            if self.decision is not None:
-                await self.decision.register_channel_map(sid, channel_id)
+            if self.decision is not None and sid:
+                role = "agent" if name.startswith("PJSIP/agent") else "caller"
+                await self.decision.bind_channel(sid, channel_id, role=role)
         except Exception:
             LOG.exception("ari_snoop_exception channel=%s", channel_id)
 
@@ -538,8 +524,13 @@ class AriSnoopController:
         if not channel_id:
             return
         # One snoop on the caller leg is enough for mixed spy=both audio.
+        # Also register the agent leg for agent-only whisper (no second media snoop).
         if name.startswith("PJSIP/caller"):
             await self._snoop_channel(channel_id, name)
+        elif name.startswith("PJSIP/agent") and self.decision is not None:
+            sid = await self._get_var(channel_id, "SV_SESSION")
+            if sid:
+                await self.decision.bind_channel(sid, channel_id, role="agent")
 
     async def _poll_channels_once(self) -> None:
         try:
@@ -565,6 +556,10 @@ class AriSnoopController:
             # Tap caller when up (bridged or ringing-answered).
             if name.startswith("PJSIP/caller"):
                 await self._snoop_channel(channel_id, name)
+            elif name.startswith("PJSIP/agent") and self.decision is not None:
+                sid = await self._get_var(channel_id, "SV_SESSION")
+                if sid:
+                    await self.decision.bind_channel(sid, channel_id, role="agent")
 
     async def _poll_loop(self) -> None:
         LOG.info("ARI channel poller started (0.5s)")
@@ -576,7 +571,7 @@ class AriSnoopController:
         try:
             import websockets
         except ImportError:
-            LOG.error("websockets missing — relying on HTTP channel poller only")
+            LOG.error("websockets missing ΓÇö relying on HTTP channel poller only")
             return
 
         parsed = urlparse(self.ari_url)
@@ -629,7 +624,7 @@ class AriSnoopController:
                 raise
             except Exception:
                 LOG.exception(
-                    "ARI WS disconnected — retry in %.0fs (poller keeps working)",
+                    "ARI WS disconnected ΓÇö retry in %.0fs (poller keeps working)",
                     backoff,
                 )
                 await asyncio.sleep(backoff)
@@ -655,20 +650,19 @@ async def run_server(
     decision = DecisionPlaneClient(decision_url)
     ari: Optional[AriSnoopController] = None
     ari_task: Optional[asyncio.Task[None]] = None
-    if enable_ari:
-        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP, decision=decision)
 
     async def _on_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        await handle_client(reader, writer, ml, metrics, decision, ari)
+        await handle_client(reader, writer, ml, metrics, decision)
 
     server = await asyncio.start_server(_on_connect, host, port)
     addrs = ", ".join(str(s.getsockname()) for s in server.sockets or [])
     LOG.info("AudioSocket bridge listening on %s  ml-engine=%s decision=%s", addrs, ml_url, decision_url)
     LOG.info(
-        "Design: fail open, not closed — ml-engine outages discard samples; calls stay up"
+        "Design: fail open, not closed ΓÇö ml-engine outages discard samples; calls stay up"
     )
     metrics_task = asyncio.create_task(metrics_logger(metrics, METRICS_INTERVAL_S))
-    if ari is not None:
+    if enable_ari:
+        ari = AriSnoopController(ari_url, ari_user, ari_pass, ARI_APP, decision=decision)
         ari_task = asyncio.create_task(ari.run())
     try:
         async with server:

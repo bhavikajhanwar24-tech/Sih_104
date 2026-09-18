@@ -184,21 +184,22 @@ public record SentinelProperties(
     }
 
     /**
-     * Call actuation (P7.3). Default adapter {@code noop} is safe for tests;
-     * set {@code asterisk} for live SIP ARI hold/terminate.
+     * Call actuation adapter selection and ARI / mock-CBS endpoints (Context §11.6).
      */
     public record Actuation(
             @NotBlank String adapter,
-            @NotBlank String ariBaseUrl,
-            @NotBlank String ariUser,
-            @NotBlank String ariPassword,
-            @Min(1) int connectTimeoutMs,
-            @Min(1) int readTimeoutMs,
-            @NotBlank String supervisorEndpoint,
+            @NotNull @Valid Ari ari,
             @NotBlank String cbsFreezeUrl,
-            @Min(1) long mfaTimeoutMs,
-            @NotBlank String holdSoundId,
-            @NotBlank String whisperSoundId
+            @NotBlank String supervisorEndpoint
+    ) {
+    }
+
+    public record Ari(
+            @NotBlank String baseUrl,
+            @NotBlank String username,
+            @NotBlank String password,
+            @Min(1) int connectTimeoutMs,
+            @Min(1) int readTimeoutMs
     ) {
     }
 
