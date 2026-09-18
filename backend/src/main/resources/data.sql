@@ -50,3 +50,27 @@ MERGE INTO directory_records (
 
 ('EMP-60051', 'Fatima Sheikh', 'Compliance Analyst', 'Compliance', '+91-22-6655-6051', '6051',
  0, 'INTERNAL,CBS', 'AVAILABLE', 'Mumbai HQ', 'EMP-10003', 5, FALSE);
+
+-- Interaction graph (P8.3). CFO↔Treasury Head is routine; CFO→Sunita Rao has NO edge (demo anomaly).
+DELETE FROM interaction_edges;
+
+INSERT INTO interaction_edges (
+  caller_employee_id, callee_employee_id, interaction_count,
+  first_seen_at, last_seen_at, typical_hour_of_day, typical_duration_sec
+) VALUES
+('EMP-10492', 'EMP-20010', 52,
+ TIMESTAMP '2025-01-10 11:00:00', TIMESTAMP '2026-09-10 11:15:00', 11, 420),
+('EMP-20010', 'EMP-10492', 48,
+ TIMESTAMP '2025-01-12 10:30:00', TIMESTAMP '2026-09-08 10:45:00', 10, 360),
+('EMP-10492', 'EMP-30020', 18,
+ TIMESTAMP '2025-03-01 14:00:00', TIMESTAMP '2026-08-20 14:20:00', 14, 300),
+('EMP-10001', 'EMP-10492', 24,
+ TIMESTAMP '2025-02-01 09:30:00', TIMESTAMP '2026-09-01 09:40:00', 9, 600),
+('EMP-20010', 'EMP-30020', 40,
+ TIMESTAMP '2025-01-05 12:00:00', TIMESTAMP '2026-09-12 12:10:00', 12, 240),
+('EMP-30020', 'EMP-50040', 35,
+ TIMESTAMP '2025-04-01 11:00:00', TIMESTAMP '2026-09-05 11:05:00', 11, 180),
+('EMP-40030', 'EMP-50040', 60,
+ TIMESTAMP '2025-01-20 10:00:00', TIMESTAMP '2026-09-11 10:30:00', 10, 120),
+('EMP-10003', 'EMP-30021', 22,
+ TIMESTAMP '2025-05-01 15:00:00', TIMESTAMP '2026-08-28 15:10:00', 15, 280);

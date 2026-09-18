@@ -71,7 +71,25 @@ class SentinelPropertiesValidationTest {
             "sentinelvoice.identity.registered-external-clis[0]=+91-22-6655-0100",
             "sentinelvoice.identity.cosine-match-min=0.70",
             "sentinelvoice.identity.cosine-mismatch-max=0.50",
-            "sentinelvoice.identity.spoof-high-threshold=0.60"
+            "sentinelvoice.identity.spoof-high-threshold=0.60",
+            "sentinelvoice.context.relationship.weight-first-contact=0.60",
+            "sentinelvoice.context.relationship.weight-hierarchy=0.35",
+            "sentinelvoice.context.relationship.weight-off-hours=0.05",
+            "sentinelvoice.context.relationship.weight-duration-anomaly=0.05",
+            "sentinelvoice.context.relationship.hierarchy-normalize-levels=6",
+            "sentinelvoice.context.relationship.business-hour-start=9",
+            "sentinelvoice.context.relationship.business-hour-end=18",
+            "sentinelvoice.context.relationship.typical-hour-deviation-hours=4",
+            "sentinelvoice.context.relationship.duration-anomaly-ratio=2.0",
+            "sentinelvoice.context.transaction.policy-violation-score=0.98",
+            "sentinelvoice.context.transaction.weight-channel-denied=0.25",
+            "sentinelvoice.context.transaction.weight-beneficiary-novel=0.20",
+            "sentinelvoice.context.transaction.weight-velocity=0.15",
+            "sentinelvoice.context.transaction.weight-urgency-amount-product=0.40",
+            "sentinelvoice.context.transaction.high-value-threshold-inr=100000",
+            "sentinelvoice.context.transaction.large-amount-threshold-inr=5000000",
+            "sentinelvoice.context.transaction.velocity-high-value-limit=3",
+            "sentinelvoice.context.transaction.known-beneficiary-hints[0]=payroll suspense 1001"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()

@@ -20,6 +20,13 @@ public class DirectoryService {
         this.repository = repository;
     }
 
+    public Optional<DirectoryRecord> findByEmployeeId(String employeeId) {
+        if (employeeId == null || employeeId.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findById(employeeId.trim());
+    }
+
     public Optional<DirectoryRecord> findByCli(String cli) {
         if (cli == null || cli.isBlank()) {
             return Optional.empty();

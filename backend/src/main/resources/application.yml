@@ -139,3 +139,30 @@ sentinelvoice:
     cosine-match-min: 0.70
     cosine-mismatch-max: 0.50
     spoof-high-threshold: 0.60
+  context:
+    relationship:
+      # S = w_fc*I_fc + w_hier*min(1, dist/norm) + w_off*I_off + w_dur*I_dur
+      weight-first-contact: 0.60
+      weight-hierarchy: 0.35
+      weight-off-hours: 0.05
+      weight-duration-anomaly: 0.05
+      hierarchy-normalize-levels: 6
+      business-hour-start: 9
+      business-hour-end: 18
+      typical-hour-deviation-hours: 4
+      duration-anomaly-ratio: 2.0
+    transaction:
+      # Policy breach is deterministic — near 1.0, not a soft suspicion.
+      policy-violation-score: 0.98
+      weight-channel-denied: 0.25
+      weight-beneficiary-novel: 0.20
+      weight-velocity: 0.15
+      # Multiplicative urgency×amount term (see TransactionPolicyService).
+      weight-urgency-amount-product: 0.40
+      high-value-threshold-inr: 100000
+      large-amount-threshold-inr: 5000000
+      velocity-high-value-limit: 3
+      known-beneficiary-hints:
+        - "vendor account ending 8821"
+        - "payroll suspense 1001"
+        - "rbi settlement pool"

@@ -5,7 +5,7 @@ import com.sentinelvoice.model.Ask;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.LinguisticFamily;
-import com.sentinelvoice.model.RelationshipAssessment;
+import com.sentinelvoice.context.model.RelationshipAssessment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +31,7 @@ class ReasonGeneratorTest {
         FeatureFrame frame = syntheticFrame();
         FusionContext ctx = new FusionContext(frame, 0.9, true, 0.8, true, true, 0.0);
         ReasonGenerator.Assessments assessments = new ReasonGenerator.Assessments(
-                new RelationshipAssessment(0, true, 4, 0.87, List.of("FIRST_CONTACT")),
+                new RelationshipAssessment(0, true, 4, false, false, 0.87, List.of("FIRST_CONTACT")),
                 true,
                 "London (calendar)",
                 "SIP trunk / APAC",
@@ -91,7 +91,7 @@ class ReasonGeneratorTest {
         FeatureFrame frame = syntheticFrame();
         FusionContext ctx = new FusionContext(frame, 0.95, true, 0.9, true, true, 0.0);
         ReasonGenerator.Assessments assessments = new ReasonGenerator.Assessments(
-                new RelationshipAssessment(0, true, 5, 0.9, List.of("FIRST_CONTACT")),
+                new RelationshipAssessment(0, true, 5, false, false, 0.9, List.of("FIRST_CONTACT")),
                 true,
                 "HQ",
                 "APAC trunk",
