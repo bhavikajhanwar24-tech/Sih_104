@@ -285,13 +285,14 @@ public class FusionEngineTest {
                 ),
                 new SentinelProperties.ContextScoring(
                         new SentinelProperties.RelationshipScoring(
-                                0.60, 0.35, 0.05, 0.05, 6, 9, 18, 4, 2.0
+                                0.60, 0.35, 0.05, 0.05, 0.40, 6, 9, 18, 4, 2.0
                         ),
                         new SentinelProperties.TransactionScoring(
                                 0.98, 0.25, 0.20, 0.15, 0.40,
                                 100_000.0, 5_000_000.0, 3,
                                 java.util.List.of("vendor account ending 8821", "payroll suspense 1001")
-                        )
+                        ),
+                        new SentinelProperties.CrossChannelScoring(48, 0.35, 0.15, 0.10)
                 ),
                 new SentinelProperties.Actuation(
                         "noop",

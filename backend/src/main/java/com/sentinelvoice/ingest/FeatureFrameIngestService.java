@@ -4,8 +4,10 @@ import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
 import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.EvidenceFamily;
@@ -63,6 +65,7 @@ public class FeatureFrameIngestService {
     private final IdentityResolutionService identityResolutionService;
     private final RelationshipGraphService relationshipGraphService;
     private final TransactionPolicyService transactionPolicyService;
+    private final CrossChannelCorrelationService crossChannelCorrelationService;
     private final DirectoryService directoryService;
     private final AuditWriteDispatcher auditWriteDispatcher;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
@@ -83,6 +86,7 @@ public class FeatureFrameIngestService {
             IdentityResolutionService identityResolutionService,
             RelationshipGraphService relationshipGraphService,
             TransactionPolicyService transactionPolicyService,
+            CrossChannelCorrelationService crossChannelCorrelationService,
             DirectoryService directoryService,
             AuditWriteDispatcher auditWriteDispatcher,
             TelemetryFrameBuilder telemetryFrameBuilder,
@@ -99,6 +103,7 @@ public class FeatureFrameIngestService {
         this.identityResolutionService = identityResolutionService;
         this.relationshipGraphService = relationshipGraphService;
         this.transactionPolicyService = transactionPolicyService;
+        this.crossChannelCorrelationService = crossChannelCorrelationService;
         this.directoryService = directoryService;
         this.auditWriteDispatcher = auditWriteDispatcher;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
@@ -200,6 +205,12 @@ public class FeatureFrameIngestService {
         RelationshipAssessment relationship = relationshipGraphService.assess(
                 new RelationshipQuery(session.getCallerId(), session.getCalleeId(), null)
         );
+        CorrelationResult crossChannel = crossChannelCorrelationService.correlateSession(
+                session.getSessionId(), null
+        );
+        double relationshipScore = crossChannelCorrelationService.blendRelationshipScore(
+                relationship.score(), crossChannel
+        );
         DirectoryRecord claimed = null;
         if (identity.directoryRecordForClaim() != null
                 && identity.directoryRecordForClaim().get("employeeId") instanceof String empId) {
@@ -211,7 +222,7 @@ public class FeatureFrameIngestService {
                 frame,
                 transaction.score(),
                 true,
-                relationship.score(),
+                relationshipScore,
                 true,
                 identity
         );
@@ -240,8 +251,8 @@ public class FeatureFrameIngestService {
                         identity.presenceConflict() != null,
                         identity.presenceConflict() != null ? identity.presenceConflict().expected() : null,
                         identity.presenceConflict() != null ? identity.presenceConflict().observed() : null,
-                        false,
-                        0,
+                        crossChannel.matchingCampaign(),
+                        crossChannel.eventCount(),
                         false,
                         0L,
                         0L

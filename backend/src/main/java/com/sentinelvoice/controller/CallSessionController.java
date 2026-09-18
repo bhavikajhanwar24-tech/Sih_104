@@ -1,8 +1,10 @@
 package com.sentinelvoice.controller;
 
 import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
 import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.FusionContext;
@@ -53,6 +55,7 @@ public class CallSessionController {
     private final NaturalLanguageFraudService naturalLanguageFraudService;
     private final RelationshipGraphService relationshipGraphService;
     private final TransactionPolicyService transactionPolicyService;
+    private final CrossChannelCorrelationService crossChannelCorrelationService;
     private final IdentityResolutionService identityResolutionService;
     private final DirectoryService directoryService;
     private final TelemetryBroadcaster telemetryBroadcaster;
@@ -65,6 +68,7 @@ public class CallSessionController {
             NaturalLanguageFraudService naturalLanguageFraudService,
             RelationshipGraphService relationshipGraphService,
             TransactionPolicyService transactionPolicyService,
+            CrossChannelCorrelationService crossChannelCorrelationService,
             IdentityResolutionService identityResolutionService,
             DirectoryService directoryService,
             TelemetryBroadcaster telemetryBroadcaster,
@@ -76,6 +80,7 @@ public class CallSessionController {
         this.naturalLanguageFraudService = naturalLanguageFraudService;
         this.relationshipGraphService = relationshipGraphService;
         this.transactionPolicyService = transactionPolicyService;
+        this.crossChannelCorrelationService = crossChannelCorrelationService;
         this.identityResolutionService = identityResolutionService;
         this.directoryService = directoryService;
         this.telemetryBroadcaster = telemetryBroadcaster;
@@ -165,6 +170,10 @@ public class CallSessionController {
         RelationshipAssessment relationship = relationshipGraphService.assess(
                 new RelationshipQuery(session.getCallerId(), session.getCalleeId(), null)
         );
+        CorrelationResult crossChannel = crossChannelCorrelationService.correlateSession(sessionId, null);
+        double relationshipScore = crossChannelCorrelationService.blendRelationshipScore(
+                relationship.score(), crossChannel
+        );
 
         FeatureFrame frame = new FeatureFrame(
                 "sentinelvoice.FeatureFrame/1",
@@ -207,7 +216,7 @@ public class CallSessionController {
                 frame,
                 txnScore,
                 true,
-                relationship.score(),
+                relationshipScore,
                 true,
                 identity
         );

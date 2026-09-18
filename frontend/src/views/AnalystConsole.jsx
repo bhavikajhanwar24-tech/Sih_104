@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
+import { CrossChannelTimeline } from '@/components/CrossChannelTimeline.jsx';
 import { EvidencePanel } from '@/components/EvidencePanel.jsx';
 import { IdentityCard } from '@/components/IdentityCard.jsx';
 import { InterventionBar } from '@/components/InterventionBar.jsx';
@@ -33,6 +34,7 @@ export function AnalystConsole() {
     scenarioId,
     awaitingSip,
     channelProfile,
+    startedAtMs,
   } = useSession();
   const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -147,6 +149,22 @@ export function AnalystConsole() {
           <div className="h-full overflow-auto p-2">
             <EvidencePanel frame={latest} channelProfile={channelProfile} />
           </div>
+        </Panel>
+
+        <Panel
+          title="Cross-channel"
+          slot="cross-channel"
+          status={isRunning ? 'ready' : 'empty'}
+          emptyMessage={emptyMsg}
+          errorMessage={errMsg}
+          className="col-span-12 h-[7.5rem]"
+          variant="flush"
+        >
+          <CrossChannelTimeline
+            sessionId={sessionId}
+            callStartedAtMs={startedAtMs ?? undefined}
+            className="h-full"
+          />
         </Panel>
 
         <Panel

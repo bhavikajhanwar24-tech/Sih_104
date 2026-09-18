@@ -51,6 +51,22 @@ MERGE INTO directory_records (
 ('EMP-60051', 'Fatima Sheikh', 'Compliance Analyst', 'Compliance', '+91-22-6655-6051', '6051',
  0, 'INTERNAL,CBS', 'AVAILABLE', 'Mumbai HQ', 'EMP-10003', 5, FALSE);
 
+-- Cross-channel precursors for Scenario 2 (CFO wire → Sunita Rao). Relative to NOW so the
+-- 48 h correlation window always covers them on demo day.
+DELETE FROM cross_channel_events WHERE campaign_id = 'BEC-CFO-2026-09';
+
+INSERT INTO cross_channel_events (
+  id, channel, target_employee_id, occurred_at, severity, indicator, campaign_id, description
+) VALUES
+('cc-bec-email-sunitarao', 'EMAIL', 'EMP-50040',
+ DATEADD('HOUR', -36, CURRENT_TIMESTAMP), 'HIGH',
+ 'Rajesh Kumar <rajesh.kumar@secure-finance-mail.com>', 'BEC-CFO-2026-09',
+ 'BEC email to Sunita Rao purporting to be CFO Rajesh Kumar — urgent wire instruction, secrecy demand'),
+('cc-smish-sms-sunitarao', 'SMS', 'EMP-50040',
+ DATEADD('HOUR', -4, CURRENT_TIMESTAMP), 'HIGH',
+ 'Rajesh Kumar via +91-98XXX-44120', 'BEC-CFO-2026-09',
+ 'Smishing SMS to Sunita Rao claiming CFO needs ₹50L vendor settlement before market close');
+
 -- Interaction graph (P8.3). CFO↔Treasury Head is routine; CFO→Sunita Rao has NO edge (demo anomaly).
 DELETE FROM interaction_edges;
 

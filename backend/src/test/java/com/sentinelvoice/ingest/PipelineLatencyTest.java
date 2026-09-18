@@ -3,8 +3,10 @@ package com.sentinelvoice.ingest;
 import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
 import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.CorroborationGate;
@@ -40,6 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -136,15 +139,22 @@ class PipelineLatencyTest {
                 identity,
                 relationship,
                 transaction,
+                mockCrossChannel(),
                 mock(DirectoryService.class),
                 auditDispatcher,
-                mock(com.sentinelvoice.actuation.ActuationService.class),
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
                 mock(ActuationService.class),
                 meters,
                 clock
         );
+    }
+
+    private static CrossChannelCorrelationService mockCrossChannel() {
+        CrossChannelCorrelationService cross = mock(CrossChannelCorrelationService.class);
+        when(cross.correlateSession(any(), any())).thenReturn(CorrelationResult.empty(48));
+        when(cross.blendRelationshipScore(anyDouble(), any())).thenAnswer(inv -> inv.getArgument(0));
+        return cross;
     }
 
     @Test

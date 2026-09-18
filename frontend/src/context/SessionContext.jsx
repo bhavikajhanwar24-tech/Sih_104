@@ -118,7 +118,8 @@ export function SessionProvider({ children }) {
           schema: 'sentinelvoice.SessionStartRequest/1',
           sessionId: id,
           callerId: scenarioId === 'cfo-wire-inr' ? '+91-unreg-sip-unknown' : 'browser-agent',
-          calleeId: 'desk-1',
+          // Scenario 2: callee is Sunita Rao (EMP-50040) — cross-channel precursors target her.
+          calleeId: scenarioId === 'cfo-wire-inr' ? '+91-22-6655-5040' : 'desk-1',
           channelProfile,
           scenarioId,
         }),

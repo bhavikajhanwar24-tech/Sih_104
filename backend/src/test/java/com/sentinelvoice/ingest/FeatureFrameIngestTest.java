@@ -7,8 +7,10 @@ import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.TransactionPolicyService;
+import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
 import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.FusionEngineService;
@@ -46,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -188,6 +191,13 @@ class FeatureFrameIngestTest {
         ActuationService actuationService = mock(ActuationService.class);
         broadcaster = mock(TelemetryBroadcaster.class);
 
+        CrossChannelCorrelationService crossChannel = mock(CrossChannelCorrelationService.class);
+        lenient().when(crossChannel.correlateSession(any(), any())).thenReturn(
+                CorrelationResult.empty(48)
+        );
+        lenient().when(crossChannel.blendRelationshipScore(anyDouble(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+
         ingest = new FeatureFrameIngestService(
                 sessions,
                 properties,
@@ -197,12 +207,12 @@ class FeatureFrameIngestTest {
                 identity,
                 relationship,
                 transaction,
+                crossChannel,
                 directory,
                 auditDispatcher,
-                actuationService,
                 new TelemetryFrameBuilder(),
                 broadcaster,
-                mock(ActuationService.class),
+                actuationService,
                 meters,
                 clock
         );
