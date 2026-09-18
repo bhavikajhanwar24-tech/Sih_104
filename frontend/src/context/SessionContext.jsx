@@ -51,7 +51,7 @@ export function SessionProvider({ children }) {
 
   const setScenarioId = useCallback((id) => {
     setScenarioIdState(id);
-    if (id === SIP_SCENARIO_ID) {
+    if (id === SIP_SCENARIO_ID || id === 'grandparent-scam') {
       setChannelProfile(CHANNEL_PROFILES.PSTN_NARROWBAND);
     } else if (id === 'live-browser') {
       setChannelProfile(CHANNEL_PROFILES.WEBRTC_WIDEBAND);

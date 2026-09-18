@@ -74,6 +74,11 @@ export const SEED_SCENARIOS = Object.freeze([
     title: 'Live SIP (AudioSocket)',
     description: 'Softphone → Asterisk tap — Analyst attaches; gauge follows the call',
   }),
+  Object.freeze({
+    id: 'grandparent-scam',
+    title: 'Grandparent scam (Scenario 4)',
+    description: 'Hinglish bail urgency — Senior Shield red alert + family SOS',
+  }),
 ]);
 
 export const VIEWS = Object.freeze({
