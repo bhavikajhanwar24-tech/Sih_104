@@ -63,6 +63,33 @@ export function AuditPage() {
         <span className="font-mono text-xs text-sv-muted">{row.createdAt}</span>
       ),
     },
+    {
+      key: 'payload',
+      header: 'Detail',
+      render: (row) => {
+        const p = row.payload || {};
+        const bits = [];
+        if (p.policySetId) bits.push(`set ${String(p.policySetId).slice(0, 8)}…`);
+        if (p.comment) bits.push(p.comment);
+        if (p.contentSha256) bits.push(`sha ${String(p.contentSha256).slice(0, 8)}…`);
+        if (!bits.length && Object.keys(p).length) {
+          try {
+            return (
+              <span className="line-clamp-2 font-mono text-[11px] text-sv-muted">
+                {JSON.stringify(p)}
+              </span>
+            );
+          } catch {
+            return '—';
+          }
+        }
+        return bits.length ? (
+          <span className="line-clamp-2 text-xs text-sv-fg">{bits.join(' · ')}</span>
+        ) : (
+          <span className="text-xs text-sv-muted">—</span>
+        );
+      },
+    },
   ];
 
   const runVerify = async () => {
@@ -106,7 +133,7 @@ export function AuditPage() {
           label="Event type filter"
           value={eventType}
           onChange={(e) => setEventType(e.target.value)}
-          placeholder="e.g. LOGIN_SUCCESS"
+          placeholder="e.g. POLICY_SET_APPROVED"
           className="max-w-xs"
         />
         <div className="flex items-end">

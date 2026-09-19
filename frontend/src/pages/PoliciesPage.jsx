@@ -587,6 +587,7 @@ export function PoliciesPage() {
         <ApprovalsTab
           loading={loading}
           pending={pendingSets}
+          sets={sets}
           canApprove={canApprove}
           onRefresh={load}
         />
@@ -1009,21 +1010,60 @@ function VersionsTab({ loading, sets, canWrite, onRefresh }) {
 
   if (loading && sets.length === 0) return <p className="text-sm text-sv-muted">Loading…</p>;
 
+  const setTone = (status) => {
+    if (status === 'ACTIVE') return 'success';
+    if (status === 'REJECTED') return 'danger';
+    if (status === 'PENDING_APPROVAL') return 'warn';
+    if (status === 'SUPERSEDED') return 'neutral';
+    if (status === 'DRAFT') return 'accent';
+    return 'neutral';
+  };
+
   return (
     <div className="space-y-4">
+      <p className="text-sm text-sv-muted">
+        Approve / reject results show here as version status (ACTIVE, REJECTED, SUPERSEDED). The
+        Approvals tab only lists items still waiting.
+      </p>
       <Table
         columns={[
           { key: 'version', header: 'Version', render: (r) => `v${r.version}` },
           {
+            key: 'name',
+            header: 'Name',
+            render: (r) => r.name || 'Policy set',
+          },
+          {
             key: 'status',
             header: 'Status',
-            render: (r) => <Badge tone="neutral">{r.status}</Badge>,
+            render: (r) => <Badge tone={setTone(r.status)}>{r.status}</Badge>,
+          },
+          {
+            key: 'decided',
+            header: 'Decided',
+            render: (r) =>
+              r.approvedAt ? (
+                <span className="font-mono text-xs text-sv-muted">
+                  {String(r.approvedAt).replace('T', ' ').slice(0, 19)}
+                </span>
+              ) : (
+                <span className="text-xs text-sv-muted">—</span>
+              ),
+          },
+          {
+            key: 'comment',
+            header: 'Comment',
+            render: (r) => (
+              <span className="line-clamp-2 text-xs text-sv-fg">{r.comment || '—'}</span>
+            ),
           },
           {
             key: 'sha',
             header: 'content_sha256',
             render: (r) => (
-              <span className="font-mono text-xs">{r.contentSha256 || '—'}</span>
+              <span className="font-mono text-xs">
+                {r.contentSha256 ? `${String(r.contentSha256).slice(0, 12)}…` : '—'}
+              </span>
             ),
           },
           {
@@ -1133,86 +1173,158 @@ VersionsTab.propTypes = {
   onRefresh: PropTypes.func,
 };
 
-function ApprovalsTab({ loading, pending, canApprove, onRefresh }) {
+function ApprovalsTab({ loading, pending, sets, canApprove, onRefresh }) {
   const { push } = useToast();
   const [comment, setComment] = useState({});
-  if (loading && (!pending || pending.length === 0)) {
+
+  const recentDecisions = (sets || [])
+    .filter((s) => s.approvedAt && ['ACTIVE', 'REJECTED', 'SUPERSEDED'].includes(s.status))
+    .slice(0, 12);
+
+  const setTone = (status) => {
+    if (status === 'ACTIVE') return 'success';
+    if (status === 'REJECTED') return 'danger';
+    if (status === 'SUPERSEDED') return 'neutral';
+    return 'warn';
+  };
+
+  if (loading && (!pending || pending.length === 0) && recentDecisions.length === 0) {
     return <p className="text-sm text-sv-muted">Loading…</p>;
   }
   if (!canApprove) {
     return (
-      <p className="text-sm text-sv-muted">
-        Approvals inbox requires the POLICY_APPROVER role (policies:approve).
-      </p>
+      <div className="space-y-4">
+        <p className="text-sm text-sv-muted">
+          Approving / rejecting requires the POLICY_APPROVER role (policies:approve). As tenant
+          admin you can still see outcomes under <strong>Versions</strong> and <strong>Audit</strong>.
+        </p>
+        {recentDecisions.length > 0 ? (
+          <RecentDecisionsList decisions={recentDecisions} setTone={setTone} />
+        ) : null}
+      </div>
     );
   }
-  if (pending.length === 0) {
-    return <p className="text-sm text-sv-muted">No sets pending approval.</p>;
-  }
+
   return (
-    <ul className="space-y-3">
-      {pending.map((s) => (
-        <li key={s.id} className="rounded border border-sv-border p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-medium">
-              {s.name || 'Policy set'} · v{s.version}
-            </span>
-            <Link className="text-xs text-sv-accent underline" to={`/app/policies/review?set=${s.id}`}>
-              Review rules
-            </Link>
-          </div>
-          <Input
-            className="mt-2"
-            label="Comment (required to reject)"
-            value={comment[s.id] || ''}
-            onChange={(e) => setComment((prev) => ({ ...prev, [s.id]: e.target.value }))}
-          />
-          <div className="mt-2 flex gap-2">
-            <Button
-              className="px-2 py-1 text-xs"
-              onClick={async () => {
-                try {
-                  await apiJson(`/api/v2/policy/sets/${s.id}/approve`, {
-                    method: 'POST',
-                    body: JSON.stringify({ comment: comment[s.id] || '' }),
-                  });
-                  push('Approved — set is ACTIVE');
-                  onRefresh();
-                } catch (err) {
-                  push(err.message || 'Approve failed');
-                }
-              }}
-            >
-              Approve
-            </Button>
-            <Button
-              className="px-2 py-1 text-xs"
-              variant="danger"
-              onClick={async () => {
-                try {
-                  await apiJson(`/api/v2/policy/sets/${s.id}/reject`, {
-                    method: 'POST',
-                    body: JSON.stringify({ comment: comment[s.id] || '' }),
-                  });
-                  push('Rejected');
-                  onRefresh();
-                } catch (err) {
-                  push(err.message || 'Reject failed');
-                }
-              }}
-            >
-              Reject
-            </Button>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-6">
+      <div>
+        <p className="mb-2 text-sm font-medium text-sv-fg">Inbox (pending)</p>
+        {pending.length === 0 ? (
+          <p className="text-sm text-sv-muted">
+            Nothing waiting — approved / rejected sets leave this list. See recent decisions below
+            or Policies → Versions.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {pending.map((s) => (
+              <li key={s.id} className="rounded border border-sv-border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">
+                    {s.name || 'Policy set'} · v{s.version}
+                  </span>
+                  <Link
+                    className="text-xs text-sv-accent underline"
+                    to={`/app/policies/review?set=${s.id}`}
+                  >
+                    Review rules
+                  </Link>
+                </div>
+                <Input
+                  className="mt-2"
+                  label="Comment (required to reject)"
+                  value={comment[s.id] || ''}
+                  onChange={(e) => setComment((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                />
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    onClick={async () => {
+                      try {
+                        await apiJson(`/api/v2/policy/sets/${s.id}/approve`, {
+                          method: 'POST',
+                          body: JSON.stringify({ comment: comment[s.id] || '' }),
+                        });
+                        push('Approved — set is ACTIVE');
+                        onRefresh();
+                      } catch (err) {
+                        push(err.message || 'Approve failed');
+                      }
+                    }}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    variant="danger"
+                    onClick={async () => {
+                      try {
+                        await apiJson(`/api/v2/policy/sets/${s.id}/reject`, {
+                          method: 'POST',
+                          body: JSON.stringify({ comment: comment[s.id] || '' }),
+                        });
+                        push('Rejected');
+                        onRefresh();
+                      } catch (err) {
+                        push(err.message || 'Reject failed');
+                      }
+                    }}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <RecentDecisionsList decisions={recentDecisions} setTone={setTone} />
+    </div>
   );
 }
+
+function RecentDecisionsList({ decisions, setTone }) {
+  if (!decisions.length) {
+    return (
+      <p className="text-sm text-sv-muted">No approve / reject decisions recorded yet for this tenant.</p>
+    );
+  }
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-sv-fg">Recent decisions</p>
+      <ul className="space-y-2">
+        {decisions.map((s) => (
+          <li
+            key={s.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded border border-sv-border px-3 py-2 text-sm"
+          >
+            <span>
+              {s.name || 'Policy set'} · v{s.version}{' '}
+              <Badge tone={setTone(s.status)}>{s.status}</Badge>
+            </span>
+            <span className="text-xs text-sv-muted">
+              {s.approvedAt ? String(s.approvedAt).replace('T', ' ').slice(0, 19) : ''}
+              {s.comment ? ` · ${s.comment}` : ''}
+            </span>
+            <Link className="text-xs text-sv-accent underline" to={`/app/policies/review?set=${s.id}`}>
+              Open
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+RecentDecisionsList.propTypes = {
+  decisions: PropTypes.array,
+  setTone: PropTypes.func,
+};
 
 ApprovalsTab.propTypes = {
   loading: PropTypes.bool,
   pending: PropTypes.array,
+  sets: PropTypes.array,
   canApprove: PropTypes.bool,
   onRefresh: PropTypes.func,
 };
