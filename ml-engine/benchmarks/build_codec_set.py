@@ -261,8 +261,9 @@ def resolve_sources(
     if samples:
         return samples
 
-    if not synthetic and not samples:
-        synthetic = True
+    if not synthetic:
+        # Honest stop — do not silently invent a corpus.
+        return []
 
     syn_root = datasets_root / "_synthetic_antispoof"
     n = limit or 80
@@ -342,7 +343,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         synthetic=args.synthetic,
     )
     if not samples:
-        print("[codec-set] no source samples", file=sys.stderr)
+        print(
+            "[codec-set] STOP: no source samples. Place ASVspoof under datasets/ "
+            "(scripts/fetch_datasets.md) or pass --synthetic.",
+            file=sys.stderr,
+        )
         return 2
     print(f"[codec-set] sources={len(samples)} ffmpeg={_ffmpeg()}")
     build_manifest(samples, args.cache)

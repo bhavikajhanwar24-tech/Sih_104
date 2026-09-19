@@ -1,8 +1,9 @@
 """Dataset loaders for the evaluation harness (Context §15.1).
 
 Wraps ``training.dataset`` loaders and adds codec-degraded + fairness group metadata.
-Use ``--limit`` for smoke tests. When corpora are absent, ``synthetic=True`` builds a
-deterministic proxy that is clearly labelled — never publish synthetic EER as a field result.
+Use ``--limit`` for smoke tests. Synthetic corpora are used **only** when
+``synthetic=True`` — never silently fabricated. Do not publish synthetic EER as a
+field result; do not invent fairness tags when Common Voice TSV metadata is absent.
 """
 
 from __future__ import annotations
@@ -26,7 +27,9 @@ from training.dataset import (  # noqa: E402
     load_asvspoof2019_la,
     load_asvspoof2021_df,
     load_audio,
+    load_common_voice,
     load_in_the_wild,
+    primary_fairness_group,
 )
 
 ChannelCondition = Literal[
@@ -43,10 +46,10 @@ DATASET_IDS = (
     "asvspoof2021_df_eval",
     "in_the_wild",
     "codec_degraded",
+    "common_voice_fairness",
 )
 
-# Fairness groups (§13.5) — when metadata is absent we still emit the schema with
-# synthetic proxy groups so the compliance portal chart has a stable contract.
+# Fairness groups (§13.5). Portal chart expects these keys when real tags exist.
 FAIRNESS_GROUPS = (
     "indo_aryan",
     "dravidian",
@@ -64,6 +67,7 @@ class EvalItem:
     channel_condition: ChannelCondition
     fairness_group: str = "unspecified"
     dataset_version: str = "unknown"
+    fairness_tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -71,7 +75,7 @@ class DatasetBundle:
     dataset_id: str
     version: str
     items: list[EvalItem] = field(default_factory=list)
-    source: str = "disk"  # disk | synthetic
+    source: str = "disk"  # disk | synthetic | missing
     note: str = ""
 
     @property
@@ -89,15 +93,15 @@ def _version_stamp(paths: list[Path], fallback: str) -> str:
     return f"{fallback}@{h.hexdigest()[:12]}"
 
 
-def _fairness_for(sample: Sample, idx: int) -> str:
-    # Prefer speaker-id heuristics; otherwise rotate so each group sees both labels
-    # (synthetic corpora alternate bona/spoof by index).
-    sid = (sample.speaker_id or "-").lower()
-    if any(x in sid for x in ("hi", "bn", "mr", "gu", "pa")):
-        return "indo_aryan"
-    if any(x in sid for x in ("ta", "te", "kn", "ml")):
-        return "dravidian"
-    return FAIRNESS_GROUPS[(idx // 2) % len(FAIRNESS_GROUPS)]
+def _fairness_for(sample: Sample) -> tuple[str, dict[str, str], str]:
+    """Return (primary_group, tags, note). Never invent demographic labels."""
+    from training.dataset import fairness_tags
+
+    tags = fairness_tags(sample)
+    primary = primary_fairness_group(sample)
+    if tags:
+        return primary, tags, "from_common_voice_tsv" if sample.corpus == "common_voice" else "from_sample_metadata"
+    return "unspecified", {}, "no_demographic_metadata"
 
 
 def load_dataset(
@@ -116,13 +120,22 @@ def load_dataset(
 
     if dataset_id == "asvspoof2019_la_eval":
         samples = load_asvspoof2019_la(root, "eval", limit=limit)
-        version = _version_stamp([s.path for s in samples], "ASVspoof2019-LA-eval")
+        version = _version_stamp([s.path for s in samples], "ASVspoof2019-LA-eval") if samples else "missing"
     elif dataset_id == "asvspoof2021_df_eval":
         samples = load_asvspoof2021_df(root, limit=limit)
-        version = _version_stamp([s.path for s in samples], "ASVspoof2021-DF-eval")
+        version = _version_stamp([s.path for s in samples], "ASVspoof2021-DF-eval") if samples else "missing"
     elif dataset_id == "in_the_wild":
         samples = load_in_the_wild(root, limit=limit)
-        version = _version_stamp([s.path for s in samples], "InTheWild-Fraunhofer")
+        version = _version_stamp([s.path for s in samples], "InTheWild-Fraunhofer") if samples else "missing"
+    elif dataset_id == "common_voice_fairness":
+        samples = load_common_voice(root, limit=limit)
+        version = _version_stamp([s.path for s in samples], "CommonVoice-hi-mr-bn-ta-te") if samples else "missing"
+        note = (
+            "Bonafide-only Common Voice fairness probe (hi/mr/bn/ta/te). "
+            "Spoof side must come from a paired anti-spoof eval set — FPR uses bona rows only."
+            if samples
+            else "Common Voice tree missing — see scripts/fetch_datasets.md"
+        )
     elif dataset_id == "codec_degraded":
         # Prefer a dedicated codec-degraded tree; else reuse LA eval paths tagged as codec.
         codec_root = root / "codec_degraded"
@@ -135,11 +148,19 @@ def load_dataset(
                 samples.append(Sample(p, label, "eval", "codec_degraded"))  # type: ignore[arg-type]
                 if limit is not None and len(samples) >= limit:
                     break
-            version = _version_stamp([s.path for s in samples], "codec-degraded-ffmpeg")
+            version = _version_stamp([s.path for s in samples], "codec-degraded-ffmpeg") if samples else "missing"
         else:
             samples = load_asvspoof2019_la(root, "eval", limit=limit)
-            version = _version_stamp([s.path for s in samples], "ASVspoof2019-LA-as-codec-proxy")
-            note = "codec_degraded/ missing — using ASVspoof 2019 LA eval as path proxy; apply channel_condition in scorer"
+            version = (
+                _version_stamp([s.path for s in samples], "ASVspoof2019-LA-as-codec-proxy")
+                if samples
+                else "missing"
+            )
+            if samples:
+                note = (
+                    "codec_degraded/ missing — using ASVspoof 2019 LA eval as path proxy; "
+                    "apply channel_condition in scorer"
+                )
     else:
         raise ValueError(f"unknown dataset_id={dataset_id}")
 
@@ -156,6 +177,22 @@ def load_dataset(
         )
         if dataset_id == "in_the_wild":
             samples = list(syn.get("itw") or [])
+        elif dataset_id == "common_voice_fairness":
+            # Synthetic has no real CV tags — leave empty rather than invent demographics.
+            samples = []
+            source = "synthetic"
+            version = f"synthetic@{dataset_id}"
+            note = (
+                "SYNTHETIC MODE: Common Voice absent — fairness cell left empty "
+                "(no fabricated language/gender/age tags)."
+            )
+            return DatasetBundle(
+                dataset_id=dataset_id,
+                version=version,
+                items=[],
+                source=source,
+                note=note,
+            )
         else:
             # ASVspoof / codec cells share the in-domain synthetic eval split.
             samples = list(syn.get("eval") or [])
@@ -167,17 +204,28 @@ def load_dataset(
             "SYNTHETIC SMOKE CORPUS — not a published result. "
             "Context §3.1: report real In-the-Wild / ASVspoof numbers when corpora are present."
         )
+    elif not samples:
+        source = "missing"
+        version = "missing"
+        note = note or f"{dataset_id} not found under {root} — see scripts/fetch_datasets.md"
 
-    items = [
-        EvalItem(
-            sample=s,
-            dataset_id=dataset_id,
-            channel_condition=channel_condition,
-            fairness_group=_fairness_for(s, i),
-            dataset_version=version,
+    items: list[EvalItem] = []
+    for s in samples:
+        primary, tags, tag_note = _fairness_for(s)
+        items.append(
+            EvalItem(
+                sample=s,
+                dataset_id=dataset_id,
+                channel_condition=channel_condition,
+                fairness_group=primary,
+                dataset_version=version,
+                fairness_tags=tags,
+            )
         )
-        for i, s in enumerate(samples)
-    ]
+        if tag_note == "no_demographic_metadata" and source == "disk" and dataset_id != "common_voice_fairness":
+            # ASVspoof has no gender/age — leave unspecified; do not rotate fake groups.
+            pass
+
     return DatasetBundle(
         dataset_id=dataset_id,
         version=version,
@@ -196,7 +244,7 @@ def iter_eval_matrix(
     channels: Optional[list[ChannelCondition]] = None,
 ) -> Iterator[DatasetBundle]:
     """Yield DatasetBundle for each dataset × channel cell."""
-    ds_ids = datasets or list(DATASET_IDS)
+    ds_ids = datasets or [d for d in DATASET_IDS if d != "common_voice_fairness"]
     chans: list[ChannelCondition] = channels or [
         "clean_16k",
         "opus_24k",
@@ -209,6 +257,13 @@ def iter_eval_matrix(
             if ds == "codec_degraded":
                 # Dedicated degraded set: only telephony conditions (no clean).
                 if ch not in telephony:
+                    continue
+                yield load_dataset(
+                    ds, root=root, limit=limit, synthetic=synthetic, channel_condition=ch
+                )
+            elif ds == "common_voice_fairness":
+                # Fairness probe is scored once on clean; channel matrix is separate.
+                if ch != "clean_16k":
                     continue
                 yield load_dataset(
                     ds, root=root, limit=limit, synthetic=synthetic, channel_condition=ch

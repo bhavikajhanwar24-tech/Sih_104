@@ -50,3 +50,13 @@ If `codec_aug` was trained without augmentation, the study retrains both.
 ## Honesty
 
 In-the-Wild EER in the mid-20s (%) is an expected field result (§3.1). Synthetic cells are labelled. ffmpeg ≠ a real carrier path — see limitations in `docs/CODEC_ROBUSTNESS_STUDY.md`.
+
+**Disk corpora:** place ASVspoof / In-the-Wild / Common Voice per `scripts/fetch_datasets.md`, then run **without** `--synthetic`. If corpora are missing, `run_eval` / `codec_study` **exit** and leave existing report cells marked synthetic — they never invent `source=disk` numbers.
+
+```bash
+python -m benchmarks.run_eval --datasets ../datasets --seed 42
+python -m benchmarks.codec_study --datasets ../datasets --seed 42
+python -m benchmarks.fairness --datasets ../datasets
+python -m benchmarks.latency_probe --datasets ../datasets
+python -m benchmarks.asterisk_mulaw_sanity --datasets ../datasets --limit 10
+```

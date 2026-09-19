@@ -93,22 +93,25 @@ def _ensure_checkpoints(
     found = _discover_checkpoints(models_dir)
     if found:
         return found
-    print("[eval] no checkpoints — training smoke models (this may take a minute)…")
-    from training.train_antispoof import train_one
+    if not synthetic:
+        print(
+            "[eval] no checkpoints and --synthetic not set — "
+            "run training.train_antispoof on disk corpora first "
+            "(see scripts/fetch_datasets.md).",
+            file=sys.stderr,
+        )
+        return []
+    print("[eval] no checkpoints — training synthetic smoke models…")
+    from training.train_antispoof import build_eval_map, pick_device, train_one
     from training.dataset import resolve_splits
     import torch
 
     lim = limit or 60
-    splits = resolve_splits(datasets_root, limit=lim, synthetic=True if synthetic else False)
-    if not (splits.get("train") and splits.get("dev")):
-        splits = resolve_splits(datasets_root, limit=lim, synthetic=True)
+    splits = resolve_splits(datasets_root, limit=lim, synthetic=True)
     train_s = splits["train"]
     dev_s = splits["dev"]
-    eval_map = {
-        "asvspoof2019_la_eval": splits.get("eval") or [],
-        "in_the_wild": splits.get("itw") or splits.get("eval") or [],
-    }
-    device = torch.device("cpu")
+    eval_map = build_eval_map(splits)
+    device = pick_device("auto")
     models_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = datasets_root / "_codec_cache"
     # Smoke auto-train: skip ffmpeg codec round-trips (slow / flaky). For the real
@@ -202,10 +205,18 @@ def fairness_table(
     scores: np.ndarray,
     groups: list[str],
     threshold: float,
+    *,
+    tag_notes: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
-    """FPR by fairness group at a fixed threshold (EER θ of the pooled set)."""
+    """FPR by fairness group at a fixed threshold (EER θ of the pooled set).
+
+    Only emits groups that have real metadata (not ``unspecified``). Does not
+    invent language/gender/age labels.
+    """
     out: list[dict[str, Any]] = []
     for g in sorted(set(groups)):
+        if g in ("unspecified", "-", ""):
+            continue
         idx = [i for i, gg in enumerate(groups) if gg == g]
         y = labels[idx]
         s = scores[idx]
@@ -215,13 +226,18 @@ def fairness_table(
             fpr = None
         else:
             fpr = float(np.sum((s[bona] >= threshold)) / n_bona)
+        note = "from_sample_metadata"
+        if tag_notes:
+            notes = {tag_notes[i] for i in idx if i < len(tag_notes)}
+            if notes:
+                note = sorted(notes)[0]
         out.append(
             {
                 "group": g,
                 "n": int(len(idx)),
                 "n_bonafide": n_bona,
                 "fpr": None if fpr is None else round(fpr, 6),
-                "note": "proxy group assignment when Common Voice metadata absent",
+                "note": note,
             }
         )
     return out
@@ -278,24 +294,32 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     out_json = Path(args.results_json)
     plots_dir = Path(args.plots_dir)
 
+    use_synthetic = bool(args.synthetic)
+    from training.dataset import corpora_present
+
+    present = corpora_present(datasets_root)
+    if not use_synthetic:
+        probe = load_dataset("asvspoof2019_la_eval", root=datasets_root, limit=2, synthetic=False)
+        if probe.n == 0:
+            print(
+                "[eval] STOP: ASVspoof 2019 LA eval missing under "
+                f"{datasets_root}. Leaving existing report cells unchanged "
+                "(do not invent source=disk numbers). Place corpora "
+                "(scripts/fetch_datasets.md) or re-run with --synthetic for a "
+                f"labelled smoke run.\n  presence={present}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
     ckpts = _ensure_checkpoints(
         models_dir,
         datasets_root=datasets_root,
         limit=args.limit,
-        synthetic=args.synthetic,
+        synthetic=use_synthetic,
         epochs=args.train_epochs,
     )
     if not ckpts:
         raise SystemExit("No model checkpoints available and training failed.")
-
-    # Resolve whether we need synthetic fallback per dataset.
-    use_synthetic = bool(args.synthetic)
-    if not use_synthetic:
-        # Auto-synthetic if primary corpora missing.
-        probe = load_dataset("asvspoof2019_la_eval", root=datasets_root, limit=2, synthetic=False)
-        if probe.n == 0:
-            print("[eval] corpora missing — enabling synthetic smoke mode")
-            use_synthetic = True
 
     models_meta: list[dict[str, Any]] = []
     dataset_meta: dict[str, dict[str, Any]] = {}
@@ -304,7 +328,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     fairness_groups_all: list[dict[str, Any]] = []
     latency_block: dict[str, Any] = {}
 
-    ds_ids = list(args.dataset) if args.dataset else list(DATASET_IDS)
+    # Exclude fairness-only CV id from the channel matrix; scored separately below.
+    default_ids = [d for d in DATASET_IDS if d != "common_voice_fairness"]
+    ds_ids = list(args.dataset) if args.dataset else default_ids
     channels: list[ChannelCondition] = list(args.channel) if args.channel else list(CHANNEL_LIST)
 
     for ckpt in ckpts:
@@ -323,10 +349,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         print(f"[eval] model={model_id}")
 
-        # Fairness probe: clean in-domain + ITW bona/spoof mix.
+        # Fairness probe: prefer Common Voice real tags; else ASVspoof metadata only
+        # (usually unspecified — never invent proxy language/gender/age).
         fair_labels: list[int] = []
         fair_scores: list[float] = []
         fair_groups: list[str] = []
+
+        if not use_synthetic:
+            cv_bundle = load_dataset(
+                "common_voice_fairness",
+                root=datasets_root,
+                limit=args.limit,
+                synthetic=False,
+                channel_condition="clean_16k",
+            )
+            if cv_bundle.n > 0:
+                print(f"  fairness Common Voice n={cv_bundle.n} source={cv_bundle.source}")
+                # Need a spoof-bearing set for the threshold; score LA clean for θ.
+                la_for_thr = load_dataset(
+                    "asvspoof2019_la_eval",
+                    root=datasets_root,
+                    limit=args.limit,
+                    synthetic=False,
+                    channel_condition="clean_16k",
+                )
+                if la_for_thr.n > 0:
+                    y_la, s_la, _, _, _ = score_bundle(model, la_for_thr, calibration)
+                    from benchmarks.metrics import eer_and_threshold
+
+                    _, thr = eer_and_threshold(y_la, s_la)
+                    y_cv, s_cv, _, groups_cv, _ = score_bundle(model, cv_bundle, calibration)
+                    fairness_groups_all = fairness_table(y_cv, s_cv, groups_cv, thr)
+                    dataset_meta["common_voice_fairness:clean_16k"] = bundle_manifest(cv_bundle)
 
         for bundle in iter_eval_matrix(
             root=datasets_root,
@@ -336,7 +390,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             channels=channels,
         ):
             if bundle.n == 0:
-                print(f"  skip empty {bundle.dataset_id}/{bundle.items[0].channel_condition if bundle.items else '?'}")
+                print(
+                    f"  skip empty {bundle.dataset_id} "
+                    f"(source={bundle.source}) — {bundle.note or 'missing'}"
+                )
                 continue
             ch = bundle.items[0].channel_condition
             print(f"  {bundle.dataset_id} × {ch} n={bundle.n} source={bundle.source}")
@@ -372,19 +429,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 except ValueError:
                     plots.append(png.as_posix())
 
-            fair_labels.extend(int(x) for x in labels.tolist())
-            fair_scores.extend(float(x) for x in logits.tolist())
-            fair_groups.extend(groups)
+            if not fairness_groups_all:
+                fair_labels.extend(int(x) for x in labels.tolist())
+                fair_scores.extend(float(x) for x in logits.tolist())
+                fair_groups.extend(groups)
 
-        if fair_labels:
+        if not fairness_groups_all and fair_labels:
             y = np.asarray(fair_labels, dtype=np.int32)
             s = np.asarray(fair_scores, dtype=np.float64)
             from benchmarks.metrics import eer_and_threshold
 
             _, thr = eer_and_threshold(y, s)
             fairness_groups_all = fairness_table(y, s, fair_groups, thr)
-            # Prefer fairness from the codec-aug / last model for the portal chart.
-            _ = model_id
 
         if not latency_block:
             latency_block = measure_latency(model, calibration, n=min(40, max(10, (args.limit or 40) // 2)))
@@ -400,9 +456,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "threshold_rule": "pooled_eer_threshold",
             "groups": fairness_groups_all,
             "note": (
-                "Groups are assigned from speaker-id heuristics or a deterministic rotation when "
-                "Common Voice language labels are absent. Replace with CV language tags for the "
-                "compliance slide (§13.5)."
+                "Groups come from Common Voice TSV language/gender/age tags when present. "
+                "Empty groups mean metadata was absent — no proxy rotation / fabricated FPR. "
+                "See also `python -m benchmarks.fairness`."
+                if not use_synthetic
+                else "Synthetic smoke: fairness groups omitted (would require fabricated CV tags)."
             ),
         },
         "latency": latency_block,
@@ -417,6 +475,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if use_synthetic
                 else None
             ),
+            "corpora_presence": present,
         },
     }
 

@@ -46,7 +46,7 @@ const SENIOR_SCENARIO_ID = 'hinglish-grandparent';
  * (Context §7.4 / Scenario 4). Completely different visual language from the analyst console.
  */
 export function SeniorShield() {
-  const { sessionId, isRunning, startSession, setScenarioId, scenarioId } = useSession();
+  const { sessionId, isRunning, startSession, scenarioId } = useSession();
   const { latest } = useTelemetrySocket(sessionId);
 
   const [lang, setLang] = useState(scenarioId === SENIOR_SCENARIO_ID ? 'hi' : 'en');

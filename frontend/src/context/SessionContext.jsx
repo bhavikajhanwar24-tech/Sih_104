@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CHANNEL_PROFILES } from '@/contracts';
+import { apiFetch } from '@/services/api.js';
 import { SEED_SCENARIOS } from '@/theme.js';
 
 /** Softphone / AudioSocket path — attach to Decision Plane session opened by the bridge. */
@@ -81,7 +82,7 @@ export function SessionProvider({ children }) {
     // SIP sessions are owned by the AudioSocket bridge — UI only detaches.
     if (!id || sipOwned) return;
     try {
-      await fetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
+      await apiFetch(`/api/v1/session/${encodeURIComponent(id)}/close`, { method: 'POST' });
     } catch {
       /* UI already stopped; backend close is best-effort */
     }
@@ -100,7 +101,7 @@ export function SessionProvider({ children }) {
 
     if (activeScenario === SIP_SCENARIO_ID) {
       try {
-        const snap = await fetch('/api/v1/session');
+        const snap = await apiFetch('/api/v1/session');
         const body = snap.ok ? await snap.json().catch(() => ({})) : {};
         const existing = Array.isArray(body.sessions) ? body.sessions : [];
         knownAtListenRef.current = new Set(
@@ -121,7 +122,7 @@ export function SessionProvider({ children }) {
       sipOwnedRef.current = false;
       setAwaitingSip(false);
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/v1/scenario/${encodeURIComponent(activeScenario)}/load?mode=replay&autoReplay=true`,
           { method: 'POST' },
         );
@@ -157,7 +158,7 @@ export function SessionProvider({ children }) {
     sipOwnedRef.current = false;
     setAwaitingSip(false);
     try {
-      const res = await fetch('/api/v1/session/start', {
+      const res = await apiFetch('/api/v1/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,7 +194,7 @@ export function SessionProvider({ children }) {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch('/api/v1/session');
+        const res = await apiFetch('/api/v1/session');
         if (!res.ok || cancelled) return;
         const body = await res.json().catch(() => ({}));
         const sessions = Array.isArray(body.sessions) ? body.sessions : [];

@@ -12,13 +12,16 @@ import { RiskTimeline } from '@/components/RiskTimeline.jsx';
 import { SessionControl } from '@/components/SessionControl.jsx';
 import { SpectrogramCanvas } from '@/components/SpectrogramCanvas.jsx';
 import { SupervisorAlert } from '@/components/SupervisorAlert.jsx';
+import { ForensicDossierViewer } from '@/components/compliance/ForensicDossierViewer.jsx';
 import { TranscriptPanel } from '@/components/TranscriptPanel.jsx';
 import { TransactionPanel } from '@/components/TransactionPanel.jsx';
 import { WhyPanel } from '@/components/WhyPanel.jsx';
+import { Card } from '@/components/ui/Card.jsx';
 import { Panel } from '@/components/ui/Panel.jsx';
 import { useSession } from '@/context/SessionContext.jsx';
 import { useTelemetrySocket } from '@/hooks/useTelemetrySocket.js';
 import { INTERVENTION_LEVELS } from '@/contracts';
+import { apiFetch } from '@/services/api.js';
 
 /**
  * Analyst operations view — named grid slots for later widgets.
@@ -69,7 +72,7 @@ export function AnalystConsole() {
     if (!sessionId) return;
     setHoldAccepted(true);
     try {
-      const res = await fetch(`/api/v1/actuation/${encodeURIComponent(sessionId)}/hold`, {
+      const res = await apiFetch(`/api/v1/actuation/${encodeURIComponent(sessionId)}/hold`, {
         method: 'POST',
       });
       if (!res.ok) {
@@ -87,31 +90,11 @@ export function AnalystConsole() {
       'Supervisor released auto-hold after review',
     );
     if (!reason || reason.trim().length < 10) return;
-    await fetch(`/api/v1/intervention/${encodeURIComponent(sessionId)}/release`, {
+    await apiFetch(`/api/v1/intervention/${encodeURIComponent(sessionId)}/release`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ analystId: 'supervisor-demo', reason: reason.trim() }),
     });
-  }
-
-  async function downloadDossier() {
-    if (!sessionId) return;
-    try {
-      const res = await fetch(`/api/v1/forensics/${encodeURIComponent(sessionId)}/dossier.pdf`);
-      if (!res.ok) {
-        console.warn('dossier download failed', res.status, await res.text());
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sentinelvoice-${sessionId}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.warn('dossier download error', err);
-    }
   }
 
   return (
@@ -122,15 +105,6 @@ export function AnalystConsole() {
           <div className="w-full shrink-0 lg:w-72">
             <MicControl sessionId={sessionId} autoStart />
           </div>
-        ) : null}
-        {sessionId ? (
-          <button
-            type="button"
-            onClick={() => void downloadDossier()}
-            className="shrink-0 rounded border border-sv-border bg-sv-panel px-3 py-2 font-mono text-[11px] text-sv-fg hover:border-sv-accent"
-          >
-            Download forensic PDF
-          </button>
         ) : null}
       </div>
 
@@ -253,7 +227,7 @@ export function AnalystConsole() {
           className="col-span-12 h-[10rem] md:col-span-5"
           variant="flush"
         >
-          <TranscriptPanel frame={latest} />
+          <TranscriptPanel frame={latest} sessionId={sessionId} />
         </Panel>
 
         <Panel
@@ -308,6 +282,12 @@ export function AnalystConsole() {
           currentLevel={latest?.intervention?.level ?? INTERVENTION_LEVELS.LEVEL_1_SILENT}
         />
       ) : null}
+
+      <div className="shrink-0 px-1 pb-2">
+        <Card title="Forensic dossier" variant="elevated">
+          <ForensicDossierViewer initialSessionId={sessionId} />
+        </Card>
+      </div>
     </div>
   );
 }

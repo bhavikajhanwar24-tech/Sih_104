@@ -38,15 +38,10 @@ def _synth_voiced(sr: int, duration_s: float, f0: float = 140.0) -> np.ndarray:
 
 
 def _ensure_fixtures() -> list[dict]:
-    """Build 5 hand-labelled clips if missing (checked into fixtures via generator)."""
+    """Build 5 hand-labelled clips; rewrite missing WAVs even if labels.json exists."""
     FIXTURES.mkdir(parents=True, exist_ok=True)
     labels_path = FIXTURES / "labels.json"
-    if labels_path.exists():
-        return json.loads(labels_path.read_text(encoding="utf-8"))
-
     sr = 16000
-    clips = []
-    # Clip designs: each has 1 labelled breath (except clip 5 has 2).
     specs = [
         {"name": "clip01.wav", "breaths": [(0.40, 0.35)], "voice_after": True},
         {"name": "clip02.wav", "breaths": [(0.55, 0.28)], "voice_after": True},
@@ -54,12 +49,25 @@ def _ensure_fixtures() -> list[dict]:
         {"name": "clip04.wav", "breaths": [(0.70, 0.25)], "voice_after": False},
         {"name": "clip05.wav", "breaths": [(0.25, 0.30), (1.10, 0.35)], "voice_after": True},
     ]
+
+    clips: list[dict]
+    if labels_path.exists():
+        clips = json.loads(labels_path.read_text(encoding="utf-8"))
+    else:
+        clips = []
+
+    need_regen = (not labels_path.exists()) or any(
+        not (FIXTURES / spec["name"]).is_file() for spec in specs
+    )
+    if not need_regen:
+        return clips
+
+    clips = []
     for spec in specs:
         parts: list[np.ndarray] = []
         cursor = 0.0
         labelled = []
         for start_s, dur in spec["breaths"]:
-            # Silence / low noise before breath
             gap = max(0.0, start_s - cursor)
             if gap > 0:
                 parts.append(np.zeros(int(sr * gap), dtype=np.float32))
@@ -72,7 +80,6 @@ def _ensure_fixtures() -> list[dict]:
                 voiced = _synth_voiced(sr, 0.45)
                 parts.append(voiced)
                 cursor += 0.45
-        # Tail pad to ~2s
         if cursor < 2.0:
             parts.append(np.zeros(int(sr * (2.0 - cursor)), dtype=np.float32))
         audio = np.concatenate(parts)

@@ -4,7 +4,8 @@
 Fit LogisticRegression on DEV scores SEPARATELY per channel profile.
 Produces (A, B) coefficients, reliability diagram PNG, and ECE.
 
-DO NOT fit on the evaluation set.
+DO NOT fit on the evaluation set. Uses the same ``resolve_splits`` path as
+``train_antispoof`` / Colab notebook.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -23,9 +24,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from training.augment import codec_roundtrip  # noqa: E402
-from training.dataset import DEFAULT_DATASETS, load_audio, resolve_splits  # noqa: E402
+from training.dataset import (  # noqa: E402
+    DEFAULT_DATASETS,
+    corpora_present,
+    load_audio,
+    primary_train_ready,
+    resolve_splits,
+)
 from training.features import STACK_DIM, TinyLCNN, lfcc_stack, pad_stack  # noqa: E402
 from training.metrics import expected_calibration_error  # noqa: E402
+from training.train_antispoof import pick_device  # noqa: E402
 
 SR = 16000
 MAX_FRAMES = 200
@@ -37,10 +45,11 @@ PROFILE_CODECS = {
 }
 
 
-def _load_model(ckpt: Path) -> TinyLCNN:
-    blob = torch.load(ckpt, map_location="cpu", weights_only=False)
+def _load_model(ckpt: Path, device: torch.device) -> TinyLCNN:
+    blob = torch.load(ckpt, map_location=device, weights_only=False)
     model = TinyLCNN(int(blob.get("stack_dim", STACK_DIM)))
     model.load_state_dict(blob["state_dict"])
+    model.to(device)
     model.eval()
     return model
 
@@ -51,6 +60,7 @@ def _logits_for_profile(
     paths_labels: list[tuple[Path, int]],
     profile: str,
     cache_dir: Path,
+    device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
     codec = PROFILE_CODECS.get(profile)
     scores: list[float] = []
@@ -63,8 +73,8 @@ def _logits_for_profile(
             except Exception:
                 pass
         stack = pad_stack(lfcc_stack(audio, SR, max_frames=MAX_FRAMES), MAX_FRAMES)
-        x = torch.from_numpy(stack).unsqueeze(0).unsqueeze(0)
-        logit = float(model(x).item())
+        x = torch.from_numpy(stack).unsqueeze(0).unsqueeze(0).to(device)
+        logit = float(model(x).cpu().item())
         scores.append(logit)
         labels.append(label)
     return np.asarray(scores, dtype=np.float64), np.asarray(labels, dtype=np.int32)
@@ -127,35 +137,51 @@ def reliability_diagram(
     plt.close(fig)
 
 
-def main() -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Calibrate anti-spoof scores (Platt / DEV only)")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--datasets", type=Path, default=DEFAULT_DATASETS)
     parser.add_argument("--out", type=Path, default=ROOT / "models" / "antispoof")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--synthetic", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    args = parser.parse_args(argv)
+
+    if not args.synthetic and not primary_train_ready(args.datasets):
+        print(
+            "ERROR: DEV corpus missing. Place ASVspoof under datasets/ "
+            f"(see scripts/fetch_datasets.md) or pass --synthetic.\n"
+            f"  presence={corpora_present(args.datasets)}",
+            file=sys.stderr,
+        )
+        return 2
 
     splits = resolve_splits(args.datasets, limit=args.limit, synthetic=args.synthetic)
     dev = splits.get("dev") or []
     if not dev:
-        print("ERROR: empty DEV set", file=sys.stderr)
+        print("ERROR: empty DEV set — refusing to calibrate on eval", file=sys.stderr)
         return 2
 
-    model = _load_model(args.checkpoint)
+    # Hard guard: never accept an --eval-split style flag; DEV only.
+    device = pick_device(args.device)
+    model = _load_model(args.checkpoint, device)
     cache_dir = args.datasets / "_codec_cache"
     paths_labels = [(s.path, int(s.label)) for s in dev]
+    src_tag = "synthetic" if args.synthetic or any(s.source == "synthetic" for s in dev) else "disk"
 
     cal: dict[str, Any] = {
         "method": "platt",
         "fit_on": "dev_only",
+        "never_fit_on": "eval",
         "checkpoint": str(args.checkpoint),
+        "source": src_tag,
+        "n_dev": len(dev),
         "profiles": {},
     }
     args.out.mkdir(parents=True, exist_ok=True)
 
     for profile in PROFILE_CODECS:
-        scores, labels = _logits_for_profile(model, paths_labels, profile, cache_dir)
+        scores, labels = _logits_for_profile(model, paths_labels, profile, cache_dir, device)
         params = fit_platt(scores, labels)
         A, B = params["A"], params["B"]
         probs = 1.0 / (1.0 + np.exp(-(A * scores + B)))
@@ -164,11 +190,11 @@ def main() -> int:
             probs,
             labels,
             png,
-            title=f"Reliability — {profile} (ECE={params['ece']:.3f})",
+            title=f"Reliability — {profile} (ECE={params['ece']:.3f}, DEV only)",
         )
         params["reliability_png"] = str(png)
         cal["profiles"][profile] = params
-        print(f"{profile}: A={A:.4f} B={B:.4f} ECE={params['ece']:.4f} -> {png}")
+        print(f"{profile}: A={A:.4f} B={B:.4f} ECE={params['ece']:.4f} n={params['n']} -> {png}")
 
     out_json = args.out / "calibration.json"
     out_json.write_text(json.dumps(cal, indent=2), encoding="utf-8")
@@ -177,7 +203,7 @@ def main() -> int:
     src = Path(cal["profiles"]["WEBRTC_WIDEBAND"]["reliability_png"])
     if src.is_file():
         primary.write_bytes(src.read_bytes())
-    print(f"Wrote {out_json} and {primary}")
+    print(f"Wrote {out_json} and {primary} (source={src_tag})")
     return 0
 
 

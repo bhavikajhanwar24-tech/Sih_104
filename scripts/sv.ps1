@@ -109,7 +109,7 @@ function Invoke-Help {
     Write-Host '  backend           Spring Boot Decision Plane (:8080)'
     Write-Host '  frontend          Vite Presentation Plane (strict :5173)'
     Write-Host '  dev               Media -> Inference -> Decision -> Presentation + health waits'
-    Write-Host '  demo              ensure-antispoof + dev'
+    Write-Host '  demo              preflight + docker compose up --build + seed'
     Write-Host '  health            probe plane health endpoints'
     Write-Host '  test              run per-plane test suites (explicit if missing)'
     Write-Host '  eval              ML benchmark suite'
@@ -171,6 +171,31 @@ function Invoke-Frontend {
     } finally {
         Pop-Location
     }
+}
+
+function Invoke-Demo {
+    Write-Sv 'demo: preflight -> docker compose -> seed scenarios'
+    & (Join-Path $Root 'scripts\preflight.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Invoke-EnsureAntispoof
+    Push-Location $Root
+    try {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        docker compose up -d --build 2>&1 | ForEach-Object { Write-Host $_ }
+        $ErrorActionPreference = $prev
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+        Pop-Location
+    }
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) {
+        & $bash.Source (Join-Path $Root 'scripts/seed_demo.sh')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } else {
+        Write-Sv 'seed: Git Bash not found — run scripts/seed_demo.sh after compose is healthy'
+    }
+    Write-Sv 'demo ready — open http://127.0.0.1:5173/'
 }
 
 function Invoke-Dev {
@@ -303,7 +328,7 @@ switch ($Target) {
     'backend' { Invoke-Backend }
     'frontend' { Invoke-Frontend }
     'dev' { Invoke-Dev }
-    'demo' { Invoke-EnsureAntispoof; Invoke-Dev }
+    'demo' { Invoke-Demo }
     'health' { Invoke-Health }
     'clean' { Invoke-Clean }
     'test' { Invoke-Test }

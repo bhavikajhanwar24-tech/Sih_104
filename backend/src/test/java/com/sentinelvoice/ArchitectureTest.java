@@ -38,11 +38,16 @@ class ArchitectureTest {
     void controllersContainNoRiskScoreLiterals() throws IOException {
         Path dir = controllerSourceDir();
         assertTrue(Files.isDirectory(dir), "controller source dir missing: " + dir.toAbsolutePath());
+        // Allow VoicePassport cosine placeholder 0.0 in identity stubs — not a fusion threshold.
+        Pattern banned = Pattern.compile(
+                "(?i)(smoothedRisk|instantaneous|upThreshold|downThreshold|familyThreshold)\\s*[=:(].*0\\.[0-9]"
+                        + "|\\b0\\.(3[5-9]|[4-9][0-9]|[1-9][0-9]{2,})\\b"
+        );
         List<String> hits = new ArrayList<>();
         try (Stream<Path> files = Files.walk(dir)) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 String source = Files.readString(file, StandardCharsets.UTF_8);
-                if (CONTROLLER_RISK_LITERAL.matcher(source).find()) {
+                if (banned.matcher(source).find()) {
                     hits.add(file.getFileName().toString());
                 }
             }
@@ -67,6 +72,31 @@ class ArchitectureTest {
         }
         if (!orphans.isEmpty()) {
             fail("orphaned @Service beans (not referenced by another main class): " + orphans);
+        }
+    }
+
+    @Test
+    void javaMainSourcesNeverTouchPcmOrRawAudioApis() throws IOException {
+        Path root = Path.of("src/main/java/com/sentinelvoice");
+        if (!Files.isDirectory(root)) {
+            root = Path.of("backend/src/main/java/com/sentinelvoice");
+        }
+        assertTrue(Files.isDirectory(root), "main source tree missing: " + root.toAbsolutePath());
+        Pattern banned = Pattern.compile(
+                "(?i)\\b(AudioFormat|AudioInputStream|TargetDataLine|SourceDataLine|javax\\.sound\\.sampled|"
+                        + "short\\[\\]\\s+pcm|byte\\[\\]\\s+pcm|rawPcm|writeWav|AudioSystem)\\b"
+        );
+        List<String> hits = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                String source = Files.readString(file, StandardCharsets.UTF_8);
+                if (banned.matcher(source).find()) {
+                    hits.add(root.relativize(file).toString().replace('\\', '/'));
+                }
+            }
+        }
+        if (!hits.isEmpty()) {
+            fail("Decision Plane must not touch PCM / javax.sound — found in: " + hits);
         }
     }
 

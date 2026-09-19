@@ -35,6 +35,7 @@ import com.sentinelvoice.scenario.ScenarioSessionContext;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
+import com.sentinelvoice.transcript.BreakGlassTranscriptService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -78,6 +79,7 @@ public class FeatureFrameIngestService {
     private final ActuationService actuationService;
     private final ChallengeService challengeService;
     private final ScenarioSessionContext scenarioSessionContext;
+    private final BreakGlassTranscriptService breakGlassTranscriptService;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -101,6 +103,7 @@ public class FeatureFrameIngestService {
             @Lazy ActuationService actuationService,
             ChallengeService challengeService,
             ScenarioSessionContext scenarioSessionContext,
+            BreakGlassTranscriptService breakGlassTranscriptService,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -120,6 +123,7 @@ public class FeatureFrameIngestService {
         this.actuationService = actuationService;
         this.challengeService = challengeService;
         this.scenarioSessionContext = scenarioSessionContext;
+        this.breakGlassTranscriptService = breakGlassTranscriptService;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -283,6 +287,15 @@ public class FeatureFrameIngestService {
             ));
         }
         session.recordFiredReasons(nowMs, fired);
+
+        if (working.linguistic() != null) {
+            String snippet = working.linguistic().redactedSnippet();
+            if (snippet == null || snippet.isBlank()) {
+                snippet = working.linguistic().redactedDelta();
+            }
+            long elapsed = Math.max(0L, nowMs - session.getCreatedAt().toEpochMilli());
+            breakGlassTranscriptService.rememberSnippet(session.getSessionId(), snippet, elapsed);
+        }
 
         Map<String, Object> auditPayload = new LinkedHashMap<>();
         auditPayload.put("seq", frame.seq());

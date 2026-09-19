@@ -1,0 +1,16 @@
+.git
+.github
+.cursor
+**/.venv
+**/node_modules
+**/target
+**/__pycache__
+**/*.egg-info
+.sv-run
+ml-engine/models/**
+!ml-engine/models/README.md
+frontend/dist
+docs
+gateway
+tools
+scenarios/*.wav

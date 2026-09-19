@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { apiFetch } from '@/services/api.js';
 import { riskRamp } from '@/theme.js';
 
 /**
@@ -26,7 +27,7 @@ export function ChallengePanel({ sessionId }) {
   const poll = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await fetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
+      const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
       if (res.status === 404) return;
       if (!res.ok) return;
       const body = await res.json();
@@ -52,7 +53,7 @@ export function ChallengePanel({ sessionId }) {
     let cancelled = false;
     const syncAutoIssued = async () => {
       try {
-        const res = await fetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
+        const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
         if (cancelled || res.status === 404 || !res.ok) return;
         const body = await res.json();
         if (!body || body.status === 'EVALUATED' || body.status === 'TIMEOUT') return;
@@ -96,7 +97,7 @@ export function ChallengePanel({ sessionId }) {
     (async () => {
       // Confirm render — starts the server stopwatch.
       try {
-        await fetch(`/api/v1/challenge/${encodeURIComponent(issued.nonce)}/displayed`, {
+        await apiFetch(`/api/v1/challenge/${encodeURIComponent(issued.nonce)}/displayed`, {
           method: 'POST',
         });
         if (!cancelled) setDisplayAcked(true);
@@ -117,7 +118,7 @@ export function ChallengePanel({ sessionId }) {
     setLatencyMs(null);
     setDisplayAcked(false);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/challenge/issue?sessionId=${encodeURIComponent(sessionId)}&language=${encodeURIComponent(language)}`,
         { method: 'POST' },
       );

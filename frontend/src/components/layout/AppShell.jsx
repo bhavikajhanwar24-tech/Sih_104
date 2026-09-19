@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
 import { StatusBar } from '@/components/layout/StatusBar.jsx';
+import { useAuth } from '@/context/AuthContext.jsx';
 import { VIEWS } from '@/theme.js';
 
 const NAV = [
@@ -20,6 +21,7 @@ const NAV = [
 export function AppShell({ views, defaultView = VIEWS.ANALYST }) {
   const [active, setActive] = useState(defaultView);
   const ActiveView = views[active] || views[VIEWS.ANALYST];
+  const { username, roles, logout } = useAuth();
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-sv-bg text-sv-fg">
@@ -57,6 +59,22 @@ export function AppShell({ views, defaultView = VIEWS.ANALYST }) {
             );
           })}
         </ul>
+        <div className="border-t border-sv-border p-2">
+          <p
+            className="hidden truncate font-mono text-[10px] text-sv-muted md:block"
+            title={roles.join(',')}
+          >
+            {username}
+          </p>
+          <button
+            type="button"
+            onClick={logout}
+            className="mt-1 w-full rounded border border-sv-border px-2 py-1 font-mono text-[10px] text-sv-muted hover:border-sv-accent hover:text-sv-fg"
+            data-testid="logout"
+          >
+            Log out
+          </button>
+        </div>
       </nav>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

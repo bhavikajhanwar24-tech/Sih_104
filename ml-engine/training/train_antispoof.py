@@ -6,6 +6,12 @@ Writes checkpoints + metrics.json with EER / min t-DCF per eval condition.
 Usage (smoke)::
   python -m training.train_antispoof --limit 200 --synthetic --epochs 3
 
+Usage (disk / GPU)::
+  python -m training.train_antispoof --datasets ../datasets --epochs 20 --resume
+
+Speaker-disjoint: ASVspoof 2019 LA protocols are used as-is; ``--limit`` preserves
+speaker disjointness via ``training.dataset.resolve_splits``.
+
 DO NOT report train accuracy as general performance.
 DO NOT tune thresholds on the evaluation set — only EER / min t-DCF.
 """
@@ -32,7 +38,10 @@ from training.augment import Augmentor, prewarm_codec_cache  # noqa: E402
 from training.dataset import (  # noqa: E402
     DEFAULT_DATASETS,
     Sample,
+    assert_speaker_disjoint,
+    corpora_present,
     load_audio,
+    primary_train_ready,
     resolve_splits,
 )
 from training.features import STACK_DIM, TinyLCNN, lfcc_stack, pad_stack  # noqa: E402
@@ -41,6 +50,16 @@ from training.metrics import eer_and_threshold, min_tdcf  # noqa: E402
 SR = 16000
 MODEL_ID_BASE = "lfcc-lcnn-tier1"
 MAX_FRAMES = 200
+
+
+def pick_device(prefer: str = "auto") -> torch.device:
+    if prefer == "cpu":
+        return torch.device("cpu")
+    if prefer == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("--device cuda requested but CUDA is not available")
+        return torch.device("cuda")
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class SpoofDataset(Dataset):
@@ -123,8 +142,12 @@ def train_one(
     aug_p: float,
     cache_dir: Path,
     device: torch.device,
+    resume: bool = False,
+    start_epoch: int = 1,
 ) -> dict[str, Any]:
+    """Train one checkpoint. Shared by CLI, Colab notebook, and harness auto-train."""
     out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path = out_dir / f"{name}.pt"
     augmentor = None
     if use_codec_aug:
         print(f"[{name}] prewarming codec cache…")
@@ -136,9 +159,19 @@ def train_one(
     model = TinyLCNN(STACK_DIM).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     crit = nn.BCEWithLogitsLoss()
+    epoch0 = start_epoch
+
+    if resume and ckpt_path.is_file():
+        blob = torch.load(ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(blob["state_dict"])
+        if "optimizer" in blob:
+            opt.load_state_dict(blob["optimizer"])
+        epoch0 = int(blob.get("epoch", 0)) + 1
+        print(f"[{name}] resumed from {ckpt_path} at epoch {epoch0}")
 
     t0 = time.perf_counter()
-    for epoch in range(1, epochs + 1):
+    last_epoch = epoch0 - 1
+    for epoch in range(epoch0, epochs + 1):
         model.train()
         total_loss = 0.0
         n = 0
@@ -152,18 +185,35 @@ def train_one(
             opt.step()
             total_loss += float(loss.item()) * y.size(0)
             n += int(y.size(0))
+        last_epoch = epoch
         dev_metrics = evaluate_split(model, dev_samples, device, "dev")
         print(
             f"[{name}] epoch {epoch}/{epochs} loss={total_loss / max(n, 1):.4f} "
-            f"dev_eer={dev_metrics.get('eer')}"
+            f"dev_eer={dev_metrics.get('eer')} device={device}"
+        )
+        # Periodic resume-friendly save (DEV metrics only — never tune on eval).
+        torch.save(
+            {
+                "model_id": f"{MODEL_ID_BASE}/{name}",
+                "state_dict": model.state_dict(),
+                "optimizer": opt.state_dict(),
+                "epoch": epoch,
+                "stack_dim": STACK_DIM,
+                "max_frames": MAX_FRAMES,
+                "use_codec_aug": use_codec_aug,
+                "tier": 1,
+                "dev_eer": dev_metrics.get("eer"),
+            },
+            ckpt_path,
         )
     train_s = time.perf_counter() - t0
 
-    ckpt_path = out_dir / f"{name}.pt"
     torch.save(
         {
             "model_id": f"{MODEL_ID_BASE}/{name}",
             "state_dict": model.state_dict(),
+            "optimizer": opt.state_dict(),
+            "epoch": last_epoch,
             "stack_dim": STACK_DIM,
             "max_frames": MAX_FRAMES,
             "use_codec_aug": use_codec_aug,
@@ -178,7 +228,14 @@ def train_one(
         "use_codec_aug": use_codec_aug,
         "train_seconds": round(train_s, 2),
         "n_train": len(train_samples),
+        "device": str(device),
+        "epochs": epochs,
         "checkpoint": str(ckpt_path),
+        "source": (
+            "synthetic"
+            if any(getattr(s, "source", "disk") == "synthetic" for s in train_samples)
+            else "disk"
+        ),
         "dev": evaluate_split(model, dev_samples, device, "dev"),
         "eval": {},
     }
@@ -189,7 +246,18 @@ def train_one(
     return metrics
 
 
-def main() -> int:
+def build_eval_map(splits: dict[str, list[Sample]]) -> dict[str, list[Sample]]:
+    eval_map = {
+        "asvspoof2019_la_eval": splits.get("eval") or [],
+        "asvspoof2021_df": splits.get("df2021") or [],
+        "in_the_wild": splits.get("itw") or [],
+    }
+    if splits.get("itw"):
+        eval_map["in_the_wild"] = splits["itw"]
+    return eval_map
+
+
+def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Train Tier-1 LFCC-LCNN anti-spoof models")
     parser.add_argument("--datasets", type=Path, default=DEFAULT_DATASETS)
     parser.add_argument("--out", type=Path, default=ROOT / "models" / "antispoof")
@@ -200,31 +268,41 @@ def main() -> int:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--aug-p", type=float, default=0.7)
     parser.add_argument("--codec-cache", type=Path, default=None)
-    args = parser.parse_args()
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--resume", action="store_true", help="Resume from existing *.pt if present")
+    args = parser.parse_args(argv)
+
+    present = corpora_present(args.datasets)
+    if not args.synthetic and not primary_train_ready(args.datasets):
+        print(
+            "ERROR: ASVspoof 2019 LA train/dev not found under "
+            f"{args.datasets}. Place corpora (see scripts/fetch_datasets.md) "
+            "or pass --synthetic for a labelled smoke run.\n"
+            f"  presence={present}",
+            file=sys.stderr,
+        )
+        return 2
 
     splits = resolve_splits(args.datasets, limit=args.limit, synthetic=args.synthetic)
     train_s = splits.get("train") or []
     dev_s = splits.get("dev") or []
     if not train_s or not dev_s:
-        print("ERROR: empty train/dev — pass --synthetic or place ASVspoof under datasets/", file=sys.stderr)
+        print("ERROR: empty train/dev after resolve_splits", file=sys.stderr)
         return 2
 
-    eval_map = {
-        "asvspoof2019_la_eval": splits.get("eval") or [],
-        "asvspoof2021_df": splits.get("df2021") or [],
-        "in_the_wild": splits.get("itw") or splits.get("eval") or [],
-    }
-    # Synthetic corpus uses keys eval/itw
-    if "itw" in splits and splits["itw"]:
-        eval_map["in_the_wild"] = splits["itw"]
-    if splits.get("eval") and not eval_map["asvspoof2019_la_eval"]:
-        eval_map["asvspoof2019_la_eval"] = splits["eval"]
+    if not args.synthetic:
+        assert_speaker_disjoint(train_s, dev_s, splits.get("eval") or [])
 
-    device = torch.device("cpu")
+    eval_map = build_eval_map(splits)
+    device = pick_device(args.device)
     cache_dir = args.codec_cache or (args.datasets / "_codec_cache")
     args.out.mkdir(parents=True, exist_ok=True)
 
-    print(f"train={len(train_s)} dev={len(dev_s)} synthetic_flag={args.synthetic}")
+    src_tag = "synthetic" if args.synthetic else "disk"
+    print(
+        f"train={len(train_s)} dev={len(dev_s)} source={src_tag} "
+        f"device={device} resume={args.resume} presence={present}"
+    )
     baseline = train_one(
         name="baseline_no_codec_aug",
         train_samples=train_s,
@@ -238,6 +316,7 @@ def main() -> int:
         aug_p=args.aug_p,
         cache_dir=cache_dir,
         device=device,
+        resume=args.resume,
     )
     codec = train_one(
         name="codec_aug",
@@ -252,14 +331,18 @@ def main() -> int:
         aug_p=args.aug_p,
         cache_dir=cache_dir,
         device=device,
+        resume=args.resume,
     )
 
     # Before/after table for P12 (strongest technical artifact).
     table = {
         "note": (
             "In-the-Wild EER is expected to be much worse than in-domain "
-            "(Context §3.1). Do not present train accuracy as general performance."
+            "(Context §3.1). Do not present train accuracy as general performance. "
+            "Thresholds are never tuned on the evaluation set."
         ),
+        "source": src_tag,
+        "device": str(device),
         "baseline_no_codec_aug": baseline,
         "codec_aug": codec,
         "comparison": {},

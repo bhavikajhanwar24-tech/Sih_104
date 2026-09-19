@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import PropTypes from 'prop-types';
+import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
+import { apiFetch } from '@/services/api.js';
 
 /**
  * FPR parity chart from P12 {@code benchmarks/results.json} (Context §13.5).
  * Shows gaps honestly — flat charts are not the goal.
+ * Synthetic harness output is badged; never presented as a field result.
  */
 export function FairnessChart() {
   const [report, setReport] = useState(/** @type {Record<string, any> | null} */ (null));
@@ -14,7 +16,7 @@ export function FairnessChart() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/v1/compliance/fairness');
+        const res = await apiFetch('/api/v1/compliance/fairness');
         if (!res.ok) throw new Error(`fairness HTTP ${res.status}`);
         const json = await res.json();
         if (!cancelled) {
@@ -41,7 +43,6 @@ export function FairnessChart() {
         out.push({ label: String(row.group ?? '?'), fpr: Number(row.fpr), facet });
       }
     };
-    // Prefer portal-shaped payload from ComplianceMetricsService; fall back to raw P12 groups.
     if (results.byLanguageGroup || results.byGender || results.byChannelProfile) {
       push(results.byLanguageGroup, 'language');
       push(results.byGender, 'gender');
@@ -79,7 +80,7 @@ export function FairnessChart() {
   if (error) return <p className="text-sm text-red-400">{error}</p>;
   if (!report) return <p className="text-sm text-sv-muted">Loading fairness report…</p>;
 
-  if (report.status !== 'ok' || !report.results) {
+  if (report.status === 'EVALUATION_NOT_RUN' || report.status === 'evaluation_not_yet_run' || !report.results) {
     return (
       <div className="rounded border border-amber-700/40 bg-amber-950/20 px-3 py-4 text-sm">
         <p className="font-semibold text-amber-300">Evaluation not yet run</p>
@@ -92,17 +93,23 @@ export function FairnessChart() {
   }
 
   const results = report.results;
+  const synthetic = report.synthetic === true || results.synthetic === true;
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[11px] text-sv-muted">
-        Metric: <span className="font-mono text-sv-fg">{results.metric}</span>
-        {results.generatedAt ? (
-          <>
-            {' · '}generated <span className="font-mono">{results.generatedAt}</span>
-          </>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-[11px] text-sv-muted">
+          Metric: <span className="font-mono text-sv-fg">{results.metric}</span>
+          {results.generatedAt ? (
+            <>
+              {' · '}generated <span className="font-mono">{results.generatedAt}</span>
+            </>
+          ) : null}
+        </p>
+        {synthetic ? (
+          <SimulatedSignalBadge label="SYNTHETIC SMOKE DATA — NOT A FIELD RESULT" />
         ) : null}
-      </p>
+      </div>
       <canvas
         ref={canvasRef}
         className="h-[260px] w-full rounded border border-sv-border bg-[#0c1118]"
@@ -177,4 +184,12 @@ function drawBars(ctx, w, h, series) {
   ctx.font = '11px IBM Plex Sans, sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText('FPR @ fixed TPR — gaps are intentional (honest reporting)', pad.l, h - 8);
+}
+
+/** Pure helper for vitest — whether the portal must show the synthetic badge. */
+export function fairnessIsSynthetic(report) {
+  if (!report || typeof report !== 'object') return false;
+  if (report.synthetic === true) return true;
+  if (report.results?.synthetic === true) return true;
+  return false;
 }

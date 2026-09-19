@@ -30,7 +30,7 @@ ifeq ($(SV),)
 	@echo "  make backend   - Spring Boot Decision Plane :8080"
 	@echo "  make frontend  - Vite Presentation Plane :5173 (strictPort)"
 	@echo "  make dev       - all four planes + health waits"
-	@echo "  make demo      - ensure-antispoof + dev"
+	@echo "  make demo      - preflight + docker compose up --build + seed"
 	@echo "  make test      - per-plane test suites"
 	@echo "  make eval      - ML benchmark suite"
 	@echo "  make clean     - stop processes started by make dev"
@@ -85,8 +85,9 @@ endif
 
 demo:
 ifeq ($(SV),)
-	@$(MAKE) ensure-antispoof
-	@$(MAKE) dev
+	bash scripts/preflight.sh
+	docker compose up -d --build
+	bash scripts/seed_demo.sh
 else
 	@$(SV) demo
 endif

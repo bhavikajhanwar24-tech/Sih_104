@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { INTERVENTION_LEVELS } from '@/contracts';
+import { apiFetch } from '@/services/api.js';
 
 const LEVEL_OPTIONS = Object.values(INTERVENTION_LEVELS);
 
@@ -47,7 +48,7 @@ export function OverrideDialog({ open, onClose, sessionId, currentLevel, onSucce
     }
     setBusy(true);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/intervention/${encodeURIComponent(sessionId)}/override`,
         {
           method: 'POST',

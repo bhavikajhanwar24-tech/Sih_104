@@ -91,6 +91,35 @@ public class TelemetryBroadcaster {
         draining.remove(sessionId);
     }
 
+    /**
+     * Strip {@code transcriptDelta.text} on the wire; keep tsMs/flags so the frozen schema still validates.
+     * Full text is available only via break-glass after supervisor approve.
+     */
+    static TelemetryFrame redactTranscriptForWire(TelemetryFrame frame) {
+        if (frame == null || frame.transcriptDelta() == null) {
+            return frame;
+        }
+        TelemetryFrame.TranscriptDelta td = frame.transcriptDelta();
+        if (td.text() == null || td.text().isEmpty()) {
+            return frame;
+        }
+        return new TelemetryFrame(
+                frame.schema(),
+                frame.sessionId(),
+                frame.seq(),
+                frame.tsEpochMs(),
+                frame.callElapsedMs(),
+                frame.risk(),
+                frame.families(),
+                frame.corroboration(),
+                frame.intervention(),
+                frame.identity(),
+                frame.topReasons(),
+                new TelemetryFrame.TranscriptDelta(td.tsMs(), "", td.flags()),
+                frame.auditHash()
+        );
+    }
+
     private void scheduleDrain(String sessionId) {
         AtomicBoolean flag = draining.computeIfAbsent(sessionId, id -> new AtomicBoolean(false));
         if (flag.compareAndSet(false, true)) {
@@ -113,7 +142,8 @@ public class TelemetryBroadcaster {
                     }
                 }
                 String destination = TOPIC_PREFIX + sessionId;
-                messagingTemplate.convertAndSend(destination, next);
+                // Live STOMP never carries transcript text — break-glass API only (no schema change).
+                messagingTemplate.convertAndSend(destination, redactTranscriptForWire(next));
                 log.debug(
                         "telemetry_publish sessionId={} seq={} destination={}",
                         sessionId,

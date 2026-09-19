@@ -1,9 +1,11 @@
 import { Card } from '@/components/ui/Card.jsx';
 import { AuditChainExplorer } from '@/components/compliance/AuditChainExplorer.jsx';
 import { ConsentRegister } from '@/components/compliance/ConsentRegister.jsx';
+import { ForensicDossierViewer } from '@/components/compliance/ForensicDossierViewer.jsx';
 import { RetentionDashboard } from '@/components/compliance/RetentionDashboard.jsx';
 import { FairnessChart } from '@/components/compliance/FairnessChart.jsx';
 import { DpdpMappingTable } from '@/components/compliance/DpdpMappingTable.jsx';
+import { VoicePassportManager } from '@/components/compliance/VoicePassportManager.jsx';
 import { useSession } from '@/context/SessionContext.jsx';
 
 /**
@@ -21,12 +23,20 @@ export function CompliancePortal() {
         </p>
         <h1 className="mt-1 font-display text-lg font-semibold text-sv-fg">Compliance Portal</h1>
         <p className="mt-1 max-w-3xl text-sm text-sv-muted">
-          Audit chain, consent register, retention counters (real queries), fairness FPR gaps, and
-          the §13.3 mapping table. Tamper a row in the H2 console, then Verify Chain below.
+          Voice Passport consent/enrol/erase, forensic dossiers, audit chain, consent register,
+          retention counters, fairness FPR gaps, and the §13.3 mapping table.
         </p>
       </header>
 
       <div className="grid gap-3 xl:grid-cols-2">
+        <Card title="Voice Passport manager" variant="elevated" className="xl:col-span-2">
+          <VoicePassportManager />
+        </Card>
+
+        <Card title="Forensic dossier viewer" variant="elevated" className="xl:col-span-2">
+          <ForensicDossierViewer initialSessionId={sessionId} />
+        </Card>
+
         <Card title="Audit chain explorer" variant="elevated" className="xl:col-span-2">
           <AuditChainExplorer initialSessionId={sessionId} />
         </Card>
@@ -50,5 +60,3 @@ export function CompliancePortal() {
     </div>
   );
 }
-
-CompliancePortal.propTypes = {};

@@ -152,20 +152,26 @@ public class ComplianceMetricsService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("path", path.toString());
         if (!Files.isRegularFile(path)) {
-            out.put("status", "evaluation_not_yet_run");
-            out.put("message", "P12 evaluation output missing — run the benchmark harness to produce results.json");
+            out.put("status", "EVALUATION_NOT_RUN");
+            out.put("message", "Evaluation not yet run — produce ml-engine/benchmarks/results.json via the harness");
+            out.put("synthetic", null);
             out.put("results", null);
             return out;
         }
         try {
             JsonNode root = objectMapper.readTree(Files.readString(path));
+            boolean synthetic = root.path("meta").path("synthetic").asBoolean(false);
             out.put("status", "ok");
             out.put("message", null);
-            out.put("results", shapeFairnessForPortal(root));
+            out.put("synthetic", synthetic);
+            Map<String, Object> shaped = shapeFairnessForPortal(root);
+            shaped.put("synthetic", synthetic);
+            out.put("results", shaped);
             return out;
         } catch (IOException e) {
             out.put("status", "unreadable");
             out.put("message", e.getMessage());
+            out.put("synthetic", null);
             out.put("results", null);
             return out;
         }
@@ -340,30 +346,21 @@ public class ComplianceMetricsService {
     private Path resolveFairnessPath() {
         String configured = compliance.fairnessResultsPath();
         Path cwd = Path.of(System.getProperty("user.dir"));
-        List<Path> candidates = new ArrayList<>(List.of(
+        List<Path> candidates = List.of(
                 Path.of(configured),
                 cwd.resolve(configured),
                 cwd.resolve("ml-engine").resolve("benchmarks").resolve("results.json"),
-                cwd.resolve("benchmarks").resolve("results.json"),
                 cwd.resolve("..").resolve("ml-engine").resolve("benchmarks").resolve("results.json"),
-                cwd.resolve("..").resolve("benchmarks").resolve("results.json"),
                 cwd.resolve("..").resolve(configured)
-        ));
-        try {
-            var url = getClass().getClassLoader().getResource("benchmarks/results.json");
-            if (url != null && "file".equals(url.getProtocol())) {
-                candidates.add(0, Path.of(url.toURI()));
-            }
-        } catch (Exception ignored) {
-            // fall through to filesystem candidates
-        }
+        );
+        // Never fall back to a classpath-bundled results.json — that invited fabricated numbers.
         for (Path candidate : candidates) {
             Path normalized = candidate.normalize();
             if (Files.isRegularFile(normalized)) {
                 return normalized;
             }
         }
-        return cwd.resolve(configured).normalize();
+        return cwd.resolve("ml-engine").resolve("benchmarks").resolve("results.json").normalize();
     }
 
     private static String textOr(JsonNode node, String field, String fallback) {

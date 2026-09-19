@@ -1,32 +1,20 @@
-# SentinelVoice — four-plane stack
+# SentinelVoice — four-plane stack (Media + Inference + Decision + Presentation)
 #
-# Media plane (Asterisk) is containerized below.
-# Inference (ml-engine), Decision (backend), and Presentation (frontend) run on the
-# HOST via `.\make.cmd dev` — they have no production-ready Dockerfiles yet.
-# Do not add stub containers that look like they work; start those planes with Make.
+# Full demo: make demo  (preflight → compose up --build → seed scenarios)
+# Host-only planes:   scripts/run_all.sh  or  .\make.cmd dev
 
 services:
   asterisk:
-    # P7.1 — Asterisk 20 LTS + caller/agent SIP + ARI (Context §11.3)
     build: ./gateway/asterisk
     container_name: sentinelvoice-asterisk
     restart: unless-stopped
-    # Docker Desktop (Windows/Mac): host networking does NOT attach to the Windows
-    # localhost namespace — SIP/ARI on 127.0.0.1 look "up" in logs but are unreachable
-    # from softphones/curl on the host. Use published ports instead.
-    #
-    # Linux venue laptop: you may switch to `network_mode: host` and remove `ports:`
-    # (then ARI stays on 127.0.0.1 inside http.conf).
     ports:
-      - "127.0.0.1:8088:8088"           # ARI (localhost only on the host)
-      # AMI :5038 is NOT published — Docker Desktop TCP proxy wedges Manager
-      # (host connects, no banner). Hold uses docker exec → in-container AMI MuteAudio.
-      - "5060:5060/udp"                 # SIP
-      - "10000-10020:10000-10020/udp"   # RTP (narrow map for Docker Desktop)
+      - "127.0.0.1:8088:8088"
+      - "5060:5060/udp"
+      - "10000-10020:10000-10020/udp"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # Bind-mount lab configs so the image cannot reset http bindaddr to 127.0.0.1
       - ./gateway/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
       - ./gateway/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
       - ./gateway/asterisk/config/manager.conf:/etc/asterisk/manager.conf:ro
@@ -44,10 +32,84 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    # Configs are also baked into the image; mounts win for live edits.
 
-  # Intentionally omitted until Dockerfiles exist:
-  #   ml-engine  → .\make.cmd ml      (host :8000)
-  #   backend    → .\make.cmd backend (host :8080)
-  #   frontend   → .\make.cmd frontend (host :5173)
-  # Full stack: .\make.cmd dev  (starts asterisk via compose, then host planes)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: sentinelvoice-backend
+    restart: unless-stopped
+    depends_on:
+      asterisk:
+        condition: service_healthy
+    environment:
+      SENTINELVOICE_ML_BASE_URL: http://ml-engine:8000
+      SENTINELVOICE_ML_WEBSOCKET_URL: ws://ml-engine:8000/ingest
+      SENTINELVOICE_CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+
+  ml-engine:
+    build: ./ml-engine
+    container_name: sentinelvoice-ml-engine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      SENTINELVOICE_ML_JAVA_INGEST_WS: ws://backend:8080/ws/features
+      SENTINELVOICE_ML_JAVA_DECISION_HTTP: http://backend:8080
+      SENTINELVOICE_ML_JAVA_PASSPORT_URL: http://backend:8080/api/v1/passport/register
+    volumes:
+      - ./ml-engine/models:/app/models:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 120s
+
+  frontend:
+    build: ./frontend
+    container_name: sentinelvoice-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      ml-engine:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Optional: docker compose --profile postgres up
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    container_name: sentinelvoice-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelvoice}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel}
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

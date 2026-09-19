@@ -38,7 +38,7 @@ class TelemetryBroadcasterTest {
     void dropsOldestWhenOutboundQueueFull() throws Exception {
         String sessionId = "bp-1";
         for (int seq = 1; seq <= 10; seq++) {
-            broadcaster.publish(frame(sessionId, seq));
+            broadcaster.publish(frame(sessionId, seq, ""));
         }
 
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
@@ -59,7 +59,23 @@ class TelemetryBroadcasterTest {
         assertThat(seqs.size()).isLessThan(10);
     }
 
-    private static TelemetryFrame frame(String sessionId, int seq) {
+    @Test
+    void liveStompStripsTranscriptText() throws Exception {
+        broadcaster.publish(frame("tx-1", 1, "secret account 123456789"));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline && sent.isEmpty()) {
+            broadcaster.flushPending("tx-1");
+            Thread.sleep(20L);
+        }
+        assertThat(sent).isNotEmpty();
+        assertThat(sent.getFirst().transcriptDelta().text()).isEmpty();
+        // In-memory latest retains original for actuation/debug paths that use latest().
+        assertThat(broadcaster.latest("tx-1")).isPresent();
+        assertThat(broadcaster.latest("tx-1").orElseThrow().transcriptDelta().text())
+                .isEqualTo("secret account 123456789");
+    }
+
+    private static TelemetryFrame frame(String sessionId, int seq, String transcript) {
         TelemetryFrame.FamilyScore unavailable = new TelemetryFrame.FamilyScore(0, 0, 0, false);
         return new TelemetryFrame(
                 TelemetryFrame.SCHEMA,
@@ -78,7 +94,7 @@ class TelemetryBroadcasterTest {
                         new TelemetryFrame.VoicePassport(false, 0.0, "INCONCLUSIVE"), null
                 ),
                 List.of(),
-                new TelemetryFrame.TranscriptDelta(0L, "", List.of()),
+                new TelemetryFrame.TranscriptDelta(0L, transcript, List.of()),
                 "hash-" + seq
         );
     }

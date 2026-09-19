@@ -24,8 +24,19 @@ apache-maven-3.9.9-bin.zip
 .DS_Store
 Thumbs.db
 
-# Local make.cmd / sv.ps1 runtime
-.sv-run/
+# Eval harness output (never commit fabricated numbers)
+ml-engine/benchmarks/results.json
+ml-engine/benchmarks/fairness_results.json
+ml-engine/benchmarks/latency_results.json
+ml-engine/benchmarks/codec_study_results.json
+ml-engine/benchmarks/asterisk_mulaw_sanity.json
+benchmarks/results.json
+backend/src/main/resources/benchmarks/
+backend/data/
+data/
+
+# Env
+.env
 
 # Git
 .git/
@@ -34,6 +45,8 @@ Thumbs.db
 ml-engine/.venv/
 ml-engine/models/**
 !ml-engine/models/README.md
+ml-engine/*.egg-info/
+ml-engine/sentinelvoice_ml_engine.egg-info/
 **/__pycache__/
 *.py[cod]
 
@@ -50,7 +63,14 @@ datasets/
 *.pt
 !ml-engine/models/README.md
 
-# Local debug dumps
+# Local debug dumps / bridge noise
 frontend/err.txt
 *.err.txt
+gateway_bridge_*.txt
+tools/maven.zip
+tools/*.zip
+
+
+# Local detached process PIDs (make.cmd / sv.ps1)
+.sv-run/
 

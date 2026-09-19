@@ -86,9 +86,13 @@ def _ensure_models(
     limit: int,
     epochs: int,
     force_retrain: bool,
+    synthetic: bool,
 ) -> dict[str, Path]:
     """Return paths for baseline_no_codec_aug and codec_aug (train if missing)."""
     import torch
+
+    from training.dataset import primary_train_ready
+    from training.train_antispoof import build_eval_map, pick_device
 
     models_dir.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -105,12 +109,20 @@ def _ensure_models(
     if not need:
         return paths
 
-    print("[codec-study] training baseline (no aug) + codec-augmented models…")
-    splits = resolve_splits(datasets_root, limit=limit, synthetic=True)
+    use_syn = bool(synthetic)
+    if not use_syn and not primary_train_ready(datasets_root):
+        raise SystemExit(
+            "[codec-study] STOP: cannot train — ASVspoof 2019 LA train/dev missing. "
+            "Place corpora (scripts/fetch_datasets.md) or pass --synthetic. "
+            "Leaving CODEC_ROBUSTNESS_STUDY.md unchanged."
+        )
+
+    print(f"[codec-study] training baseline (no aug) + codec-augmented models (synthetic={use_syn})…")
+    splits = resolve_splits(datasets_root, limit=limit, synthetic=use_syn)
     train_s = splits["train"]
     dev_s = splits["dev"]
-    eval_map = {"asvspoof2019_la_eval": splits.get("eval") or []}
-    device = torch.device("cpu")
+    eval_map = build_eval_map(splits)
+    device = pick_device("auto")
     cache_dir = datasets_root / "_codec_cache"
 
     torch.manual_seed(SEED_DEFAULT)
@@ -455,12 +467,22 @@ def run(args: argparse.Namespace) -> int:
         limit=args.limit,
         synthetic=args.synthetic,
     )
-    source_tag = "synthetic" if args.synthetic or not (Path(args.datasets) / "ASVspoof2019").exists() else "disk"
-    # Heuristic: if paths live under _synthetic_antispoof, mark synthetic.
+    if not samples:
+        print(
+            "[codec-study] STOP: no source samples. Place ASVspoof under datasets/ "
+            "(scripts/fetch_datasets.md) or pass --synthetic. "
+            "Leaving CODEC_ROBUSTNESS_STUDY.md unchanged.",
+            file=sys.stderr,
+        )
+        return 2
+
+    source_tag = "synthetic" if args.synthetic else "disk"
+    if samples and getattr(samples[0], "source", "disk") == "synthetic":
+        source_tag = "synthetic"
     if samples and "_synthetic" in str(samples[0].path):
         source_tag = "synthetic"
 
-    print(f"[codec-study] building codec set n={len(samples)} …")
+    print(f"[codec-study] building codec set n={len(samples)} source={source_tag} …")
     manifest = build_manifest(samples, cache)
     entries = manifest["entries"]
 
@@ -470,6 +492,7 @@ def run(args: argparse.Namespace) -> int:
         limit=max(60, args.limit or 60),
         epochs=args.epochs,
         force_retrain=args.retrain,
+        synthetic=args.synthetic or source_tag == "synthetic",
     )
     baseline = _load_model(paths["baseline"])
     codec_m = _load_model(paths["codec_aug"])
@@ -518,6 +541,28 @@ def run(args: argparse.Namespace) -> int:
     chart_path = REPO / "docs" / "eval_plots" / "codec_robustness_bars.png"
     plot_grouped_bars(rows, chart_path)
 
+    # Optional Asterisk µ-law sanity (≤10 clips) — never fabricate if corpora missing.
+    asterisk_payload: dict[str, Any] = {}
+    try:
+        from argparse import Namespace
+
+        from benchmarks.asterisk_mulaw_sanity import run as asterisk_run
+
+        a = Namespace(
+            datasets=Path(args.datasets),
+            models=models_dir,
+            limit=min(10, args.limit or 10),
+            ari_host="127.0.0.1",
+            ari_port=8088,
+            bridge_host="127.0.0.1",
+            bridge_port=9092,
+            out=ROOT / "benchmarks" / "asterisk_mulaw_sanity.json",
+        )
+        asterisk_payload = asterisk_run(a)
+        a.out.write_text(json.dumps(asterisk_payload, indent=2), encoding="utf-8")
+    except Exception as ex:
+        asterisk_payload = {"status": "ERROR", "note": str(ex)}
+
     meta = {
         "generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": _git_commit(),
@@ -528,6 +573,7 @@ def run(args: argparse.Namespace) -> int:
         "codec_aug_id": "lfcc-lcnn-tier1/codec_aug",
         "epochs": args.epochs,
         "conditions": list(CONDITIONS),
+        "asterisk_sanity": asterisk_payload,
     }
 
     results = {
@@ -540,14 +586,27 @@ def run(args: argparse.Namespace) -> int:
     results_path = ROOT / "benchmarks" / "codec_study_results.json"
     results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
 
-    asterisk_note = (
-        "### Asterisk spot-check (P7)\n\n"
-        "With `gateway/asterisk_bridge.py` and two softphones, capture ≤10 bona fide / "
-        "spoof prompts over a live µ-law AudioSocket leg and score with both checkpoints. "
-        "Expect the same *direction* as the G.711 µ-law row above; absolute EER will differ. "
-        "This run did not attach to a live Asterisk instance — treat the ffmpeg G.711 row "
-        "as the lab proxy and schedule the softphone spot-check before the final deck freeze."
-    )
+    if asterisk_payload.get("status") == "OK":
+        asterisk_note = (
+            "### Asterisk µ-law sanity (P7)\n\n"
+            f"| Path | N | Baseline EER | Codec-aug EER | Delta |\n"
+            f"|---|---:|---:|---:|---:|\n"
+            f"| `{asterisk_payload.get('path')}` | {asterisk_payload.get('n')} | "
+            f"{100 * float(asterisk_payload.get('baseline_eer', 0)):.2f}% | "
+            f"{100 * float(asterisk_payload.get('codec_aug_eer', 0)):.2f}% | "
+            f"{100 * float(asterisk_payload.get('delta_eer', 0)):+.2f} pp |\n\n"
+            f"{asterisk_payload.get('note', '')}\n"
+        )
+    else:
+        asterisk_note = (
+            "### Asterisk spot-check (P7)\n\n"
+            f"**Status:** `{asterisk_payload.get('status', 'SKIPPED')}` — "
+            f"{asterisk_payload.get('note', 'not run')}\n\n"
+            "With `gateway/asterisk_bridge.py` and two softphones, capture ≤10 bona fide / "
+            "spoof prompts over a live µ-law AudioSocket leg and score with both checkpoints. "
+            "Expect the same *direction* as the G.711 µ-law row above; absolute EER will differ. "
+            "Treat the ffmpeg G.711 row as the lab proxy until corpora + Asterisk are available.\n"
+        )
     study_path = REPO / "docs" / "CODEC_ROBUSTNESS_STUDY.md"
     write_study_markdown(
         rows=rows,

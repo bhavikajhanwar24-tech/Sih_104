@@ -55,7 +55,7 @@ class CompliancePortalIT {
     @Test
     void fairnessLoadsP12ResultsOrExplicitNotRunState() throws Exception {
         Map<String, Object> report = metricsService.fairnessReport();
-        assertThat(report.get("status")).isIn("ok", "evaluation_not_yet_run", "unreadable");
+        assertThat(report.get("status")).isIn("ok", "EVALUATION_NOT_RUN", "evaluation_not_yet_run", "unreadable");
 
         if ("ok".equals(report.get("status"))) {
             @SuppressWarnings("unchecked")

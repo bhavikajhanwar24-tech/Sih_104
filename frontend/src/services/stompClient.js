@@ -34,6 +34,29 @@ let reconnectAttempt = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let reconnectTimer = null;
 let wantConnected = false;
+/** @type {string | null} STOMP CONNECT Authorization (same Basic as REST) */
+let stompAuthHeader = null;
+
+/**
+ * Attach HTTP Basic credentials to STOMP CONNECT (lab AuthZ).
+ * Reconnects if the shared client is already wanted.
+ * @param {string | null} header
+ */
+export function setStompAuthHeader(header) {
+  const next = header && header.length > 0 ? header : null;
+  const changed = stompAuthHeader !== next;
+  stompAuthHeader = next;
+  if (!changed || !wantConnected) return;
+  if (client) {
+    try {
+      client.deactivate();
+    } catch {
+      /* ignore */
+    }
+    client = null;
+  }
+  connect();
+}
 
 /**
  * STOMP broker URL (ws / wss). Override with VITE_STOMP_URL
@@ -152,6 +175,7 @@ function connect() {
     connectionTimeout: 8000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
+    connectHeaders: stompAuthHeader ? { Authorization: stompAuthHeader } : {},
     debug: () => {},
     onConnect: () => {
       reconnectAttempt = 0;

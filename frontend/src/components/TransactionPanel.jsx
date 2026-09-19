@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
 import { INTERVENTION_LEVELS } from '@/contracts';
+import { apiFetch } from '@/services/api.js';
 
 const LOCK_LEVELS = new Set([
   INTERVENTION_LEVELS.LEVEL_3_STEP_UP_MFA,
@@ -60,7 +61,7 @@ export function TransactionPanel({ sessionId, frame }) {
     setResult(null);
     try {
       // Always hit the server — UI disable is UX; 423 proves the lock is not CSS-only.
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/transaction/${encodeURIComponent(sessionId)}/approve`,
         {
           method: 'POST',
@@ -88,7 +89,7 @@ export function TransactionPanel({ sessionId, frame }) {
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/transaction/${encodeURIComponent(sessionId)}/approve`,
         {
           method: 'POST',

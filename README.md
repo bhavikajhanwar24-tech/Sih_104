@@ -44,12 +44,20 @@ SentinelVoice is a real-time voice fraud protection system for banks and contact
 
 | Plane | Directory | Role | How it runs today |
 |-------|-----------|------|-------------------|
-| Media | `gateway/` | Asterisk / AudioSocket / WAV replay | **Docker Compose** (`asterisk` service only) |
-| Inference | `ml-engine/` | FastAPI feature extraction | **Host** via `.\make.cmd ml` |
-| Decision | `backend/` | Spring Boot fusion, intervention, audit | **Host** via `.\make.cmd backend` |
-| Presentation | `frontend/` | Analyst console | **Host** via `.\make.cmd frontend` (strict `:5173`) |
+| Media | `gateway/` | Asterisk / AudioSocket / WAV replay | **Docker Compose** (`asterisk`) |
+| Inference | `ml-engine/` | FastAPI feature extraction | **Docker Compose** (`ml-engine`) or host `.\make.cmd ml` |
+| Decision | `backend/` | Spring Boot fusion, intervention, audit | **Docker Compose** (`backend`) or host `.\make.cmd backend` |
+| Presentation | `frontend/` | Analyst console | **Docker Compose** (`frontend` → nginx `:5173`) or host Vite |
 
-> There are **no** Docker images yet for ml-engine / backend / frontend. `docker-compose.yml` intentionally only defines Asterisk — full stack start is `.\make.cmd dev`.
+### Docker Compose demo (recommended for judges)
+
+```bash
+bash scripts/fetch_models.sh          # Tier-1 codec_aug.pt (no HF bulk download)
+make demo                             # preflight → compose up --build → seed scenarios
+# Windows: .\make.cmd demo
+```
+
+Open **http://127.0.0.1:5173/** after `make demo`. Host-only fallback (no app containers): `.\make.cmd dev` or `bash scripts/run_all.sh`.
 
 ## Prerequisites
 
@@ -89,9 +97,14 @@ Or: `.\make.cmd health`
 
 ### Demo path
 
-1. Analyst Console → scenario **Deepfake CFO wire** → **Start**
-2. Within ~20s the risk gauge should move from live STOMP telemetry (not hardcoded UI values)
-3. Scenario linguistic / cross-channel fixtures show an amber **simulated signal** badge — that is intentional demo scaffolding, not live ASR/carrier data
+1. Sign in with HTTP Basic demo users (`analyst` / `supervisor` / `compliance` / `admin` — password: `password`)
+2. Analyst Console → scenario **Deepfake CFO wire** → **Start**
+3. Within ~20s the risk gauge should move from live STOMP telemetry (not hardcoded UI values)
+4. Scenario linguistic / cross-channel fixtures show an amber **simulated signal** badge — that is intentional demo scaffolding, not live ASR/carrier data
+
+### AuthZ (lab)
+
+Decision Plane REST + STOMP require HTTP Basic. Credentials stay in React memory (no `localStorage`). Role gates: compliance APIs need `compliance`/`admin`; passport erase needs `compliance`/`admin`; break-glass request is analyst, approve is supervisor (different principal).
 
 ### Individual planes
 
@@ -119,7 +132,10 @@ Or: `.\make.cmd health`
    `SENTINELVOICE_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173` (comma-separated).
 
 ```bash
-# Compose Media only (matches this repo's Dockerfiles)
+# Full stack in containers
+docker compose up -d --build
+
+# Media only
 docker compose up -d asterisk
 ```
 

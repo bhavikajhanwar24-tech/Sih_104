@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { apiFetch } from '@/services/api.js';
 
 /**
  * @param {string} hash
@@ -40,7 +41,7 @@ export function AuditChainExplorer({ initialSessionId = null }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/v1/compliance/sessions');
+        const res = await apiFetch('/api/v1/compliance/sessions');
         if (!res.ok) throw new Error(`sessions HTTP ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -62,7 +63,7 @@ export function AuditChainExplorer({ initialSessionId = null }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/v1/compliance/audit-chain/${encodeURIComponent(sid)}?page=${p}&size=25`,
       );
       if (!res.ok) throw new Error(`chain HTTP ${res.status}`);
@@ -87,7 +88,7 @@ export function AuditChainExplorer({ initialSessionId = null }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/compliance/verify/${encodeURIComponent(sessionId)}`);
+      const res = await apiFetch(`/api/v1/compliance/verify/${encodeURIComponent(sessionId)}`);
       if (!res.ok) throw new Error(`verify HTTP ${res.status}`);
       const data = await res.json();
       setVerify({

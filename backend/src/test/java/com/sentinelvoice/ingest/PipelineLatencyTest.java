@@ -155,6 +155,7 @@ class PipelineLatencyTest {
                 mock(ActuationService.class),
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
+                mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
                 meters,
                 clock
         );

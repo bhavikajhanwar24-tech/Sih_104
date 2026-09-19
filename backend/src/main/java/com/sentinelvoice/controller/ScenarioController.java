@@ -2,6 +2,7 @@ package com.sentinelvoice.controller;
 
 import com.sentinelvoice.scenario.ScenarioReplayLauncher;
 import com.sentinelvoice.scenario.ScenarioService;
+import com.sentinelvoice.scenario.ScenarioTrajectoryRunner;
 import com.sentinelvoice.scenario.model.Scenario;
 import com.sentinelvoice.scenario.model.ScenarioSessionDescriptor;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +24,28 @@ public class ScenarioController {
 
     private final ScenarioService scenarioService;
     private final ScenarioReplayLauncher replayLauncher;
+    private final ScenarioTrajectoryRunner trajectoryRunner;
 
-    public ScenarioController(ScenarioService scenarioService, ScenarioReplayLauncher replayLauncher) {
+    public ScenarioController(
+            ScenarioService scenarioService,
+            ScenarioReplayLauncher replayLauncher,
+            ScenarioTrajectoryRunner trajectoryRunner
+    ) {
         this.scenarioService = scenarioService;
         this.replayLauncher = replayLauncher;
+        this.trajectoryRunner = trajectoryRunner;
+    }
+
+    /**
+     * Offline ladder rehearsal (no ML audio) — verifies authored trajectories without PCM.
+     */
+    @PostMapping("/{id}/rehearse")
+    public ResponseEntity<?> rehearse(@PathVariable String id) {
+        try {
+            return ResponseEntity.ok(trajectoryRunner.run(id));
+        } catch (NoSuchElementException ex) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @GetMapping

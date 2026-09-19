@@ -1,5 +1,3 @@
-import PropTypes from 'prop-types';
-
 /**
  * Context §13.3 DPDP mapping — each row links to the implementing endpoint/class.
  * Answers "how exactly are you compliant?" in ten seconds.
@@ -102,5 +100,3 @@ export function DpdpMappingTable() {
     </div>
   );
 }
-
-DpdpMappingTable.propTypes = {};

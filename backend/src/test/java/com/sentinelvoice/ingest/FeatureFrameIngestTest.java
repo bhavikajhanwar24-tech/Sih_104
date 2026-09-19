@@ -221,6 +221,7 @@ class FeatureFrameIngestTest {
                 actuationService,
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
+                mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
                 meters,
                 clock
         );
@@ -342,13 +343,15 @@ class FeatureFrameIngestTest {
     }
 
     @Test
-    void dropsStaleEpochWindow() {
+    void epochWindowsPastStalenessRebaseInsteadOfDrop() {
+        // Lab SIP / laptop sleep: epoch-anchored windows that look "stale" are rebased
+        // (FeatureFrameIngestService.frameAgeMs) so the gauge keeps flowing — not dropped.
         sessions.createSession(start("stale-1"));
         long oldEnd = clock.millis() - 5_000;
         FeatureFrame frame = stubFrame("stale-1", 1, oldEnd);
         ingest.ingest(frame);
-        assertEquals(1.0, meters.find("sentinel.frames.stale").counter().count(), 1e-9);
-        assertEquals(0.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
+        assertEquals(0.0, meters.find("sentinel.frames.stale").counter().count(), 1e-9);
+        assertEquals(1.0, meters.find("sentinel.frames.received").counter().count(), 1e-9);
     }
 
     @Test

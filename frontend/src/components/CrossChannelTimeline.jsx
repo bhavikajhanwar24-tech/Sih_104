@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
+import { apiFetch } from '@/services/api.js';
 import { riskRamp, palette } from '@/theme.js';
 
 const SEVERITY_COLOUR = Object.freeze({
@@ -46,7 +47,7 @@ export function CrossChannelTimeline({
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `/api/v1/cross-channel?sessionId=${encodeURIComponent(sessionId)}`,
         );
         if (!res.ok) {

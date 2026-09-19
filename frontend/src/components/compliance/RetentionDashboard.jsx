@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { apiFetch } from '@/services/api.js';
 
 /**
  * Retention dashboard — every figure from GET /api/v1/compliance/retention (real queries).
@@ -12,7 +13,7 @@ export function RetentionDashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/v1/compliance/retention');
+        const res = await apiFetch('/api/v1/compliance/retention');
         if (!res.ok) throw new Error(`retention HTTP ${res.status}`);
         const json = await res.json();
         if (!cancelled) {

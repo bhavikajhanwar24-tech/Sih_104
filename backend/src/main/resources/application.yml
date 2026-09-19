@@ -1,11 +1,11 @@
-﻿spring:
+spring:
   application:
     name: sentinelvoice-backend
   threads:
     virtual:
       enabled: true
   datasource:
-    url: jdbc:h2:mem:sentinelvoice;MODE=LEGACY;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:file:./data/sentinelvoice;MODE=LEGACY;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
     username: sa
     password: password
@@ -202,3 +202,10 @@ sentinelvoice:
     # P12 harness writes here; portal shows "evaluation not yet run" if missing.
     fairness-results-path: ../ml-engine/benchmarks/results.json
     raw-audio-enforcing-path: ml-engine/app/ring_buffer.py
+
+# AuthZ lab users are registered in SecurityConfig (password: password).
+# Do not put bcrypt hashes with bare $ under sentinelvoice.* — Spring treats $ as placeholders
+# and can wipe constructor binding for the whole prefix. Optional overrides:
+sv:
+  security:
+    enabled: true

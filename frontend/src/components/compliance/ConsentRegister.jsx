@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
+import { apiFetch } from '@/services/api.js';
 
 /**
  * Consent register — every ConsentRecord with DPDP §4/§5/§6 refs + withdraw (Context §13.3).
@@ -11,7 +11,7 @@ export function ConsentRegister() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/compliance/consent');
+      const res = await apiFetch('/api/v1/compliance/consent');
       if (!res.ok) throw new Error(`consent HTTP ${res.status}`);
       const data = await res.json();
       setRows(Array.isArray(data.consents) ? data.consents : []);
@@ -28,7 +28,7 @@ export function ConsentRegister() {
   const withdraw = async (id) => {
     setBusyId(id);
     try {
-      const res = await fetch(`/api/v1/compliance/consent/${id}/withdraw`, { method: 'POST' });
+      const res = await apiFetch(`/api/v1/compliance/consent/${id}/withdraw`, { method: 'POST' });
       if (!res.ok) throw new Error(`withdraw HTTP ${res.status}`);
       await load();
     } catch (e) {
@@ -109,5 +109,3 @@ export function ConsentRegister() {
     </div>
   );
 }
-
-ConsentRegister.propTypes = {};
