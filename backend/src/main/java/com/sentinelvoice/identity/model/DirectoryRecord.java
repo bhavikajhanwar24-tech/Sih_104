@@ -1,7 +1,8 @@
 package com.sentinelvoice.identity.model;
 
 /**
- * Directory row DTO (non-persistent). JPA persistence returns in F4.
+ * Temporary DTO adapter for TransactionPolicyService / pipeline until F7 rebuilds
+ * identity from {@link com.sentinelvoice.directory.DirectoryMatch}. REMOVE IN F7.
  */
 public class DirectoryRecord {
 

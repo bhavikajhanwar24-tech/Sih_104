@@ -5,6 +5,7 @@ import com.sentinelvoice.actuation.CallControlPort;
 import com.sentinelvoice.actuation.CoreBankingWebhookService;
 import com.sentinelvoice.actuation.NoopAdapter;
 import com.sentinelvoice.actuation.WebRtcAdapter;
+import com.sentinelvoice.service.CallSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -47,7 +48,8 @@ public class ActuationConfig {
     public CallControlPort callControlPort(
             SentinelProperties properties,
             @Qualifier("ariRestTemplate") RestTemplate ariRestTemplate,
-            @Lazy SimpMessagingTemplate messagingTemplate
+            @Lazy SimpMessagingTemplate messagingTemplate,
+            @Lazy CallSessionManager callSessionManager
     ) {
         String adapter = properties.actuation().adapter().trim().toLowerCase();
         return switch (adapter) {
@@ -69,7 +71,7 @@ public class ActuationConfig {
             }
             case "webrtc" -> {
                 log.info("actuation_adapter=webrtc");
-                yield new WebRtcAdapter(messagingTemplate);
+                yield new WebRtcAdapter(messagingTemplate, callSessionManager);
             }
             default -> {
                 log.info("actuation_adapter=noop (configured as '{}')", adapter);

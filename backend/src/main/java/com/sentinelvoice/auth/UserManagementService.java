@@ -109,12 +109,8 @@ public class UserManagementService {
     }
 
     private UserEntity requireTenantUser(UUID tenantId, UUID userId) {
-        UserEntity user = userRepository.findById(userId)
+        return userRepository.findByTenantIdAndId(tenantId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("user not found"));
-        if (!tenantId.equals(user.getTenantId())) {
-            throw new IllegalArgumentException("user not in tenant");
-        }
-        return user;
     }
 
     private void audit(UUID tenantId, UUID actorId, AuditEventType type, Map<String, Object> payload) {

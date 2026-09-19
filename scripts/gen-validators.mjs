@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Precompile Ajv validators for the frontend (ESM, no Ajv compiler in the browser).
- * Invoked by scripts/gen-contracts.sh — do not run against frozen schemas for edits.
+ * Invoked by scripts/gen-contracts.sh.
+ * F0: reads docs/contracts/v2 (source of truth). May reject v1 payloads until producers migrate.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -11,7 +12,7 @@ import { createRequire } from 'node:module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const frontend = join(root, 'frontend');
-const contractsDir = join(root, 'docs', 'contracts');
+const contractsDir = join(root, 'docs', 'contracts', 'v2');
 const outFile = join(frontend, 'src', 'contracts', 'validators.js');
 
 const require = createRequire(join(frontend, 'package.json'));

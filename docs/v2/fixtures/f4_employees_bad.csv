@@ -1,0 +1,11 @@
+employee_code,full_name,email,department_name,job_title,role_key,manager_code,high_authority,status,e164,phone_label,sip_extension
+E001,Priya Sharma,priya@bank-a.test,Finance,Chief Financial Officer,CFO,,true,ACTIVE,+919876543210,MOBILE,
+E002,Arjun Mehta,arjun@bank-a.test,Treasury,Treasury Officer,TREASURY_OFFICER,E001,false,ACTIVE,+919876543211,MOBILE,
+E003,Neha Kapoor,neha@bank-a.test,Branch Ops,Branch Manager,BRANCH_MANAGER,,false,ACTIVE,+919876543212,MOBILE,
+E004,Rohan Das,rohan@bank-a.test,Finance,Analyst,ANALYST,E001,false,ACTIVE,+919876543213,MOBILE,
+E005,Kavita Iyer,kavita@bank-a.test,Treasury,Ops Lead,OPS_LEAD,E002,false,ACTIVE,+919876543214,MOBILE,
+E006,Samir Khan,samir@bank-a.test,Branch Ops,Teller,TELLER,E003,false,ACTIVE,+919876543215,MOBILE,
+E007,Meera Joshi,meera@bank-a.test,Finance,Controller,CONTROLLER,E001,false,ACTIVE,+919876543216,MOBILE,
+E008,Ghost Dept,ghost@bank-a.test,DoesNotExist,Ghost,GHOST,,false,ACTIVE,+919876543217,MOBILE,
+E009,Bad Phone,badphone@bank-a.test,Finance,Clerk,CLERK,E001,false,ACTIVE,not-a-phone,MOBILE,
+E010,Dup Phone,dupphone@bank-a.test,Treasury,Clerk,CLERK,E002,false,ACTIVE,+919876543210,MOBILE,

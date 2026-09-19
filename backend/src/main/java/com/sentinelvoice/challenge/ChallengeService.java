@@ -9,6 +9,7 @@ import com.sentinelvoice.fusion.ReasonCode;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.intervention.InterventionStateMachine;
+import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.service.CallSessionManager;
 import org.slf4j.Logger;
@@ -120,7 +121,14 @@ public class ChallengeService {
         audit.put("expiresAtEpochMs", expiresAt);
         audit.put("humanLatencyMs", properties.humanLatencyMs());
         audit.put("suspiciousLatencyMs", properties.suspiciousLatencyMs());
-        auditLedgerService.append(sessionId, AuditEventType.CHALLENGE_ISSUED, audit);
+        auditLedgerService.append(
+                callSessionManager.requireSession(sessionId).getTenantId(),
+                sessionId,
+                AuditEventType.CHALLENGE_ISSUED,
+                "SYSTEM",
+                null,
+                audit
+        );
 
         notifyMlArm(sessionId, nonce, phrase);
 
@@ -295,7 +303,15 @@ public class ChallengeService {
         audit.put("transcript", evaluation.transcript());
         audit.put("humanLatencyMs", evaluation.humanLatencyMs());
         audit.put("suspiciousLatencyMs", evaluation.suspiciousLatencyMs());
-        auditLedgerService.append(challenge.sessionId(), AuditEventType.CHALLENGE_RESULT, audit);
+        CallSession session = callSessionManager.requireSession(challenge.sessionId());
+        auditLedgerService.append(
+                session.getTenantId(),
+                challenge.sessionId(),
+                AuditEventType.CHALLENGE_RESULT,
+                "SYSTEM",
+                null,
+                audit
+        );
 
         if (evaluation.verdict().failed()) {
             lastFailureBySession.put(

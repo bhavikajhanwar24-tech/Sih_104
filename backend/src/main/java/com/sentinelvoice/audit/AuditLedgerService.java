@@ -50,16 +50,12 @@ public class AuditLedgerService {
     }
 
     /**
-     * Append under the bootstrap tenant (pre-F2). {@code sessionId} is stored inside payload.
+     * @deprecated Resolves tenant from {@link com.sentinelvoice.service.CallSessionManager}; prefer
+     * {@link #append(UUID, String, AuditEventType, String, String, Map)}.
      */
     public AuditBlock append(String sessionId, AuditEventType type, Map<String, Object> payload) {
-        return append(
-                BootstrapTenant.ID,
-                sessionId,
-                type,
-                "SYSTEM",
-                null,
-                payload
+        throw new UnsupportedOperationException(
+                "bootstrap append(sessionId) removed in F3 — use tenant-aware append or AuditWriteDispatcher"
         );
     }
 
@@ -96,23 +92,51 @@ public class AuditLedgerService {
      */
     @Transactional(readOnly = true)
     public TenantChainVerification verifyTenant(UUID tenantId) {
+        return verifyTenant(tenantId, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public TenantChainVerification verifyTenant(UUID tenantId, Long fromSeq, Long toSeq) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId is required");
         }
         List<AuditBlock> blocks = repository.findByTenantIdOrderBySeqAsc(tenantId);
+        if (fromSeq != null || toSeq != null) {
+            long from = fromSeq == null ? 1L : fromSeq;
+            long to = toSeq == null ? Long.MAX_VALUE : toSeq;
+            blocks = blocks.stream()
+                    .filter(b -> b.getSeq() >= from && b.getSeq() <= to)
+                    .toList();
+        }
         if (blocks.isEmpty()) {
             return TenantChainVerification.empty();
         }
+        // When ranging, verify contiguous hashes within the slice relative to slice start.
         for (int i = 0; i < blocks.size(); i++) {
             AuditBlock block = blocks.get(i);
-            long expectedSeq = i + 1L; // seq is 1-based
-            if (block.getSeq() != expectedSeq) {
+            if (fromSeq == null && toSeq == null) {
+                long expectedSeq = i + 1L;
+                if (block.getSeq() != expectedSeq) {
+                    return TenantChainVerification.broken(blocks.size(), block.getSeq());
+                }
+            } else if (i > 0 && block.getSeq() != blocks.get(i - 1).getSeq() + 1) {
                 return TenantChainVerification.broken(blocks.size(), block.getSeq());
             }
-            String expectedPrev = i == 0
-                    ? BootstrapTenant.GENESIS_PREV_HASH
-                    : blocks.get(i - 1).getHash();
-            if (!expectedPrev.equals(block.getPrevHash())) {
+            String expectedPrev;
+            if (i == 0) {
+                if (block.getSeq() == 1L) {
+                    expectedPrev = BootstrapTenant.GENESIS_PREV_HASH;
+                } else {
+                    // Range mid-chain: trust stored prev_hash linkage to prior block outside range
+                    expectedPrev = block.getPrevHash();
+                }
+            } else {
+                expectedPrev = blocks.get(i - 1).getHash();
+            }
+            if (i > 0 && !expectedPrev.equals(block.getPrevHash())) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
+            }
+            if (i == 0 && block.getSeq() == 1L && !BootstrapTenant.GENESIS_PREV_HASH.equals(block.getPrevHash())) {
                 return TenantChainVerification.broken(blocks.size(), block.getSeq());
             }
             String expectedHash = computeHash(
@@ -180,6 +204,11 @@ public class AuditLedgerService {
             String actorId,
             Map<String, Object> payload
     ) {
+        entityManager.createNativeQuery(
+                        "SELECT set_config('app.tenant_id', CAST(:tid AS text), true)")
+                .setParameter("tid", tenantId.toString())
+                .getResultList();
+
         entityManager.createNativeQuery(
                         "SELECT pg_advisory_xact_lock(hashtext(CAST(:tid AS text)))")
                 .setParameter("tid", tenantId.toString())

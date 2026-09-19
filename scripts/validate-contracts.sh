@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Validate frozen contracts (ajv-cli defaults to draft-07; we need draft 2020-12).
+# Validate V2 contracts (ajv-cli defaults to draft-07; we need draft 2020-12).
+# F0: paths point at docs/contracts/v2.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONTRACTS="$ROOT/docs/contracts"
+CONTRACTS="$ROOT/docs/contracts/v2"
 
 SCHEMAS=(
   FeatureFrame

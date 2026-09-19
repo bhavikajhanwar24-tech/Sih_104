@@ -47,11 +47,13 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+        Object verObj = claims.get("ver");
+        int ver = verObj instanceof Number n ? n.intValue() : 0;
         return new AccessClaims(
                 UUID.fromString(claims.getSubject()),
                 UUID.fromString(claims.get("tid", String.class)),
                 Role.from(claims.get("role", String.class)),
-                claims.get("ver", Integer.class) == null ? 0 : claims.get("ver", Integer.class)
+                ver
         );
     }
 

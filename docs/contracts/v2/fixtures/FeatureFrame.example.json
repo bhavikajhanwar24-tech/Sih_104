@@ -1,0 +1,76 @@
+{
+  "schema": "sentinelvoice.FeatureFrame/1",
+  "sessionId": "call-9012",
+  "seq": 47,
+  "windowStartMs": 23500,
+  "windowEndMs": 24000,
+  "channelProfile": "PSTN_NARROWBAND",
+  "speechPresent": true,
+  "cumulativeSpeechMs": 14200,
+  "voice": {
+    "spoofProbability": 0.71,
+    "modelId": "aasist-lfcc-v3-codecaug",
+    "confidence": 0.62,
+    "available": true
+  },
+  "channel": {
+    "rirT60Ms": 18.0,
+    "rirPlausible": false,
+    "doubleCompressionScore": 0.66,
+    "noiseFloorStationarity": 0.91,
+    "dcOffset": 0.0004,
+    "available": true
+  },
+  "prosody": {
+    "f0MeanHz": 118.4,
+    "f0StdHz": 4.1,
+    "jitterLocalPct": 0.08,
+    "shimmerLocalPct": 1.9,
+    "hnrDb": 27.8,
+    "breathEventsPerMin": 0.0,
+    "disfluencyRate": 0.0,
+    "articulationRateSylSec": 5.9,
+    "unnaturalnessScore": 0.74,
+    "available": true
+  },
+  "speaker": {
+    "embeddingId": "emb-9012-47",
+    "enrolledProfileId": "EMP-10492",
+    "cosineSimilarity": 0.41,
+    "intraCallDrift": 0.18,
+    "available": true
+  },
+  "watermark": {
+    "available": true,
+    "detector": "audioseal-v1",
+    "detected": false,
+    "provider": null,
+    "confidence": 0.03
+  },
+  "linguistic": {
+    "ageMs": 900,
+    "language": "hi-en",
+    "urgency": 0.93,
+    "secrecy": 0.88,
+    "authorityInvocation": 0.9,
+    "emotionalCoercion": 0.71,
+    "askDetected": true,
+    "ask": {
+      "type": "WIRE_TRANSFER",
+      "amount": 5000000,
+      "currency": "INR",
+      "beneficiaryHint": "vendor account ending 4471",
+      "deadline": "immediate"
+    },
+    "claimedIdentity": "Rajesh Kumar",
+    "claimedRole": "CFO",
+    "redactedSnippet": "\u2026this is [NAME], [ROLE]. Transfer [AMOUNT] immediately, don't tell [PERSON]\u2026",
+    "available": true
+  },
+  "latencyMs": {
+    "fastPath": 94,
+    "slowPath": 812
+  },
+  "tenantId": "00000000-0000-4000-8000-000000000001",
+  "schemaVersion": "2"
+}

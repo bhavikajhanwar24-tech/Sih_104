@@ -17,6 +17,7 @@ class PipelineSession:
     session_id: str
     ring_buffer: RingBuffer
     profile: ChannelProfile
+    tenant_id: str | None = None
     seq: int = 0
     emit_seq: int = 0
     cumulative_speech_ms: int = 0
@@ -24,7 +25,6 @@ class PipelineSession:
     created_at: float = field(default_factory=time.time)
     fast_path: FastPathState = field(init=False)
     asr_state: AsrSessionState = field(init=False)
-    # Latest slow-path publish snapshot (redacted linguistic + latency).
     slow_path_linguistic: dict[str, Any] = field(
         default_factory=lambda: {"available": False}
     )
@@ -44,11 +44,21 @@ class SessionRegistry:
         self,
         session_id: str,
         profile: ChannelProfile = ChannelProfile.WEBRTC_WIDEBAND,
+        tenant_id: str | None = None,
+        max_concurrent_for_tenant: int | None = None,
     ) -> PipelineSession:
         with self._lock:
             existing = self._sessions.get(session_id)
             if existing is not None:
                 return existing
+            if tenant_id and max_concurrent_for_tenant is not None:
+                active = sum(
+                    1 for s in self._sessions.values() if s.tenant_id == tenant_id
+                )
+                if active >= max_concurrent_for_tenant:
+                    raise RuntimeError(
+                        f"tenant_session_limit tenant={tenant_id} max={max_concurrent_for_tenant}"
+                    )
             session = PipelineSession(
                 session_id=session_id,
                 ring_buffer=RingBuffer(
@@ -56,6 +66,7 @@ class SessionRegistry:
                     sample_rate=settings.sample_rate,
                 ),
                 profile=profile,
+                tenant_id=tenant_id,
             )
             self._sessions[session_id] = session
             return session
@@ -80,6 +91,10 @@ class SessionRegistry:
     def active_count(self) -> int:
         with self._lock:
             return len(self._sessions)
+
+    def active_count_for_tenant(self, tenant_id: str) -> int:
+        with self._lock:
+            return sum(1 for s in self._sessions.values() if s.tenant_id == tenant_id)
 
 
 registry = SessionRegistry()

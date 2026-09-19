@@ -19,8 +19,8 @@
 
 | Model ID | Checkpoint | Calibration |
 |---|---|---|
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `ml-engine/models/antispoof/baseline_no_codec_aug.pt` | `C:/Users/Bhavika Jhanwar/Desktop/Sih_104/ml-engine/models/antispoof/calibration.json` |
-| `lfcc-lcnn-tier1/codec_aug` | `ml-engine/models/antispoof/codec_aug.pt` | `C:/Users/Bhavika Jhanwar/Desktop/Sih_104/ml-engine/models/antispoof/calibration.json` |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `ml-engine/models/antispoof/baseline_no_codec_aug.pt` | `ml-engine/models/antispoof/calibration.json` |
+| `lfcc-lcnn-tier1/codec_aug` | `ml-engine/models/antispoof/codec_aug.pt` | `ml-engine/models/antispoof/calibration.json` |
 
 ### Dataset versions
 

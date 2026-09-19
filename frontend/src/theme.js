@@ -108,6 +108,7 @@ export const SEED_SCENARIOS = Object.freeze([
   }),
 ]);
 
+/** @deprecated v1 four-view switcher removed in F2 — kept only for any leftover imports */
 export const VIEWS = Object.freeze({
   ANALYST: 'analyst',
   SENIOR_SHIELD: 'senior-shield',

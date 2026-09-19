@@ -6,7 +6,12 @@ import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
+import com.sentinelvoice.security.TenantContext;
+import com.sentinelvoice.tenant.TenantSettingsEntity;
+import com.sentinelvoice.tenant.TenantSettingsRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -19,24 +24,35 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * In-memory call sessions keyed by sessionId, always carrying {@code tenantId}.
+ * Cross-tenant access returns not-found (404 semantics).
+ */
 @Service
 public class CallSessionManager {
 
     private final ConcurrentHashMap<String, CallSession> sessions = new ConcurrentHashMap<>();
     private final SentinelProperties properties;
     private final AuditLedgerService auditLedgerService;
+    private final TenantSettingsRepository tenantSettingsRepository;
 
-    public CallSessionManager(SentinelProperties properties, AuditLedgerService auditLedgerService) {
+    public CallSessionManager(
+            SentinelProperties properties,
+            AuditLedgerService auditLedgerService,
+            TenantSettingsRepository tenantSettingsRepository
+    ) {
         this.properties = properties;
         this.auditLedgerService = auditLedgerService;
+        this.tenantSettingsRepository = tenantSettingsRepository;
     }
 
     public CallSession createSession(SessionStartRequest request) {
-        int maxConcurrent = properties.session().maxConcurrent();
+        UUID tenantId = TenantContext.require().tenantId();
+        int maxConcurrent = resolveMaxConcurrent(tenantId);
         synchronized (this) {
-            if (activeSessionCount() >= maxConcurrent) {
+            if (countActiveForTenant(tenantId) >= maxConcurrent) {
                 throw new IllegalStateException(
-                        "session limit reached: maxConcurrent=" + maxConcurrent
+                        "session limit reached: maxConcurrent=" + maxConcurrent + " tenant=" + tenantId
                 );
             }
             String sessionId = request.sessionId();
@@ -47,6 +63,7 @@ public class CallSessionManager {
                 throw new IllegalArgumentException("session already exists: " + sessionId);
             }
             CallSession session = new CallSession(
+                    tenantId,
                     sessionId,
                     request.callerId(),
                     request.calleeId(),
@@ -55,7 +72,16 @@ public class CallSessionManager {
             );
             sessions.put(sessionId, session);
             try {
-                auditLedgerService.append(sessionId, AuditEventType.SESSION_OPENED, openPayload(session));
+                auditLedgerService.append(
+                        tenantId,
+                        sessionId,
+                        AuditEventType.SESSION_OPENED,
+                        "USER",
+                        TenantContext.require().userId() == null
+                                ? null
+                                : TenantContext.require().userId().toString(),
+                        openPayload(session)
+                );
             } catch (RuntimeException ex) {
                 sessions.remove(sessionId);
                 throw ex;
@@ -64,21 +90,48 @@ public class CallSessionManager {
         }
     }
 
+    /** ML ingest / internal: resolve by sessionId only (tenant taken from the session). */
     public Optional<CallSession> getSession(String sessionId) {
         return Optional.ofNullable(sessions.get(sessionId));
     }
 
-    /** Active Decision Plane sessions (newest first) — used by Analyst SIP attach. */
-    public List<CallSession> listSessions() {
-        List<CallSession> copy = new ArrayList<>(sessions.values());
+    /** API access: 404 if missing or wrong tenant. */
+    public CallSession requireSessionForTenant(UUID tenantId, String sessionId) {
+        CallSession session = sessions.get(sessionId);
+        if (session == null || !session.getTenantId().equals(tenantId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "session not found");
+        }
+        return session;
+    }
+
+    public CallSession requireSession(String sessionId) {
+        UUID tenantId = TenantContext.get() == null ? null : TenantContext.get().tenantId();
+        if (tenantId != null) {
+            return requireSessionForTenant(tenantId, sessionId);
+        }
+        return getSession(sessionId).orElseThrow(
+                () -> new NoSuchElementException("session not found: " + sessionId)
+        );
+    }
+
+    public List<CallSession> listSessionsForTenant(UUID tenantId) {
+        List<CallSession> copy = new ArrayList<>();
+        for (CallSession s : sessions.values()) {
+            if (s.getTenantId().equals(tenantId)) {
+                copy.add(s);
+            }
+        }
         copy.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
         return List.copyOf(copy);
     }
 
-    public CallSession requireSession(String sessionId) {
-        return getSession(sessionId).orElseThrow(
-                () -> new NoSuchElementException("session not found: " + sessionId)
-        );
+    /** @deprecated use {@link #listSessionsForTenant(UUID)} */
+    public List<CallSession> listSessions() {
+        TenantContext ctx = TenantContext.get();
+        if (ctx != null) {
+            return listSessionsForTenant(ctx.tenantId());
+        }
+        return List.of();
     }
 
     public void recordTelemetry(String sessionId, TelemetryEntry entry) {
@@ -93,11 +146,16 @@ public class CallSessionManager {
         return sessions.size();
     }
 
-    /**
-     * Closes sessions whose last telemetry (or creation) is older than {@code sentinelvoice.session.ttlMinutes}.
-     *
-     * @return ids of sessions that were closed
-     */
+    public int countActiveForTenant(UUID tenantId) {
+        int n = 0;
+        for (CallSession s : sessions.values()) {
+            if (s.getTenantId().equals(tenantId)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     public List<String> evictIdleSessions() {
         Instant cutoff = Instant.now().minus(properties.session().ttlMinutes(), ChronoUnit.MINUTES);
         List<String> idle = new ArrayList<>();
@@ -122,7 +180,22 @@ public class CallSessionManager {
         payload.put("reason", reason);
         payload.put("smoothedRisk", session.getSmoothedRisk());
         payload.put("level", session.getCurrentLevel().name());
-        auditLedgerService.append(sessionId, AuditEventType.SESSION_CLOSED, payload);
+        TenantContext.runAs(session.getTenantId(), () ->
+                auditLedgerService.append(
+                        session.getTenantId(),
+                        sessionId,
+                        AuditEventType.SESSION_CLOSED,
+                        "SYSTEM",
+                        null,
+                        payload
+                )
+        );
+    }
+
+    private int resolveMaxConcurrent(UUID tenantId) {
+        return tenantSettingsRepository.findById(tenantId)
+                .map(TenantSettingsEntity::getMaxConcurrentCalls)
+                .orElse(20);
     }
 
     private static Map<String, Object> openPayload(CallSession session) {

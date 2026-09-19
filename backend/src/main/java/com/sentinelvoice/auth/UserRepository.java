@@ -13,6 +13,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByTenantIdAndEmailIgnoreCase(UUID tenantId, String email);
 
+    Optional<UserEntity> findByTenantIdAndId(UUID tenantId, UUID id);
+
     List<UserEntity> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
 
     long countByTenantIdAndRoleAndStatus(UUID tenantId, String role, String status);

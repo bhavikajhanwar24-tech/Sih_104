@@ -34,19 +34,16 @@ let reconnectAttempt = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let reconnectTimer = null;
 let wantConnected = false;
-/** @type {string | null} STOMP CONNECT Authorization (same Basic as REST) */
+/** @type {string | null} legacy Basic header — unused with cookie JWT (F2/F3) */
 let stompAuthHeader = null;
 
 /**
- * Attach HTTP Basic credentials to STOMP CONNECT (lab AuthZ).
- * Reconnects if the shared client is already wanted.
+ * @deprecated Cookie JWT is sent automatically on same-origin WS; kept for API compat.
  * @param {string | null} header
  */
 export function setStompAuthHeader(header) {
-  const next = header && header.length > 0 ? header : null;
-  const changed = stompAuthHeader !== next;
-  stompAuthHeader = next;
-  if (!changed || !wantConnected) return;
+  stompAuthHeader = header && header.length > 0 ? header : null;
+  if (!wantConnected) return;
   if (client) {
     try {
       client.deactivate();

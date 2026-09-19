@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/common.defs.json",
+  "title": "SentinelVoice shared contract definitions",
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "TenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant that owns this message (V2 multi-tenancy)."
+    },
+    "SchemaVersion": {
+      "type": "string",
+      "const": "2",
+      "description": "Wire contract major version. V2 schemas use const \"2\"."
+    }
+  }
+}

@@ -127,6 +127,9 @@ sentinelvoice:
     connect-timeout-ms: 2000
     # Lab SIP path: rebase on backlog (see FeatureFrameIngestService); keep generous.
     frame-staleness-ms: 60000
+  ml-service:
+    # Shared secret for ml-engine → Java /ws/features (F3)
+    service-token: ${ML_SERVICE_TOKEN:}
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500
@@ -140,7 +143,7 @@ sentinelvoice:
   audit:
     genesis-prefix: SENTINELVOICE-GENESIS-v1
   identity:
-    # Internal PBX extensions (3ΓÇô5 digits) or ext-NNNN
+    # Legacy trunk patterns retained for config compat; F4 resolve uses directory phones/extensions.
     internal-extension-pattern: "^(ext-)?\\d{3,5}$"
     registered-external-clis:
       - "+91-22-6655-0001"
@@ -159,6 +162,9 @@ sentinelvoice:
       - "+91-22-6655-6050"
       - "+91-22-6655-6051"
     cosine-match-min: 0.70
+  directory:
+    hmac-secret: ${DIRECTORY_HMAC_SECRET:}
+    status-revert-ms: 60000
     cosine-mismatch-max: 0.50
     spoof-high-threshold: 0.60
   context:

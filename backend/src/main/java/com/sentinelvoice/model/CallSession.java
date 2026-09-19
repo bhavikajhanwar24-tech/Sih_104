@@ -3,6 +3,7 @@ package com.sentinelvoice.model;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class CallSession {
 
     private final String sessionId;
+    private final UUID tenantId;
     private final String callerId;
     private final String calleeId;
     private final ChannelProfile channelProfile;
@@ -60,6 +62,7 @@ public class CallSession {
     }
 
     public CallSession(
+            UUID tenantId,
             String sessionId,
             String callerId,
             String calleeId,
@@ -67,6 +70,7 @@ public class CallSession {
             String scenarioId
     ) {
         Instant now = Instant.now();
+        this.tenantId = tenantId;
         this.sessionId = sessionId;
         this.callerId = callerId;
         this.calleeId = calleeId;
@@ -78,6 +82,14 @@ public class CallSession {
         if (scenarioId != null) {
             this.metadata.put("scenarioId", scenarioId);
         }
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public String getSessionId() {
+        return sessionId;
     }
 
     public void recordTelemetry(TelemetryEntry entry) {
@@ -166,10 +178,6 @@ public class CallSession {
 
     public void setCumulativeSpeechMs(long cumulativeSpeechMs) {
         this.cumulativeSpeechMs = cumulativeSpeechMs;
-    }
-
-    public String getSessionId() {
-        return sessionId;
     }
 
     public String getCallerId() {

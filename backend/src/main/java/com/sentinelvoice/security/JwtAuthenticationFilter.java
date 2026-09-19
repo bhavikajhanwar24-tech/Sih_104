@@ -14,6 +14,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -24,10 +26,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final TransactionTemplate transactionTemplate;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
+    public JwtAuthenticationFilter(
+            JwtService jwtService,
+            UserRepository userRepository,
+            PlatformTransactionManager transactionManager
+    ) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Override
@@ -39,26 +47,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String token = readCookie(request, AuthService.ACCESS_COOKIE);
             if (token != null && !token.isBlank()) {
-                JwtService.AccessClaims claims = jwtService.parseAccessToken(token);
-                UserEntity user = userRepository.findById(claims.userId()).orElse(null);
-                if (user != null
-                        && "ACTIVE".equals(user.getStatus())
-                        && user.getTokenVersion() == claims.tokenVersion()
-                        && user.getTenantId().equals(claims.tenantId())) {
-                    Role role = Role.from(user.getRole());
+                try {
+                    JwtService.AccessClaims claims = jwtService.parseAccessToken(token);
+                    // TenantContext + a real DB transaction are both required: set_config(..., true)
+                    // is transaction-local, so a non-transactional findById never sees the tenant GUC.
                     TenantContext.set(new TenantContext(
                             claims.tenantId(),
                             claims.userId(),
-                            role,
-                            user.getEmail(),
-                            user.getTokenVersion()
-                    ));
-                    var auth = new UsernamePasswordAuthenticationToken(
-                            claims.userId().toString(),
+                            claims.role(),
                             null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role.name()))
-                    );
-                    SecurityContextHolder.getContext().setAuthentication(auth);
+                            claims.tokenVersion()
+                    ));
+                    UserEntity user = transactionTemplate.execute(status ->
+                            userRepository.findById(claims.userId()).orElse(null));
+                    if (user != null
+                            && "ACTIVE".equals(user.getStatus())
+                            && user.getTokenVersion() == claims.tokenVersion()
+                            && user.getTenantId().equals(claims.tenantId())) {
+                        Role role = Role.from(user.getRole());
+                        TenantContext.set(new TenantContext(
+                                claims.tenantId(),
+                                claims.userId(),
+                                role,
+                                user.getEmail(),
+                                user.getTokenVersion()
+                        ));
+                        var auth = new UsernamePasswordAuthenticationToken(
+                                claims.userId().toString(),
+                                null,
+                                List.of(new SimpleGrantedAuthority("ROLE_" + role.name()))
+                        );
+                        SecurityContextHolder.getContext().setAuthentication(auth);
+                    } else {
+                        TenantContext.clear();
+                    }
+                } catch (Exception ignored) {
+                    TenantContext.clear();
+                    SecurityContextHolder.clearContext();
                 }
             }
             filterChain.doFilter(request, response);

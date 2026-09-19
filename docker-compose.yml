@@ -1,9 +1,36 @@
-# SentinelVoice — four-plane stack (Media + Inference + Decision + Presentation)
+# SentinelVoice — four-plane stack + PostgreSQL 16
 #
 # Full demo: make demo  (preflight → compose up --build → seed scenarios)
 # Host-only planes:   scripts/run_all.sh  or  .\make.cmd dev
+#
+# Copy .env.example → .env before `docker compose up`.
 
 services:
+  postgres:
+    image: postgres:16
+    container_name: sentinelvoice-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelvoice}
+      POSTGRES_USER: ${POSTGRES_USER:-sv_bootstrap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_bootstrap}
+      SV_OWNER_PASSWORD: ${SV_OWNER_PASSWORD:-changeme_owner}
+      SV_APP_PASSWORD: ${SV_APP_PASSWORD:-changeme_app}
+    ports:
+      # Host 15432 — avoid local Postgres on 5432/5433 and Windows reserved ranges.
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - sv_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
   asterisk:
     build: ./gateway/asterisk
     container_name: sentinelvoice-asterisk
@@ -40,16 +67,26 @@ services:
     container_name: sentinelvoice-backend
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
       asterisk:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       SENTINELVOICE_ML_BASE_URL: http://ml-engine:8000
       SENTINELVOICE_ML_WEBSOCKET_URL: ws://ml-engine:8000/ingest
       SENTINELVOICE_CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sentinelvoice}
+      DB_APP_USER: ${DB_APP_USER:-sv_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-changeme_app}
+      DB_OWNER_USER: ${DB_OWNER_USER:-sv_owner}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:-changeme_owner}
+      SERVER_PORT: "8081"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8081/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -63,9 +100,9 @@ services:
       backend:
         condition: service_healthy
     environment:
-      SENTINELVOICE_ML_JAVA_INGEST_WS: ws://backend:8080/ws/features
-      SENTINELVOICE_ML_JAVA_DECISION_HTTP: http://backend:8080
-      SENTINELVOICE_ML_JAVA_PASSPORT_URL: http://backend:8080/api/v1/passport/register
+      SENTINELVOICE_ML_JAVA_INGEST_WS: ws://backend:8081/ws/features
+      SENTINELVOICE_ML_JAVA_DECISION_HTTP: http://backend:8081
+      SENTINELVOICE_ML_JAVA_PASSPORT_URL: http://backend:8081/api/v1/passport/register
     volumes:
       - ./ml-engine/models:/app/models:ro
     ports:
@@ -95,21 +132,5 @@ services:
       retries: 5
       start_period: 20s
 
-  # Optional: docker compose --profile postgres up
-  postgres:
-    profiles: ["postgres"]
-    image: postgres:16-alpine
-    container_name: sentinelvoice-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sentinelvoice}
-      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel}
-    ports:
-      - "127.0.0.1:5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+volumes:
+  sv_pgdata:

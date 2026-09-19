@@ -1,0 +1,532 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/FeatureFrame.schema.json",
+  "title": "FeatureFrame",
+  "description": "Inference Plane \u2192 Decision Plane. Emitted every 500 ms. No audio, no verbatim transcript beyond a short redacted snippet. Context \u00a78.1. [V2: required tenantId + schemaVersion=2.]",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tenantId",
+    "schemaVersion",
+    "sessionId",
+    "seq",
+    "windowStartMs",
+    "windowEndMs",
+    "channelProfile",
+    "speechPresent",
+    "cumulativeSpeechMs",
+    "voice",
+    "channel",
+    "prosody",
+    "speaker",
+    "watermark",
+    "linguistic",
+    "latencyMs"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.FeatureFrame/1"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "windowStartMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "windowEndMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "channelProfile": {
+      "$ref": "#/$defs/ChannelProfile"
+    },
+    "speechPresent": {
+      "type": "boolean"
+    },
+    "cumulativeSpeechMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "voice": {
+      "$ref": "#/$defs/VoiceFamily"
+    },
+    "channel": {
+      "$ref": "#/$defs/ChannelFamily"
+    },
+    "prosody": {
+      "$ref": "#/$defs/ProsodyFamily"
+    },
+    "speaker": {
+      "$ref": "#/$defs/SpeakerFamily"
+    },
+    "watermark": {
+      "$ref": "#/$defs/WatermarkFamily"
+    },
+    "linguistic": {
+      "$ref": "#/$defs/LinguisticFamily"
+    },
+    "latencyMs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fastPath",
+        "slowPath"
+      ],
+      "properties": {
+        "fastPath": {
+          "type": "number",
+          "minimum": 0
+        },
+        "slowPath": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant that owns this message (V2 multi-tenancy)."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "2",
+      "description": "Wire contract major version. V2 schemas use const \"2\"."
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "VoiceFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "spoofProbability": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/UnitInterval"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "spoofProbability",
+              "modelId",
+              "confidence"
+            ]
+          }
+        }
+      ]
+    },
+    "ChannelFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "rirT60Ms": {
+          "type": "number"
+        },
+        "rirPlausible": {
+          "type": "boolean"
+        },
+        "doubleCompressionScore": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "noiseFloorStationarity": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "dcOffset": {
+          "type": "number"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "rirT60Ms",
+              "rirPlausible",
+              "doubleCompressionScore",
+              "noiseFloorStationarity",
+              "dcOffset"
+            ]
+          }
+        }
+      ]
+    },
+    "ProsodyFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "f0MeanHz": {
+          "type": "number"
+        },
+        "f0StdHz": {
+          "type": "number"
+        },
+        "jitterLocalPct": {
+          "type": "number"
+        },
+        "shimmerLocalPct": {
+          "type": "number"
+        },
+        "hnrDb": {
+          "type": "number"
+        },
+        "breathEventsPerMin": {
+          "type": "number"
+        },
+        "disfluencyRate": {
+          "type": "number"
+        },
+        "articulationRateSylSec": {
+          "type": "number"
+        },
+        "unnaturalnessScore": {
+          "$ref": "#/$defs/UnitInterval"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "f0MeanHz",
+              "f0StdHz",
+              "jitterLocalPct",
+              "shimmerLocalPct",
+              "hnrDb",
+              "breathEventsPerMin",
+              "disfluencyRate",
+              "articulationRateSylSec",
+              "unnaturalnessScore"
+            ]
+          }
+        }
+      ]
+    },
+    "SpeakerFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "embeddingId": {
+          "type": "string"
+        },
+        "enrolledProfileId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cosineSimilarity": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "intraCallDrift": {
+          "$ref": "#/$defs/UnitInterval"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "embeddingId",
+              "enrolledProfileId",
+              "cosineSimilarity",
+              "intraCallDrift"
+            ]
+          }
+        }
+      ]
+    },
+    "WatermarkFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/UnitInterval"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "detector",
+              "detected",
+              "provider",
+              "confidence"
+            ]
+          }
+        }
+      ]
+    },
+    "Ask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "amount",
+        "currency",
+        "beneficiaryHint",
+        "deadline"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "beneficiaryHint": {
+          "type": "string"
+        },
+        "deadline": {
+          "type": "string"
+        }
+      }
+    },
+    "LinguisticFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "ageMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "language": {
+          "type": "string"
+        },
+        "urgency": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "secrecy": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "authorityInvocation": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "emotionalCoercion": {
+          "$ref": "#/$defs/UnitInterval"
+        },
+        "askDetected": {
+          "type": "boolean"
+        },
+        "ask": {
+          "$ref": "#/$defs/Ask"
+        },
+        "claimedIdentity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claimedRole": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "redactedSnippet": {
+          "type": "string"
+        },
+        "redactedDelta": {
+          "type": "string",
+          "description": "Redacted transcript delta since the previous slow-path emission. Optional; rolling context remains in redactedSnippet."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          "then": {
+            "required": [
+              "ageMs",
+              "language",
+              "urgency",
+              "secrecy",
+              "authorityInvocation",
+              "emotionalCoercion",
+              "askDetected",
+              "claimedIdentity",
+              "claimedRole",
+              "redactedSnippet"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

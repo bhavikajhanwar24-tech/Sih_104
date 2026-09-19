@@ -1,6 +1,8 @@
 package com.sentinelvoice.telemetry;
 
+import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.TelemetryFrame;
+import com.sentinelvoice.service.CallSessionManager;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -11,25 +13,24 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Publishes {@link TelemetryFrame}s to STOMP {@code /topic/telemetry/{sessionId}}.
- *
- * <p>Per-session outbound queue with bounded depth: when full, drop the <em>oldest</em>
- * frame and keep the newest (stale risk is worse than a skipped update).
+ * Publishes {@link TelemetryFrame}s to STOMP
+ * {@code /topic/tenant/{tenantId}/telemetry/{sessionId}}.
  */
 @Component
 public class TelemetryBroadcaster {
 
     private static final Logger log = LoggerFactory.getLogger(TelemetryBroadcaster.class);
     private static final int QUEUE_CAPACITY = 4;
-    private static final String TOPIC_PREFIX = "/topic/telemetry/";
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final CallSessionManager callSessionManager;
     private final ConcurrentHashMap<String, ArrayDeque<TelemetryFrame>> queues = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TelemetryFrame> latestBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AtomicBoolean> draining = new ConcurrentHashMap<>();
@@ -41,11 +42,20 @@ public class TelemetryBroadcaster {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Counter droppedOldest;
 
-    public TelemetryBroadcaster(@Lazy SimpMessagingTemplate messagingTemplate, MeterRegistry meterRegistry) {
+    public TelemetryBroadcaster(
+            @Lazy SimpMessagingTemplate messagingTemplate,
+            @Lazy CallSessionManager callSessionManager,
+            MeterRegistry meterRegistry
+    ) {
         this.messagingTemplate = messagingTemplate;
+        this.callSessionManager = callSessionManager;
         this.droppedOldest = Counter.builder("sentinel.telemetry.dropped_oldest")
                 .description("Oldest TelemetryFrames dropped under STOMP backpressure")
                 .register(meterRegistry);
+    }
+
+    public static String topic(UUID tenantId, String sessionId) {
+        return "/topic/tenant/" + tenantId + "/telemetry/" + sessionId;
     }
 
     public void publish(TelemetryFrame frame) {
@@ -91,10 +101,6 @@ public class TelemetryBroadcaster {
         draining.remove(sessionId);
     }
 
-    /**
-     * Strip {@code transcriptDelta.text} on the wire; keep tsMs/flags so the frozen schema still validates.
-     * Full text is available only via break-glass after supervisor approve.
-     */
     static TelemetryFrame redactTranscriptForWire(TelemetryFrame frame) {
         if (frame == null || frame.transcriptDelta() == null) {
             return frame;
@@ -141,8 +147,12 @@ public class TelemetryBroadcaster {
                         return;
                     }
                 }
-                String destination = TOPIC_PREFIX + sessionId;
-                // Live STOMP never carries transcript text — break-glass API only (no schema change).
+                Optional<CallSession> session = callSessionManager.getSession(sessionId);
+                if (session.isEmpty()) {
+                    log.debug("telemetry_skip_no_session sessionId={}", sessionId);
+                    continue;
+                }
+                String destination = topic(session.get().getTenantId(), sessionId);
                 messagingTemplate.convertAndSend(destination, redactTranscriptForWire(next));
                 log.debug(
                         "telemetry_publish sessionId={} seq={} destination={}",
@@ -155,12 +165,12 @@ public class TelemetryBroadcaster {
             AtomicBoolean flag = draining.get(sessionId);
             if (flag != null) {
                 flag.set(false);
-            }
-            ArrayDeque<TelemetryFrame> queue = queues.get(sessionId);
-            if (queue != null) {
-                synchronized (queue) {
-                    if (!queue.isEmpty()) {
-                        scheduleDrain(sessionId);
+                ArrayDeque<TelemetryFrame> queue = queues.get(sessionId);
+                if (queue != null) {
+                    synchronized (queue) {
+                        if (!queue.isEmpty()) {
+                            scheduleDrain(sessionId);
+                        }
                     }
                 }
             }

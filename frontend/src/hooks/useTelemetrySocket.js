@@ -15,27 +15,23 @@ import {
 const HISTORY_LIMIT = 300;
 
 /**
- * Return shape of {@link useTelemetrySocket} — documented for editor autocomplete.
- *
  * @typedef {Object} TelemetrySocketApi
  * @property {TelemetryFrame | null} latest
- * @property {TelemetryFrame[]} history          last 300 frames (oldest → newest)
- * @property {string} connectionState            from {@link CONNECTION_STATES}
- * @property {string | null} error               transport / parse errors
- * @property {string | null} lastValidationError contract drift (dev); surface in StatusBar
+ * @property {TelemetryFrame[]} history
+ * @property {string} connectionState
+ * @property {string | null} error
+ * @property {string | null} lastValidationError
  */
 
 /**
  * Sole boundary where Decision Plane telemetry enters React.
- *
- * Every inbound STOMP message is piped through {@link assertTelemetryFrame}
- * before state updates. In dev, a Java field rename then produces a console
- * error naming the exact JSON path instead of a silently frozen gauge.
+ * Topic: `/topic/tenant/{tenantId}/telemetry/{sessionId}` (F3).
  *
  * @param {string | null | undefined} sessionId
+ * @param {string | null | undefined} [tenantId]
  * @returns {TelemetrySocketApi}
  */
-export function useTelemetrySocket(sessionId) {
+export function useTelemetrySocket(sessionId, tenantId) {
   const [latest, setLatest] = useState(/** @type {TelemetryFrame | null} */ (null));
   const [history, setHistory] = useState(/** @type {TelemetryFrame[]} */ ([]));
   const [connectionState, setConnectionState] = useState(getConnectionState);
@@ -62,7 +58,7 @@ export function useTelemetrySocket(sessionId) {
   }, []);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || !tenantId) {
       setLatest(null);
       setHistory([]);
       setLastValidationError(null);
@@ -74,7 +70,7 @@ export function useTelemetrySocket(sessionId) {
     setLastValidationError(null);
     setError(null);
 
-    const destination = `/topic/telemetry/${sessionId}`;
+    const destination = `/topic/tenant/${tenantId}/telemetry/${sessionId}`;
     const unsubscribe = subscribe(destination, (body) => {
       if (sessionRef.current !== sessionId) return;
       let parsed;
@@ -98,7 +94,7 @@ export function useTelemetrySocket(sessionId) {
     });
 
     return unsubscribe;
-  }, [sessionId]);
+  }, [sessionId, tenantId]);
 
   return {
     latest,

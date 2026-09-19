@@ -10,7 +10,7 @@ import com.sentinelvoice.context.model.TransactionAssessment;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
-import com.sentinelvoice.identity.DirectoryService;
+import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.identity.model.IdentityAssessment;

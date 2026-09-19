@@ -106,7 +106,7 @@ function Invoke-Help {
     Write-Host '  ensure-antispoof  train/copy Tier-1 voice checkpoint if missing'
     Write-Host '  asterisk          docker compose up -d asterisk'
     Write-Host '  ml                FastAPI Inference Plane (uvicorn --reload :8000)'
-    Write-Host '  backend           Spring Boot Decision Plane (:8080)'
+    Write-Host '  backend           Spring Boot Decision Plane (:8081)'
     Write-Host '  frontend          Vite Presentation Plane (strict :5173)'
     Write-Host '  dev               Media -> Inference -> Decision -> Presentation + health waits'
     Write-Host '  demo              preflight + docker compose up --build + seed'
@@ -219,7 +219,7 @@ function Invoke-Dev {
 
     $mvn = Resolve-Maven
     Start-Detached 'backend' (Join-Path $Root 'backend') $mvn @('spring-boot:run') | Out-Null
-    Wait-Http 'http://127.0.0.1:8080/actuator/health' 180 'backend'
+    Wait-Http 'http://127.0.0.1:8081/actuator/health' 180 'backend'
 
     if (-not $Npm) { throw 'npm not found on PATH' }
     Start-Detached 'frontend' (Join-Path $Root 'frontend') $Npm @(
@@ -235,7 +235,7 @@ function Invoke-Dev {
 function Invoke-Health {
     $checks = @(
         @{ Name = 'ml-engine'; Url = 'http://127.0.0.1:8000/health' },
-        @{ Name = 'backend'; Url = 'http://127.0.0.1:8080/actuator/health' },
+        @{ Name = 'backend'; Url = 'http://127.0.0.1:8081/actuator/health' },
         @{ Name = 'frontend'; Url = 'http://127.0.0.1:5173/' }
     )
     foreach ($c in $checks) {
@@ -257,7 +257,7 @@ function Invoke-Clean {
     Write-Sv 'clean: stopping managed plane processes'
     foreach ($n in @('frontend', 'backend', 'ml')) { Stop-Saved $n }
     # Best-effort: free known ports if orphans remain
-    foreach ($port in @(5173, 8080, 8000)) {
+    foreach ($port in @(5173, 8081, 8000)) {
         Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
             ForEach-Object {
                 try {

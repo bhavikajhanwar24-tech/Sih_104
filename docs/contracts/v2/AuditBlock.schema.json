@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/AuditBlock.schema.json",
+  "title": "AuditBlock",
+  "description": "One block in the SHA-256 hash-chained audit ledger. Context \u00a78.3 / \u00a79.7. [V2: required tenantId + schemaVersion=2.]",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tenantId",
+    "schemaVersion",
+    "sessionId",
+    "blockIndex",
+    "tsEpochMs",
+    "eventType",
+    "payload",
+    "smoothedRisk",
+    "level",
+    "previousHash",
+    "currentHash"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.AuditBlock/1"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blockIndex": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tsEpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "SESSION_OPENED",
+        "FEATURE_FRAME_SCORED",
+        "RISK_LEVEL_CHANGED",
+        "INTERVENTION_ACTION_FIRED",
+        "ANALYST_OVERRIDE",
+        "CHALLENGE_ISSUED",
+        "CHALLENGE_RESULT",
+        "PASSPORT_ENROLLED",
+        "PASSPORT_ERASED",
+        "TRANSCRIPT_BREAK_GLASS_ACCESS",
+        "DOSSIER_GENERATED",
+        "SESSION_CLOSED"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    },
+    "smoothedRisk": {
+      "$ref": "#/$defs/UnitInterval"
+    },
+    "level": {
+      "$ref": "#/$defs/InterventionLevel"
+    },
+    "previousHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "currentHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant that owns this message (V2 multi-tenancy)."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "2",
+      "description": "Wire contract major version. V2 schemas use const \"2\"."
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

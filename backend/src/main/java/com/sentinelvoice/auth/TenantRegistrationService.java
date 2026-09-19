@@ -3,15 +3,11 @@ package com.sentinelvoice.auth;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.email.EmailVerificationService;
-import com.sentinelvoice.tenant.TenantEntity;
-import com.sentinelvoice.tenant.TenantRepository;
-import com.sentinelvoice.tenant.TenantSettingsEntity;
-import com.sentinelvoice.tenant.TenantSettingsRepository;
+import com.sentinelvoice.security.TenantContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -31,88 +27,64 @@ public class TenantRegistrationService {
     );
     private static final Pattern SLUG_SAFE = Pattern.compile("[^a-z0-9]+");
 
-    private final TenantRepository tenantRepository;
-    private final TenantSettingsRepository settingsRepository;
-    private final UserRepository userRepository;
+    private final PlatformAuthRepository platformAuthRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuditLedgerService auditLedgerService;
     private final EmailVerificationService emailVerificationService;
+    private final AuditLedgerService auditLedgerService;
 
     public TenantRegistrationService(
-            TenantRepository tenantRepository,
-            TenantSettingsRepository settingsRepository,
-            UserRepository userRepository,
+            PlatformAuthRepository platformAuthRepository,
             PasswordEncoder passwordEncoder,
-            AuditLedgerService auditLedgerService,
-            EmailVerificationService emailVerificationService
+            EmailVerificationService emailVerificationService,
+            AuditLedgerService auditLedgerService
     ) {
-        this.tenantRepository = tenantRepository;
-        this.settingsRepository = settingsRepository;
-        this.userRepository = userRepository;
+        this.platformAuthRepository = platformAuthRepository;
         this.passwordEncoder = passwordEncoder;
-        this.auditLedgerService = auditLedgerService;
         this.emailVerificationService = emailVerificationService;
+        this.auditLedgerService = auditLedgerService;
     }
 
     @Transactional
     public RegistrationResult register(RegisterRequest req) {
         validate(req);
         String slug = uniqueSlug(req.organisationName());
-        Instant now = Instant.now();
-
         UUID tenantId = UUID.randomUUID();
-        TenantEntity tenant = new TenantEntity();
-        tenant.setId(tenantId);
-        tenant.setName(req.organisationName().trim());
-        tenant.setSlug(slug);
-        tenant.setIndustry(req.industry().trim().toUpperCase(Locale.ROOT));
-        tenant.setRegion(req.region() == null ? null : req.region().trim());
-        tenant.setStatus("ACTIVE");
-        tenant.setCreatedAt(now);
-        tenantRepository.save(tenant);
-
-        TenantSettingsEntity settings = new TenantSettingsEntity();
-        settings.setTenantId(tenantId);
-        settings.setRetentionDays(90);
-        settings.setAllowExternalLlm(false);
-        settings.setLlmFailPolicy("CONTINUE_RULES_ONLY");
-        settings.setConsentNoticeText("Default SentinelVoice consent notice.");
-        settings.setExtras(Map.of());
-        settings.setCreatedAt(now);
-        settings.setUpdatedAt(now);
-        settingsRepository.save(settings);
-
         UUID userId = UUID.randomUUID();
-        UserEntity admin = new UserEntity();
-        admin.setId(userId);
-        admin.setTenantId(tenantId);
-        admin.setEmail(req.adminEmail().trim().toLowerCase(Locale.ROOT));
-        admin.setPasswordHash(passwordEncoder.encode(req.password()));
-        admin.setDisplayName(req.adminDisplayName().trim());
-        admin.setRole(Role.TENANT_ADMIN.name());
-        admin.setMfaEnabled(false);
-        admin.setStatus("ACTIVE");
-        admin.setTokenVersion(0);
-        admin.setCreatedAt(now);
-        admin.setUpdatedAt(now);
-        userRepository.save(admin);
+        String industry = req.industry().trim().toUpperCase(Locale.ROOT);
+        String email = req.adminEmail().trim().toLowerCase(Locale.ROOT);
+        String passwordHash = passwordEncoder.encode(req.password());
+
+        TenantContext.runAsPlatform(() -> {
+            platformAuthRepository.registerTenant(
+                    tenantId,
+                    req.organisationName().trim(),
+                    slug,
+                    industry,
+                    req.region() == null ? null : req.region().trim(),
+                    userId,
+                    email,
+                    passwordHash,
+                    req.adminDisplayName().trim()
+            );
+            return null;
+        });
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("slug", slug);
         payload.put("adminUserId", userId.toString());
-        payload.put("adminEmail", admin.getEmail());
-        payload.put("industry", tenant.getIndustry());
-        auditLedgerService.append(
+        payload.put("adminEmail", email);
+        payload.put("industry", industry);
+        TenantContext.runAs(tenantId, () -> auditLedgerService.append(
                 tenantId,
                 null,
                 AuditEventType.TENANT_REGISTERED,
                 "SYSTEM",
                 userId.toString(),
                 payload
-        );
+        ));
 
-        String verifyLink = "https://sentinelvoice.local/verify?tenant=" + slug + "&email=" + admin.getEmail();
-        emailVerificationService.sendVerificationLink(admin.getEmail(), tenant.getName(), verifyLink);
+        String verifyLink = "https://sentinelvoice.local/verify?tenant=" + slug + "&email=" + email;
+        emailVerificationService.sendVerificationLink(email, req.organisationName().trim(), verifyLink);
 
         return new RegistrationResult(tenantId, slug);
     }
@@ -156,10 +128,14 @@ public class TenantRegistrationService {
         }
         String candidate = base;
         int i = 2;
-        while (tenantRepository.existsBySlugIgnoreCase(candidate)) {
+        while (slugTaken(candidate)) {
             candidate = base + "-" + i++;
         }
         return candidate;
+    }
+
+    private boolean slugTaken(String slug) {
+        return Boolean.TRUE.equals(TenantContext.runAsPlatform(() -> platformAuthRepository.slugExists(slug)));
     }
 
     public record RegisterRequest(

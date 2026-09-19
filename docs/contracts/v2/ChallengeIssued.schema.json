@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/ChallengeIssued.schema.json",
+  "title": "ChallengeIssued",
+  "description": "Server-authoritative liveness challenge presented to the caller. Context \u00a78.3. [V2: required tenantId + schemaVersion=2.]",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tenantId",
+    "schemaVersion",
+    "sessionId",
+    "nonce",
+    "phrase",
+    "expiresAtEpochMs"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.ChallengeIssued/1"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phrase": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Phonetically diverse challenge phrase, e.g. Amber Falcon 72."
+    },
+    "expiresAtEpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant that owns this message (V2 multi-tenancy)."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "2",
+      "description": "Wire contract major version. V2 schemas use const \"2\"."
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

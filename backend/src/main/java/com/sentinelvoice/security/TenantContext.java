@@ -3,9 +3,11 @@ package com.sentinelvoice.security;
 import com.sentinelvoice.auth.Role;
 
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
- * Request-scoped identity populated from the access JWT (F2). F3 binds this into DB RLS.
+ * Request-scoped identity from JWT (F2). F3 binds {@code tenantId} into PostgreSQL RLS via
+ * {@code set_config('app.tenant_id', …, true)}. Background work must use {@link #runAs}.
  */
 public record TenantContext(
         UUID tenantId,
@@ -15,6 +17,8 @@ public record TenantContext(
         int tokenVersion
 ) {
     private static final ThreadLocal<TenantContext> HOLDER = new ThreadLocal<>();
+    /** When true, connection may proceed without app.tenant_id (SECURITY DEFINER / platform only). */
+    private static final ThreadLocal<Boolean> PLATFORM = ThreadLocal.withInitial(() -> false);
 
     public static void set(TenantContext ctx) {
         HOLDER.set(ctx);
@@ -34,5 +38,51 @@ public record TenantContext(
 
     public static void clear() {
         HOLDER.remove();
+    }
+
+    public static boolean isPlatformOperation() {
+        return Boolean.TRUE.equals(PLATFORM.get());
+    }
+
+    public static <T> T runAs(UUID tenantId, Supplier<T> action) {
+        return runAs(new TenantContext(tenantId, null, null, null, 0), action);
+    }
+
+    public static void runAs(UUID tenantId, Runnable action) {
+        runAs(tenantId, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    public static <T> T runAs(TenantContext ctx, Supplier<T> action) {
+        TenantContext previous = HOLDER.get();
+        HOLDER.set(ctx);
+        try {
+            return action.get();
+        } finally {
+            if (previous == null) {
+                HOLDER.remove();
+            } else {
+                HOLDER.set(previous);
+            }
+        }
+    }
+
+    /**
+     * Platform path for SECURITY DEFINER SQL only — RLS stays fail-closed (unset tenant).
+     */
+    public static <T> T runAsPlatform(Supplier<T> action) {
+        boolean prev = Boolean.TRUE.equals(PLATFORM.get());
+        PLATFORM.set(true);
+        try {
+            return action.get();
+        } finally {
+            if (prev) {
+                PLATFORM.set(true);
+            } else {
+                PLATFORM.remove();
+            }
+        }
     }
 }

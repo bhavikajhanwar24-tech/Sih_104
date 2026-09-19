@@ -74,7 +74,14 @@ public class TransactionLockService {
         if (locked) {
             auditPayload.put("outcome", "BLOCKED");
             auditPayload.put("reason", LOCK_REASON);
-            auditLedgerService.append(sessionId, AuditEventType.INTERVENTION_ACTION_FIRED, auditPayload);
+            auditLedgerService.append(
+                    session.getTenantId(),
+                    sessionId,
+                    AuditEventType.INTERVENTION_ACTION_FIRED,
+                    "USER",
+                    actorId == null || actorId.isBlank() ? null : actorId.trim(),
+                    auditPayload
+            );
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", "LOCKED");
             body.put("httpStatus", 423);
@@ -85,7 +92,14 @@ public class TransactionLockService {
         }
 
         auditPayload.put("outcome", "APPROVED");
-        auditLedgerService.append(sessionId, AuditEventType.INTERVENTION_ACTION_FIRED, auditPayload);
+        auditLedgerService.append(
+                session.getTenantId(),
+                sessionId,
+                AuditEventType.INTERVENTION_ACTION_FIRED,
+                "USER",
+                actorId == null || actorId.isBlank() ? null : actorId.trim(),
+                auditPayload
+        );
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "APPROVED");

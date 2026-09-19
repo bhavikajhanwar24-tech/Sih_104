@@ -1,104 +1,133 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import PropTypes from 'prop-types';
 import {
-  apiFetch,
-  basicAuthHeader,
-  setAuthorizationHeader,
-} from '@/services/api.js';
-import { disconnect, ensureConnected, setStompAuthHeader } from '@/services/stompClient.js';
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import PropTypes from 'prop-types';
+import { apiFetch, apiJson, ensureCsrf } from '@/services/api.js';
 
 /**
- * Demo lab users (P13) — password for all is: password
- *   analyst    → ROLE_ANALYST
- *   supervisor → ROLE_SUPERVISOR
- *   compliance → ROLE_COMPLIANCE
- *   admin      → ROLE_ADMIN (+ analyst/supervisor/compliance)
+ * @typedef {Object} MePayload
+ * @property {{ id: string, email: string, displayName: string, status: string }} user
+ * @property {{ id: string, name: string, slug: string, industry?: string, region?: string, status: string }} tenant
+ * @property {string} role
+ * @property {boolean} mfaEnabled
+ * @property {string[]} permissions
+ * @property {boolean} [promptMfa]
  */
-export const DEMO_USERS = Object.freeze({
-  analyst: Object.freeze(['ANALYST']),
-  supervisor: Object.freeze(['SUPERVISOR']),
-  compliance: Object.freeze(['COMPLIANCE']),
-  admin: Object.freeze(['ADMIN', 'ANALYST', 'SUPERVISOR', 'COMPLIANCE']),
-});
 
 /**
  * @typedef {Object} AuthContextValue
+ * @property {boolean} loading
  * @property {boolean} isAuthenticated
- * @property {string | null} username
- * @property {string[]} roles
- * @property {(username: string, password: string) => Promise<void>} login
- * @property {() => void} logout
- * @property {(role: string) => boolean} hasRole
+ * @property {MePayload | null} me
+ * @property {string[]} permissions
+ * @property {(perm: string) => boolean} hasPermission
+ * @property {() => Promise<MePayload | null>} refreshMe
+ * @property {(creds: { tenantSlug: string, email: string, password: string, mfaCode?: string }) => Promise<{ mfaRequired: boolean }>} login
+ * @property {() => Promise<void>} logout
  */
 
 const AuthContext = createContext(/** @type {AuthContextValue | null} */ (null));
 
 /**
  * @param {Object} props
- * @param {React.ReactNode} props.children
  */
 export function AuthProvider({ children }) {
-  const [username, setUsername] = useState(/** @type {string | null} */ (null));
-  const [roles, setRoles] = useState(/** @type {string[]} */ ([]));
+  const [loading, setLoading] = useState(true);
+  const [me, setMe] = useState(/** @type {MePayload | null} */ (null));
 
-  const logout = useCallback(() => {
-    setAuthorizationHeader(null);
-    setStompAuthHeader(null);
-    disconnect();
-    setUsername(null);
-    setRoles([]);
-  }, []);
-
-  const login = useCallback(async (user, password) => {
-    const trimmed = String(user || '').trim().toLowerCase();
-    if (!trimmed || !password) {
-      throw new Error('Username and password required');
-    }
-    const header = basicAuthHeader(trimmed, password);
-    setAuthorizationHeader(header);
+  const refreshMe = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/v1/session', { method: 'GET' });
-      if (res.status === 401 || res.status === 403) {
-        setAuthorizationHeader(null);
-        throw new Error('Invalid credentials or insufficient role');
-      }
-      if (!res.ok) {
-        // Backend may be down — still accept known demo users so UI is usable offline.
-        if (!DEMO_USERS[trimmed]) {
-          setAuthorizationHeader(null);
-          throw new Error(`Login probe failed (${res.status})`);
-        }
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('Invalid')) throw err;
-      if (!DEMO_USERS[trimmed]) {
-        setAuthorizationHeader(null);
-        throw err instanceof Error ? err : new Error('Login failed');
-      }
+      await ensureCsrf();
+      const data = await apiJson('/api/v2/me', { skipErrorToast: true, skipAuthRefresh: false });
+      setMe(data);
+      return data;
+    } catch {
+      setMe(null);
+      return null;
     }
-
-    const nextRoles = DEMO_USERS[trimmed] ? [...DEMO_USERS[trimmed]] : ['ANALYST'];
-    setUsername(trimmed);
-    setRoles(nextRoles);
-    setStompAuthHeader(header);
-    ensureConnected();
   }, []);
 
-  const hasRole = useCallback(
-    (role) => roles.includes(String(role || '').toUpperCase()),
-    [roles],
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await ensureCsrf();
+      if (cancelled) return;
+      await refreshMe();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshMe]);
+
+  const login = useCallback(
+    async ({ tenantSlug, email, password, mfaCode }) => {
+      await ensureCsrf();
+      const res = await apiFetch('/api/v2/auth/login', {
+        method: 'POST',
+        skipAuthRefresh: true,
+        skipErrorToast: true,
+        body: JSON.stringify({
+          tenantSlug,
+          email,
+          password,
+          mfaCode: mfaCode || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Login failed');
+      }
+      const data = await res.json();
+      if (data.mfaRequired) {
+        return { mfaRequired: true };
+      }
+      await refreshMe();
+      return { mfaRequired: false };
+    },
+    [refreshMe],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await apiFetch('/api/v2/auth/logout', {
+        method: 'POST',
+        skipErrorToast: true,
+      });
+    } finally {
+      setMe(null);
+    }
+  }, []);
+
+  const permissions = me?.permissions || [];
+
+  const hasPermission = useCallback(
+    (perm) => permissions.includes(perm),
+    [permissions],
   );
 
   const value = useMemo(
     () => ({
-      isAuthenticated: Boolean(username),
-      username,
-      roles,
+      loading,
+      isAuthenticated: Boolean(me),
+      me,
+      permissions,
+      hasPermission,
+      refreshMe,
       login,
       logout,
-      hasRole,
+      /** @deprecated use me.user — kept for v1 view remounts */
+      username: me?.user?.email ?? null,
+      /** @deprecated use hasPermission — role name checks are discouraged */
+      hasRole: (role) =>
+        Boolean(me?.role && String(role || '').toUpperCase() === me.role),
     }),
-    [username, roles, login, logout, hasRole],
+    [loading, me, permissions, hasPermission, refreshMe, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -108,13 +137,8 @@ AuthProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
-/**
- * @returns {AuthContextValue}
- */
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }

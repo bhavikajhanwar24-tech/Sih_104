@@ -23,6 +23,19 @@ public interface AuditBlockRepository extends JpaRepository<AuditBlock, UUID> {
 
     long countByTenantIdAndEventType(UUID tenantId, String eventType);
 
+    List<AuditBlock> findByTenantIdAndSeqGreaterThanOrderBySeqAsc(
+            UUID tenantId,
+            long seq,
+            Pageable pageable
+    );
+
+    List<AuditBlock> findByTenantIdAndEventTypeAndSeqGreaterThanOrderBySeqAsc(
+            UUID tenantId,
+            String eventType,
+            long seq,
+            Pageable pageable
+    );
+
     @Query(value = """
             SELECT COUNT(*) FROM audit_blocks
             WHERE tenant_id = :tenantId

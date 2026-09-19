@@ -161,17 +161,61 @@ def diagnostics(sid: str) -> dict[str, Any]:
 
 @app.post("/session/{sid}/open")
 async def open_session(
-    sid: str, profile: ChannelProfile = ChannelProfile.WEBRTC_WIDEBAND
+    sid: str,
+    request: Request,
+    profile: ChannelProfile = ChannelProfile.WEBRTC_WIDEBAND,
 ) -> dict[str, Any]:
-    session = registry.create(sid, profile=profile)
+    _require_service_token(request)
+    body: dict[str, Any] = {}
+    try:
+        if (request.headers.get("content-type") or "").startswith("application/json"):
+            body = await request.json()
+    except Exception:
+        body = {}
+    tenant_id = body.get("tenantId") or request.query_params.get("tenantId")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenantId required (opaque label for logs/F11)")
+    max_calls = int(
+        body.get("maxConcurrentCalls")
+        or settings.default_max_concurrent_calls
+    )
+    try:
+        session = registry.create(
+            sid,
+            profile=profile,
+            tenant_id=str(tenant_id),
+            max_concurrent_for_tenant=max_calls,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     await scheduler.start(sid)
     await slow_path.start(sid)
-    logger.info("session_open session_id=%s profile=%s", sid, session.profile.value)
-    return {"status": "open", "sessionId": sid, "profile": session.profile.value}
+    logger.info(
+        "session_open session_id=%s tenant_id=%s profile=%s",
+        sid,
+        tenant_id,
+        session.profile.value,
+    )
+    return {
+        "status": "open",
+        "sessionId": sid,
+        "tenantId": str(tenant_id),
+        "profile": session.profile.value,
+    }
+
+
+def _require_service_token(request: Request) -> None:
+    token = request.headers.get("X-ML-Service-Token") or request.query_params.get("token")
+    expected = settings.service_token
+    if not expected or len(expected) < 16:
+        raise HTTPException(status_code=503, detail="service_token_not_configured")
+    if not token or token != expected:
+        raise HTTPException(status_code=401, detail="invalid_service_token")
 
 
 @app.post("/session/{sid}/close")
-async def close_session(sid: str) -> dict[str, Any]:
+async def close_session(sid: str, request: Request) -> dict[str, Any]:
+    _require_service_token(request)
     await slow_path.stop(sid)
     await scheduler.stop(sid)
     redteam_state.clear_config(sid)

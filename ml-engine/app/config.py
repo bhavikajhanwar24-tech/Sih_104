@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     ack_every_frames: int = 10
     version: str = "0.1.0"
     emit_enabled: bool = True
-    java_ingest_ws: str = "ws://127.0.0.1:8080/ws/features"
-    java_decision_http: str = "http://127.0.0.1:8080"
+    java_ingest_ws: str = "ws://127.0.0.1:8081/ws/features"
+    java_decision_http: str = "http://127.0.0.1:8081"
+    service_token: str = ""
+    default_max_concurrent_calls: int = 20
     emit_interval_ms: int = 500
     window_seconds: float = 2.0
     emit_queue_max: int = 64
@@ -45,7 +47,7 @@ class Settings(BaseSettings):
     speaker_model_id: str = "speechbrain/spkrec-ecapa-voxceleb"
     speaker_min_speech_s: float = 1.5
     speaker_latency_budget_ms: float = 40.0
-    java_passport_url: str = "http://127.0.0.1:8080/api/v1/passport/register"
+    java_passport_url: str = "http://127.0.0.1:8081/api/v1/passport/register"
 
     # Slow-path ASR (Context §7.2 / §10.6) — faster-whisper / CTranslate2.
     asr_enabled: bool = True

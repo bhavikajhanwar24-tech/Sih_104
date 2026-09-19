@@ -90,7 +90,12 @@ class FeatureEmitter:
         logger.info("emitter_start url=%s queue_max=%s", self.url, self.queue_size)
         while self._running:
             try:
-                async with websockets.connect(self.url, open_timeout=2, ping_interval=20) as ws:
+                async with websockets.connect(
+                    self.url,
+                    open_timeout=2,
+                    ping_interval=20,
+                    additional_headers={"X-ML-Service-Token": settings.service_token},
+                ) as ws:
                     self.connected = True
                     backoff = 0.25
                     logger.info("emitter_connected url=%s", self.url)

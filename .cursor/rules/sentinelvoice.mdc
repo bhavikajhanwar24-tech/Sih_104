@@ -1,46 +1,76 @@
 ---
-description: SentinelVoice project-wide rules
+description: SentinelVoice V2 project-wide rules
 alwaysApply: true
 ---
 
-# SentinelVoice — Project Rules
+# SentinelVoice V2 — Project Rules
 
-## Architecture (non-negotiable)
-- FOUR PLANES: Media (audio capture) → Inference (Python/FastAPI) → Decision (Java/Spring) → Presentation (React).
-- **Java NEVER handles raw PCM audio.** Java receives only FeatureFrame JSON (floats + enums).
-- Raw audio exists ONLY in ml-engine, ONLY in a bounded ring buffer (<=8s), and is overwritten in place.
-- Never write audio to disk, to a database, to a log line, or to any network destination other than
-  the in-process feature extractor.
+## Product
+- **SentinelVoice V2** is a **multi-tenant, policy-aware** real-time voice-fraud interdiction
+  platform for enterprises (banks, insurers, government bodies).
+- PostgreSQL is the system of record for tenant data, configuration, and audit.
+- The v1 single-tenant hackathon prototype in this repo is **raw material**, not an authority.
+  Deep, breaking, cross-cutting changes are allowed and **expected**. Prefer **replacing** v1
+  code over wrapping it with adapters or feature flags.
+
+## Architecture (planes)
+- **Media** → **Inference** (Python / FastAPI) → **Decision** (Java / Spring Boot) →
+  **Presentation** (React), plus a **Control surface** (Admin console) inside Presentation.
+- Wire contracts live under `docs/contracts/v2/` and may evolve with features. Historical v1
+  schemas remain under `docs/contracts/v1/` for reference only.
+
+## Non-negotiable product principles
+1. **Java never receives raw audio.** Raw PCM lives only in the ml-engine bounded ring buffer
+   and is overwritten in place. Audio is never written to disk, DB, logs, or the network.
+2. **No call transcripts are persisted.** Only structured, redacted, derived labels
+   (intent scores, entity TYPES/ranges, matched clause IDs) may be stored.
+3. **Every state change** that can affect a risk decision or a configuration is appended to the
+   tenant's hash-chained audit ledger.
+4. **The LLM never decides.** It only emits features. Scores, levels, and actions are computed
+   by deterministic code from admin-approved configuration.
+5. **Tenant isolation:** every piece of tenant-owned data carries `tenant_id` and is isolated
+   (PostgreSQL RLS + application checks). A query without `tenant_id` is a bug.
+
+## Configuration
+- **Infrastructure** settings (ports, DB URLs, model paths, CORS origins) live in
+  `application.yml` / environment variables.
+- **Tenant-editable** settings (weights, thresholds, rules, response actions, retention,
+  directory) live in **PostgreSQL**, versioned, audited, and loaded through a per-tenant cache
+  with explicit invalidation. Never hardcode a risk value, threshold, weight, or outcome in a
+  controller or service body.
+
+## Schema / migrations
+- Schema changes are **Flyway SQL migrations only** (`V001__...`, `V002__...`).
+- **Never** use Hibernate `ddl-auto=update` or `create`.
+
+## Tech stack
+- Java 21 + Spring Boot 3.3.x — constructor injection only, records for DTOs, no Lombok.
+- PostgreSQL 16 + Flyway.
+- Python 3.11 + FastAPI (ml-engine).
+- React 18 + Vite + Tailwind + React Router — plain JSX + JSDoc (no TypeScript).
+- Docker Compose for local/demo orchestration.
+- Frontend auth: prefer **httpOnly cookies**. `sessionStorage` is allowed **only** for a
+  short-lived auth token if cookies are not used. Do not use `localStorage` for secrets.
 
 ## Contracts
-- `docs/contracts/*.schema.json` are FROZEN. Never change a contract to make code compile.
-  If a field is missing, say so and stop — do not invent fields.
-- `frontend/src/contracts/contracts.d.ts` (JSDoc/ambient types for editor hints only) and
-  `frontend/src/contracts/validators.js` (Ajv runtime validators) are GENERATED from those
-  schemas. Do not hand-edit either. Run `scripts/gen-contracts.sh` to regenerate.
+- `docs/contracts/v2/*.schema.json` are the source of truth for new work. They require
+  `tenantId` (uuid) and `schemaVersion` const `"2"`.
+- Regenerated frontend artefacts come from `scripts/gen-contracts.sh` (reads v2). Do not
+  hand-edit `frontend/src/contracts/validators.js` or `contracts.d.ts` except via the generator.
+- Until later features update producers/consumers, generators may fail validation — that is
+  expected; fix producers in those features, not by reverting v2 schemas.
 
-## Java (backend/)
-- Java 21, Spring Boot 3.3.4, constructor injection only, no field `@Autowired`.
-- Records for DTOs, classes for entities. No Lombok.
-- Every service is injected somewhere. If you create a service, wire it. No orphaned beans.
-- Every state change that affects a risk decision MUST append to the audit ledger.
-- Never hardcode a risk value, threshold, or weight in a controller or service body.
-  All tunables live in `application.yml` under `sentinelvoice.*` and bind via @ConfigurationProperties.
+## Testing
+- **Do not write, modify, or delete automated tests per feature.** The suite is reconciled in
+  feature **F20**. Build with tests skipped when packaging
+  (`mvn -DskipTests`, etc.). If a v1 test fails to **compile** and blocks the build, exclude
+  that test source path with a TODO referencing `F20 test reconciliation` — do not rewrite the test.
 
-## Python (ml-engine/)
-- Python 3.11, FastAPI, type hints on every public function, numpy for DSP.
-- Fast path budget: 120ms per 500ms window. Slow path runs async and never blocks the fast path.
-- Every feature module exposes: `extract(audio: np.ndarray, sr: int, profile: ChannelProfile) -> dict`
-  and MUST return `{"available": False}` rather than raising when the channel can't support it.
-
-## React (frontend/)
-- React 18 + Vite + Tailwind. Plain JSX + JSDoc (no TypeScript / no `.tsx`). Functional components + hooks.
-- No localStorage/sessionStorage.
-- All telemetry flows through the `useTelemetrySocket` hook. Components never open their own sockets.
-- PropTypes on every component; enums and accessors from `@/contracts` — never hardcode wire strings.
-
-## Style
-- Small, reviewable diffs. Change only what the task asks for.
-- Do not add features that were not requested.
-- If the task is ambiguous or the existing code conflicts with these rules, STOP and ask.
-- Write tests for pure logic (fusion math, FSM transitions, hash chaining, DSP feature functions).
+## Working style
+- Deliver working, wired code: no orphan classes, no fake data from real endpoints, no TODO
+  stubs that pretend to work.
+- Every feature ships: Flyway migrations when schema changes, real frontend screens with real
+  API calls, and `docs/v2/features/<feature-id>.md` with a manual verification script.
+- Record deviations from superseded v1 docs/rules in `docs/v2/CHANGELOG.md` (one-line reason).
+- After finishing a feature, re-read the diff for leftover removed-class references, dead
+  imports, unused routes, and single-tenant assumptions.

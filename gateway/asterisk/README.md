@@ -46,14 +46,17 @@ curl -u sentinel:sentineldemo http://127.0.0.1:8088/ari/asterisk/info
 
 ## Softphone setup
 
-Server address = the machine running Asterisk (`127.0.0.1` if softphones are on the
-same laptop; otherwise the LAN IP of that machine). Transport = **UDP**. Port = **5060**.
+Server address = **`192.168.1.8`** (this laptop’s Wi‑Fi IPv4). Use that for Zoiper/Linphone
+on this PC **and** on phones on the same LAN. Transport = **UDP**. Port = **5060**.
+
+If `ipconfig` shows a different Wi‑Fi IPv4, update all four `192.168.1.8` entries in
+`config/pjsip.conf` and restart Asterisk.
 
 ### Zoiper 5 (desktop)
 
 1. Add account → **SIP**.
 2. **Caller** account:
-   - Domain / Registrar: `127.0.0.1` (or LAN IP)
+   - Domain / Registrar: `192.168.1.8`
    - Username: `caller`
    - Password: `callerdemo1001`
    - Outbound proxy: leave empty (or same as domain)
@@ -67,11 +70,11 @@ same laptop; otherwise the LAN IP of that machine). Transport = **UDP**. Port = 
 
 1. Assistant → **Use a SIP account**.
 2. Username: `caller` (or `agent`)
-3. SIP domain: `127.0.0.1` (or LAN IP) — account becomes `caller@127.0.0.1`
+3. SIP domain: `192.168.1.8` — account becomes `caller@192.168.1.8`
 4. Password: `callerdemo1001` / `agentdemo1002`
 5. Transport: **UDP**
 6. Settings → Network: disable ICE/STUN for same-LAN lab, or keep defaults if registration works.
-7. Dial `1002` (or `sip:1002@127.0.0.1`) from the caller account.
+7. Dial `1002` (or `sip:1002@192.168.1.8`) from the caller account.
 
 ## Useful Asterisk CLI
 
@@ -142,7 +145,7 @@ Unit tests: `pytest gateway/tests -q`
 ### 1) Registration fails
 
 - Confirm Asterisk is listening: `docker compose logs asterisk | head`
-- Softphone Domain must be reachable (same laptop → `127.0.0.1`; another device → LAN IP).
+- Softphone Domain must be reachable (`192.168.1.8` on this Wi‑Fi).
 - Username must be `caller` / `agent` (not `1001` / `1002`). Extensions are dialplan
   destinations; AoR auth usernames are the words in `pjsip.conf`.
 - Password typos: `callerdemo1001` / `agentdemo1002`.

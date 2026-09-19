@@ -1,5 +1,7 @@
 package com.sentinelvoice.actuation;
 
+import com.sentinelvoice.model.CallSession;
+import com.sentinelvoice.service.CallSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -16,12 +18,13 @@ import java.util.Set;
 public class WebRtcAdapter implements CallControlPort {
 
     private static final Logger log = LoggerFactory.getLogger(WebRtcAdapter.class);
-    private static final String TOPIC_PREFIX = "/topic/actuation/";
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final CallSessionManager callSessionManager;
 
-    public WebRtcAdapter(SimpMessagingTemplate messagingTemplate) {
+    public WebRtcAdapter(SimpMessagingTemplate messagingTemplate, CallSessionManager callSessionManager) {
         this.messagingTemplate = messagingTemplate;
+        this.callSessionManager = callSessionManager;
     }
 
     @Override
@@ -46,12 +49,12 @@ public class WebRtcAdapter implements CallControlPort {
 
     @Override
     public void announce(String sessionId, String soundId) {
-        publish(sessionId, "ANNOUNCE", Map.of("soundId", soundId));
+        publish(sessionId, "ANNOUNCE", Map.of("soundId", soundId, "target", "caller"));
     }
 
     @Override
     public void terminate(String sessionId, String reason) {
-        publish(sessionId, "TERMINATE", Map.of("reason", reason == null ? "" : reason));
+        publish(sessionId, "TERMINATE", Map.of("reason", reason == null ? "policy" : reason));
     }
 
     @Override
@@ -78,7 +81,10 @@ public class WebRtcAdapter implements CallControlPort {
         body.put("action", action);
         body.put("adapter", adapterName());
         body.putAll(detail);
-        String dest = TOPIC_PREFIX + sessionId;
+        CallSession session = callSessionManager.getSession(sessionId).orElse(null);
+        String dest = session == null
+                ? "/topic/actuation/" + sessionId
+                : "/topic/tenant/" + session.getTenantId() + "/actuation/" + sessionId;
         messagingTemplate.convertAndSend(dest, body);
         log.info("webrtc_actuation action={} sessionId={} dest={}", action, sessionId, dest);
     }

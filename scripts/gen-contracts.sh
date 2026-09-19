@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Regenerate frontend contract artifacts from docs/contracts/*.schema.json
+# Regenerate frontend contract artifacts from docs/contracts/v2/*.schema.json
 # Emits:
 #   frontend/src/contracts/contracts.d.ts  (ambient JSDoc/editor hints)
 #   frontend/src/contracts/validators.js   (precompiled Ajv ESM validators)
+# NOTE (F0): v2 schemas require tenantId + schemaVersion; generators may fail validation
+# against current v1 runtime payloads until later features migrate producers/consumers.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONTRACTS="$ROOT/docs/contracts"
+CONTRACTS="$ROOT/docs/contracts/v2"
 OUT_DIR="$ROOT/frontend/src/contracts"
 DTS="$OUT_DIR/contracts.d.ts"
 

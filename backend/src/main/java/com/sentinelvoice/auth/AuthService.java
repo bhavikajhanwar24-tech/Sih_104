@@ -4,11 +4,12 @@ import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.security.AuthProperties;
 import com.sentinelvoice.security.JwtService;
-import com.sentinelvoice.tenant.TenantEntity;
-import com.sentinelvoice.tenant.TenantRepository;
+import com.sentinelvoice.security.TenantContext;
 import com.warrenstrange.googleauth.GoogleAuthenticator;
 import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
 import com.warrenstrange.googleauth.GoogleAuthenticatorQRGenerator;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,7 +33,7 @@ public class AuthService {
     public static final String ACCESS_COOKIE = "sv_access";
     public static final String REFRESH_COOKIE = "sv_refresh";
 
-    private final TenantRepository tenantRepository;
+    private final PlatformAuthRepository platformAuthRepository;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final LoginFailureRepository loginFailureRepository;
@@ -44,8 +45,11 @@ public class AuthService {
     private final GoogleAuthenticator googleAuthenticator = new GoogleAuthenticator();
     private final SecureRandom secureRandom = new SecureRandom();
 
+    @PersistenceContext
+    private EntityManager em;
+
     public AuthService(
-            TenantRepository tenantRepository,
+            PlatformAuthRepository platformAuthRepository,
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
             LoginFailureRepository loginFailureRepository,
@@ -55,7 +59,7 @@ public class AuthService {
             AuthProperties authProperties,
             AuditLedgerService auditLedgerService
     ) {
-        this.tenantRepository = tenantRepository;
+        this.platformAuthRepository = platformAuthRepository;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.loginFailureRepository = loginFailureRepository;
@@ -68,41 +72,63 @@ public class AuthService {
 
     @Transactional
     public LoginOutcome login(String tenantSlug, String email, String password, String mfaCode, String ip) {
-        TenantEntity tenant = tenantRepository.findBySlugIgnoreCase(tenantSlug)
-                .orElseThrow(() -> new AuthException("Invalid credentials"));
         String emailLower = email.trim().toLowerCase(Locale.ROOT);
-        assertNotLocked(tenant.getId(), emailLower, ip);
-
-        Optional<UserEntity> userOpt = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), emailLower);
-        if (userOpt.isEmpty() || !"ACTIVE".equals(userOpt.get().getStatus())
-                || !passwordEncoder.matches(password, userOpt.get().getPasswordHash())) {
-            recordFailure(tenant.getId(), emailLower, ip);
+        Optional<PlatformAuthRepository.LoginLookup> lookupOpt = TenantContext.runAsPlatform(() ->
+                platformAuthRepository.findUserForLogin(tenantSlug, emailLower));
+        if (lookupOpt.isEmpty()) {
             throw new AuthException("Invalid credentials");
         }
-        UserEntity user = userOpt.get();
-        if (user.isMfaEnabled()) {
+        PlatformAuthRepository.LoginLookup lookup = lookupOpt.get();
+        UUID tenantId = lookup.tenantId();
+
+        return TenantContext.runAs(
+                new TenantContext(tenantId, lookup.userId(), Role.from(lookup.role()), lookup.email(), lookup.tokenVersion()),
+                () -> completeLogin(lookup, password, mfaCode, ip, emailLower)
+        );
+    }
+
+    private LoginOutcome completeLogin(
+            PlatformAuthRepository.LoginLookup lookup,
+            String password,
+            String mfaCode,
+            String ip,
+            String emailLower
+    ) {
+        UUID tenantId = lookup.tenantId();
+        // Connection may already be open from platform lookup with empty app.tenant_id;
+        // re-bind so RLS WITH CHECK passes for login_failures / refresh_tokens / users.
+        bindTenantRls(tenantId);
+        assertNotLocked(tenantId, emailLower, ip);
+
+        if (!"ACTIVE".equals(lookup.status())
+                || !passwordEncoder.matches(password, lookup.passwordHash())) {
+            recordFailure(tenantId, emailLower, ip);
+            throw new AuthException("Invalid credentials");
+        }
+        if (lookup.mfaEnabled()) {
             if (mfaCode == null || mfaCode.isBlank()) {
                 return LoginOutcome.requireMfa();
             }
-            if (!googleAuthenticator.authorize(user.getMfaSecret(), parseCode(mfaCode))) {
-                recordFailure(tenant.getId(), emailLower, ip);
+            if (!googleAuthenticator.authorize(lookup.mfaSecret(), parseCode(mfaCode))) {
+                recordFailure(tenantId, emailLower, ip);
                 throw new AuthException("Invalid MFA code");
             }
         }
-        clearFailures(tenant.getId(), emailLower, ip);
+        clearFailures(tenantId, emailLower, ip);
+        UserEntity user = userRepository.findById(lookup.userId()).orElseThrow();
         user.setLastLoginAt(Instant.now());
         user.setUpdatedAt(Instant.now());
         userRepository.save(user);
 
         auditLedgerService.append(
-                tenant.getId(),
+                tenantId,
                 null,
                 AuditEventType.LOGIN_SUCCESS,
                 "USER",
                 user.getId().toString(),
                 Map.of("email", emailLower, "ip", ip)
         );
-        return LoginOutcome.success(issueSession(user, tenant.getId()));
+        return LoginOutcome.success(issueSession(user, tenantId));
     }
 
     @Transactional
@@ -111,21 +137,48 @@ public class AuthService {
             throw new AuthException("Refresh token missing");
         }
         String hash = sha256(refreshRaw);
-        RefreshTokenEntity existing = refreshTokenRepository.findByTokenHashAndRevokedAtIsNull(hash)
-                .orElseThrow(() -> new AuthException("Invalid refresh token"));
-        if (existing.getExpiresAt().isBefore(Instant.now())) {
+        Object[] row = TenantContext.runAsPlatform(() -> {
+            @SuppressWarnings("unchecked")
+            var list = em.createNativeQuery("""
+                    SELECT id::text, tenant_id::text, user_id::text, expires_at
+                    FROM fn_find_refresh_token(:hash)
+                    """)
+                    .setParameter("hash", hash)
+                    .getResultList();
+            return list.isEmpty() ? null : (Object[]) list.get(0);
+        });
+        if (row == null) {
+            throw new AuthException("Invalid refresh token");
+        }
+        UUID tokenId = UUID.fromString((String) row[0]);
+        UUID tenantId = UUID.fromString((String) row[1]);
+        UUID userId = UUID.fromString((String) row[2]);
+        Instant expiresAt;
+        if (row[3] instanceof java.sql.Timestamp ts) {
+            expiresAt = ts.toInstant();
+        } else if (row[3] instanceof Instant inst) {
+            expiresAt = inst;
+        } else {
+            expiresAt = Instant.parse(String.valueOf(row[3]));
+        }
+        if (expiresAt.isBefore(Instant.now())) {
             throw new AuthException("Refresh token expired");
         }
-        UserEntity user = userRepository.findById(existing.getUserId())
-                .orElseThrow(() -> new AuthException("User gone"));
-        if (!"ACTIVE".equals(user.getStatus())) {
-            throw new AuthException("User disabled");
-        }
-        existing.setRevokedAt(Instant.now());
-        SessionTokens rotated = issueSession(user, user.getTenantId());
-        existing.setReplacedBy(rotated.refreshTokenId());
-        refreshTokenRepository.save(existing);
-        return rotated;
+        return TenantContext.runAs(tenantId, () -> {
+            bindTenantRls(tenantId);
+            RefreshTokenEntity existing = refreshTokenRepository.findById(tokenId)
+                    .orElseThrow(() -> new AuthException("Invalid refresh token"));
+            UserEntity user = userRepository.findById(userId)
+                    .orElseThrow(() -> new AuthException("User gone"));
+            if (!"ACTIVE".equals(user.getStatus())) {
+                throw new AuthException("User disabled");
+            }
+            existing.setRevokedAt(Instant.now());
+            SessionTokens rotated = issueSession(user, tenantId);
+            existing.setReplacedBy(rotated.refreshTokenId());
+            refreshTokenRepository.save(existing);
+            return rotated;
+        });
     }
 
     @Transactional
@@ -304,6 +357,13 @@ public class AuthService {
     private void clearFailures(UUID tenantId, String emailLower, String ip) {
         loginLockRepository.findByTenantIdAndEmailLowerAndIpAddress(tenantId, emailLower, ip)
                 .ifPresent(loginLockRepository::delete);
+    }
+
+    /** Re-apply transaction-local RLS GUC (platform lookup may have borrowed the connection first). */
+    private void bindTenantRls(UUID tenantId) {
+        em.createNativeQuery("SELECT set_config('app.tenant_id', CAST(:tid AS text), true)")
+                .setParameter("tid", tenantId.toString())
+                .getSingleResult();
     }
 
     private static int parseCode(String code) {

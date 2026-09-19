@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * SentinelVoice design tokens — synced with theme.js.
+ * SentinelVoice design tokens — dark default, light via html[data-theme=light].
  * Risk ramp is reserved exclusively for risk UI.
  */
 :root {
@@ -13,14 +13,31 @@
   --sv-border: #243044;
   --sv-fg: #e8eef7;
   --sv-muted: #8b9bb4;
-  --sv-accent: #38bdf8;
-  --sv-live: #38bdf8;
+  --sv-accent: #22d3ee;
+  --sv-live: #22d3ee;
   --sv-fault: #e2e8f0;
 
   --risk-clear: #10b981;
   --risk-watch: #f59e0b;
   --risk-elevated: #f97316;
   --risk-critical: #ef4444;
+}
+
+html[data-theme='light'] {
+  --sv-bg: #f1f5f9;
+  --sv-panel: #ffffff;
+  --sv-elevated: #e8eef5;
+  --sv-border: #cbd5e1;
+  --sv-fg: #0f172a;
+  --sv-muted: #64748b;
+  --sv-accent: #0e7490;
+  --sv-live: #0891b2;
+  --sv-fault: #475569;
+
+  --risk-clear: #059669;
+  --risk-watch: #d97706;
+  --risk-elevated: #ea580c;
+  --risk-critical: #dc2626;
 }
 
 html,
@@ -105,4 +122,3 @@ body {
 .sv-terminal-flash {
   animation: sv-terminal-flash 1.2s ease-in-out infinite;
 }
-

@@ -54,7 +54,7 @@ _watches: dict[str, ChallengeWatch] = {}
 
 
 def _java_base() -> str:
-    return (settings.java_decision_http or "http://127.0.0.1:8080").rstrip("/")
+    return (settings.java_decision_http or "http://127.0.0.1:8081").rstrip("/")
 
 
 async def _post_java(path: str, payload: dict[str, Any]) -> None:

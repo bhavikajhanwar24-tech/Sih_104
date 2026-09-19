@@ -1,5 +1,6 @@
 # Java / Maven
 backend/target/
+backend/target
 backend/.mvn/
 **/target/
 **/bin/
@@ -12,6 +13,8 @@ backend/.mvn/
 # Local build tool artifacts
 apache-maven-3.9.9/
 apache-maven-3.9.9-bin.zip
+tools/maven.zip
+tools/apache-maven-*/
 
 # IDE and editors
 .vscode/
@@ -46,12 +49,16 @@ ml-engine/.venv/
 ml-engine/models/**
 !ml-engine/models/README.md
 ml-engine/*.egg-info/
+ml-engine/**/*.egg-info/
 ml-engine/sentinelvoice_ml_engine.egg-info/
+*.egg-info/
+ml-engine/**/__pycache__/
 **/__pycache__/
 *.py[cod]
 
 # Frontend
 frontend/node_modules/
+frontend/node_modules
 frontend/dist/
 
 # Audio / datasets / model weights
@@ -66,6 +73,8 @@ datasets/
 # Local debug dumps / bridge noise
 frontend/err.txt
 *.err.txt
+gateway_bridge_out.txt
+gateway_bridge_err.txt
 gateway_bridge_*.txt
 tools/maven.zip
 tools/*.zip

@@ -32,6 +32,9 @@ public class TenantSettingsEntity {
     @Column(name = "consent_notice_text")
     private String consentNoticeText;
 
+    @Column(name = "max_concurrent_calls", nullable = false)
+    private int maxConcurrentCalls = 20;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> extras = new LinkedHashMap<>();
@@ -80,6 +83,14 @@ public class TenantSettingsEntity {
 
     public void setConsentNoticeText(String consentNoticeText) {
         this.consentNoticeText = consentNoticeText;
+    }
+
+    public int getMaxConcurrentCalls() {
+        return maxConcurrentCalls;
+    }
+
+    public void setMaxConcurrentCalls(int maxConcurrentCalls) {
+        this.maxConcurrentCalls = maxConcurrentCalls;
     }
 
     public Map<String, Object> getExtras() {

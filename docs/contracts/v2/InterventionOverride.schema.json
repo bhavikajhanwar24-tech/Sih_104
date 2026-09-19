@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/InterventionOverride.schema.json",
+  "title": "InterventionOverride",
+  "description": "Analyst up/down-grade of intervention level. Audited event \u2014 never anonymous. Context \u00a78.3. [V2: required tenantId + schemaVersion=2.]",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tenantId",
+    "schemaVersion",
+    "sessionId",
+    "analystId",
+    "reason",
+    "targetLevel",
+    "previousLevel",
+    "tsEpochMs"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "sentinelvoice.InterventionOverride/1"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "analystId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Authenticated analyst identity. Overrides must never be anonymous."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Mandatory free-text justification (min 10 characters)."
+    },
+    "targetLevel": {
+      "$ref": "#/$defs/InterventionLevel"
+    },
+    "previousLevel": {
+      "$ref": "#/$defs/InterventionLevel"
+    },
+    "tsEpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant that owns this message (V2 multi-tenancy)."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "2",
+      "description": "Wire contract major version. V2 schemas use const \"2\"."
+    }
+  },
+  "$defs": {
+    "ChannelProfile": {
+      "type": "string",
+      "enum": [
+        "PSTN_NARROWBAND",
+        "VOIP_WIDEBAND",
+        "WEBRTC_WIDEBAND"
+      ]
+    },
+    "InterventionLevel": {
+      "type": "string",
+      "enum": [
+        "LEVEL_1_SILENT",
+        "LEVEL_2_SOFT_NUDGE",
+        "LEVEL_3_STEP_UP_MFA",
+        "LEVEL_4_AUTO_HOLD",
+        "LEVEL_5_TERMINATE"
+      ]
+    },
+    "RiskState": {
+      "type": "string",
+      "enum": [
+        "SCORED",
+        "INSUFFICIENT_EVIDENCE",
+        "DEGRADED"
+      ]
+    },
+    "IdentityVerdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "INCONCLUSIVE",
+        "IMPERSONATION_HUMAN",
+        "IMPERSONATION_SYNTHETIC"
+      ]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": [
+        "RISING",
+        "FALLING",
+        "STABLE"
+      ]
+    },
+    "ReasonSeverity": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "UnitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

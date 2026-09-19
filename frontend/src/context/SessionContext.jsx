@@ -32,7 +32,8 @@ const FIXTURE_IDS = new Set(
 const SessionContext = createContext(/** @type {SessionContextValue | null} */ (null));
 
 /**
- * Shared session + highlight state — avoid prop-drilling more than two levels.
+ * Shared session + highlight state for live-call views (mount under /app when F6 remounts Analyst).
+ * Requires an authenticated cookie session — no demo auto-session.
  *
  * @param {Object} props
  * @param {React.ReactNode} props.children

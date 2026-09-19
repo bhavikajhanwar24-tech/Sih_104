@@ -80,6 +80,16 @@ public class CanonicalJson {
         if (value instanceof BigDecimal decimal) {
             return decimal.setScale(6, RoundingMode.HALF_UP);
         }
+        if (value instanceof java.util.UUID uuid) {
+            return uuid.toString();
+        }
+        if (value instanceof java.time.temporal.TemporalAccessor
+                || value instanceof java.time.temporal.TemporalAmount) {
+            return value.toString();
+        }
+        if (value instanceof Enum<?> e) {
+            return e.name();
+        }
         return value;
     }
 }

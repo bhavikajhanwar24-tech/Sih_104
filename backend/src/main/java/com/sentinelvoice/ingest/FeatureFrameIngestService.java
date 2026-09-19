@@ -18,7 +18,7 @@ import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.fusion.ReasonCode;
 import com.sentinelvoice.fusion.ReasonGenerator;
-import com.sentinelvoice.identity.DirectoryService;
+import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.identity.model.IdentityAssessment;
@@ -32,6 +32,7 @@ import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.scenario.ScenarioSessionContext;
+import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
@@ -157,6 +158,14 @@ public class FeatureFrameIngestService {
             return;
         }
         CallSession session = existing.get();
+        // Never trust tenantId from ML — bind from Java session registry only.
+        TenantContext.runAs(session.getTenantId(), () -> {
+            ingestUnderTenant(session, frame);
+            return null;
+        });
+    }
+
+    private void ingestUnderTenant(CallSession session, FeatureFrame frame) {
         if (frame.seq() <= session.getLastFeatureSeq()) {
             dropped.increment();
             log.warn(
