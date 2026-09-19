@@ -35,7 +35,8 @@ Thumbs.db
 ml-engine/.venv/
 ml-engine/models/**
 !ml-engine/models/README.md
-ml-engine/__pycache__/
+**/__pycache__/
+*.py[cod]
 
 # Frontend
 frontend/node_modules/
