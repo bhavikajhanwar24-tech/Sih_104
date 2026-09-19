@@ -9,39 +9,31 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
-public interface AuditBlockRepository extends JpaRepository<AuditBlock, Long> {
+public interface AuditBlockRepository extends JpaRepository<AuditBlock, UUID> {
 
-    List<AuditBlock> findBySessionIdOrderByBlockIndexAsc(String sessionId);
+    List<AuditBlock> findByTenantIdOrderBySeqAsc(UUID tenantId);
 
-    Page<AuditBlock> findBySessionIdOrderByBlockIndexAsc(String sessionId, Pageable pageable);
+    Page<AuditBlock> findByTenantIdOrderBySeqAsc(UUID tenantId, Pageable pageable);
 
-    Optional<AuditBlock> findTopBySessionIdOrderByBlockIndexDesc(String sessionId);
+    Optional<AuditBlock> findTopByTenantIdOrderBySeqDesc(UUID tenantId);
 
-    long countByEventType(String eventType);
+    long countByTenantId(UUID tenantId);
 
-    @Query("select distinct a.sessionId from AuditBlock a order by a.sessionId asc")
-    List<String> findDistinctSessionIds();
+    long countByTenantIdAndEventType(UUID tenantId, String eventType);
 
-    @Query("""
-            select count(a) from AuditBlock a
-            where a.eventType = :eventType
-              and a.tsEpochMs >= :fromMs
-              and a.tsEpochMs < :toMs
-            """)
-    long countByEventTypeAndTsRange(
+    @Query(value = """
+            SELECT COUNT(*) FROM audit_blocks
+            WHERE tenant_id = :tenantId
+              AND event_type = :eventType
+              AND EXTRACT(EPOCH FROM created_at) * 1000 >= :fromMs
+              AND EXTRACT(EPOCH FROM created_at) * 1000 < :toMs
+            """, nativeQuery = true)
+    long countByTenantIdAndEventTypeAndCreatedRange(
+            @Param("tenantId") UUID tenantId,
             @Param("eventType") String eventType,
             @Param("fromMs") long fromMs,
             @Param("toMs") long toMs
-    );
-
-    @Query("""
-            select count(a) from AuditBlock a
-            where a.eventType = :eventType
-              and a.tsEpochMs < :beforeMs
-            """)
-    long countByEventTypeOlderThan(
-            @Param("eventType") String eventType,
-            @Param("beforeMs") long beforeMs
     );
 }

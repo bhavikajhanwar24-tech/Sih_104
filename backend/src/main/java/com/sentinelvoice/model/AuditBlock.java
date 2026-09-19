@@ -2,83 +2,105 @@ package com.sentinelvoice.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
+/**
+ * Per-tenant hash-chained audit block (V001 {@code audit_blocks}). Immutable in DB.
+ */
 @Entity
 @Table(
         name = "audit_blocks",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_audit_blocks_session_index",
-                columnNames = {"session_id", "block_index"}
+                name = "audit_blocks_tenant_seq_unique",
+                columnNames = {"tenant_id", "seq"}
         )
 )
 public class AuditBlock {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(nullable = false)
+    private UUID id;
 
-    @Column(name = "session_id", nullable = false)
-    private String sessionId;
-
-    @Column(name = "block_index", nullable = false)
-    private int blockIndex;
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(nullable = false)
+    private long seq;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "prev_hash", nullable = false, length = 64, columnDefinition = "char(64)")
+    private String prevHash;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "hash", nullable = false, length = 64, columnDefinition = "char(64)")
+    private String hash;
+
+    @Column(name = "event_type", nullable = false)
     private String eventType;
 
-    /**
-     * Canonical JSON of the event payload. Column name stays {@code details}
-     * so the live H2 tamper demo can {@code UPDATE audit_blocks SET details = ...}.
-     */
-    @Column(name = "details", nullable = false, columnDefinition = "TEXT")
-    private String details;
+    @Column(name = "actor_type", nullable = false)
+    private String actorType;
 
-    @Column(nullable = false)
-    private long tsEpochMs;
+    @Column(name = "actor_id")
+    private String actorId;
 
-    @Column(nullable = false)
-    private Instant timestamp = Instant.now();
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> payload = new LinkedHashMap<>();
 
-    @Column(nullable = false)
-    private double smoothedRisk;
-
-    @Column(nullable = false)
-    private String level;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String previousHash;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String currentHash;
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
 
     public AuditBlock() {
     }
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 
-    public String getSessionId() {
-        return sessionId;
+    public void setId(UUID id) {
+        this.id = id;
     }
 
-    public void setSessionId(String sessionId) {
-        this.sessionId = sessionId;
+    public UUID getTenantId() {
+        return tenantId;
     }
 
-    public int getBlockIndex() {
-        return blockIndex;
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
-    public void setBlockIndex(int blockIndex) {
-        this.blockIndex = blockIndex;
+    public long getSeq() {
+        return seq;
+    }
+
+    public void setSeq(long seq) {
+        this.seq = seq;
+    }
+
+    public String getPrevHash() {
+        return prevHash;
+    }
+
+    public void setPrevHash(String prevHash) {
+        this.prevHash = prevHash;
+    }
+
+    public String getHash() {
+        return hash;
+    }
+
+    public void setHash(String hash) {
+        this.hash = hash;
     }
 
     public String getEventType() {
@@ -89,63 +111,41 @@ public class AuditBlock {
         this.eventType = eventType;
     }
 
-    public String getDetails() {
-        return details;
+    public String getActorType() {
+        return actorType;
     }
 
-    public void setDetails(String details) {
-        this.details = details;
+    public void setActorType(String actorType) {
+        this.actorType = actorType;
     }
 
-    public long getTsEpochMs() {
-        return tsEpochMs;
+    public String getActorId() {
+        return actorId;
     }
 
-    public void setTsEpochMs(long tsEpochMs) {
-        this.tsEpochMs = tsEpochMs;
-        this.timestamp = Instant.ofEpochMilli(tsEpochMs);
+    public void setActorId(String actorId) {
+        this.actorId = actorId;
     }
 
-    public Instant getTimestamp() {
-        return timestamp;
+    public Map<String, Object> getPayload() {
+        return payload;
     }
 
-    public void setTimestamp(Instant timestamp) {
-        this.timestamp = timestamp;
-        if (timestamp != null) {
-            this.tsEpochMs = timestamp.toEpochMilli();
-        }
+    public void setPayload(Map<String, Object> payload) {
+        this.payload = payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload);
     }
 
-    public double getSmoothedRisk() {
-        return smoothedRisk;
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
-    public void setSmoothedRisk(double smoothedRisk) {
-        this.smoothedRisk = smoothedRisk;
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
-    public String getLevel() {
-        return level;
-    }
-
-    public void setLevel(String level) {
-        this.level = level;
-    }
-
-    public String getPreviousHash() {
-        return previousHash;
-    }
-
-    public void setPreviousHash(String previousHash) {
-        this.previousHash = previousHash;
-    }
-
-    public String getCurrentHash() {
-        return currentHash;
-    }
-
-    public void setCurrentHash(String currentHash) {
-        this.currentHash = currentHash;
+    /** Compatibility for callers that still read sessionId from the payload. */
+    public String sessionIdFromPayload() {
+        Object v = payload == null ? null : payload.get("sessionId");
+        return v == null ? null : String.valueOf(v);
     }
 }

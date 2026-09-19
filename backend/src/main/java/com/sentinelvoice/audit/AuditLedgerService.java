@@ -1,177 +1,221 @@
 package com.sentinelvoice.audit;
 
-import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.model.AuditBlock;
-import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.repository.AuditBlockRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import com.sentinelvoice.tenant.BootstrapTenant;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 
 /**
- * Server-authoritative SHA-256 hash-chained audit ledger. Callers never supply {@code previousHash}.
+ * Per-tenant SHA-256 hash-chained audit ledger.
+ *
+ * <p>Hash rule (F1):
+ * {@code SHA-256(prev_hash || seq || event_type || canonical_json(payload) || created_at ISO-8601)}.
+ * Appends are serialised per tenant with {@code pg_advisory_xact_lock(hashtext(tenant_id::text))}.
  */
 @Service
 public class AuditLedgerService {
 
+    private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_INSTANT;
+
     private final AuditBlockRepository repository;
     private final CanonicalJson canonicalJson;
-    private final SentinelProperties properties;
     private final TransactionTemplate transactionTemplate;
-    private final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ChainCursor> cursors = new ConcurrentHashMap<>();
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public AuditLedgerService(
             AuditBlockRepository repository,
             CanonicalJson canonicalJson,
-            SentinelProperties properties,
             PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
         this.canonicalJson = canonicalJson;
-        this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
+    /**
+     * Append under the bootstrap tenant (pre-F2). {@code sessionId} is stored inside payload.
+     */
     public AuditBlock append(String sessionId, AuditEventType type, Map<String, Object> payload) {
-        if (sessionId == null || sessionId.isBlank()) {
-            throw new IllegalArgumentException("sessionId is required");
+        return append(
+                BootstrapTenant.ID,
+                sessionId,
+                type,
+                "SYSTEM",
+                null,
+                payload
+        );
+    }
+
+    public AuditBlock append(
+            UUID tenantId,
+            String sessionId,
+            AuditEventType type,
+            String actorType,
+            String actorId,
+            Map<String, Object> payload
+    ) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
         }
         if (type == null) {
             throw new IllegalArgumentException("event type is required");
         }
-        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
-        synchronized (lockFor(sessionId)) {
-            return transactionTemplate.execute(status -> persistLocked(sessionId, type, safePayload));
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (payload != null) {
+            body.putAll(payload);
         }
+        if (sessionId != null && !sessionId.isBlank()) {
+            body.putIfAbsent("sessionId", sessionId);
+        }
+        String safeActorType = actorType == null || actorType.isBlank() ? "SYSTEM" : actorType;
+        return transactionTemplate.execute(status ->
+                persistLocked(tenantId, type, safeActorType, actorId, body));
     }
 
-    public ChainVerificationResult verify(String sessionId) {
-        List<AuditBlock> blocks = repository.findBySessionIdOrderByBlockIndexAsc(sessionId);
-        if (blocks.isEmpty()) {
-            return ChainVerificationResult.empty();
+    /**
+     * Verify the full chain for a tenant.
+     *
+     * @return {@code valid}, {@code blocksChecked}, {@code firstBrokenSeq} (null if valid / empty)
+     */
+    @Transactional(readOnly = true)
+    public TenantChainVerification verifyTenant(UUID tenantId) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
         }
-        String genesisPrefix = properties.audit().genesisPrefix();
+        List<AuditBlock> blocks = repository.findByTenantIdOrderBySeqAsc(tenantId);
+        if (blocks.isEmpty()) {
+            return TenantChainVerification.empty();
+        }
         for (int i = 0; i < blocks.size(); i++) {
             AuditBlock block = blocks.get(i);
-            if (block.getBlockIndex() != i) {
-                return ChainVerificationResult.broken(
-                        blocks.size(),
-                        i,
-                        "blockIndex=" + i,
-                        "blockIndex=" + block.getBlockIndex()
-                );
+            long expectedSeq = i + 1L; // seq is 1-based
+            if (block.getSeq() != expectedSeq) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
             }
-            String expectedPrevious;
-            if (i == 0) {
-                expectedPrevious = genesisPreviousHash(genesisPrefix, sessionId, block.getTsEpochMs());
-            } else {
-                expectedPrevious = blocks.get(i - 1).getCurrentHash();
+            String expectedPrev = i == 0
+                    ? BootstrapTenant.GENESIS_PREV_HASH
+                    : blocks.get(i - 1).getHash();
+            if (!expectedPrev.equals(block.getPrevHash())) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
             }
-            if (!expectedPrevious.equals(block.getPreviousHash())) {
-                return ChainVerificationResult.broken(
-                        blocks.size(),
-                        i,
-                        expectedPrevious,
-                        block.getPreviousHash()
-                );
-            }
-            String canonicalPayload = canonicalJson.serialize(canonicalJson.deserialize(block.getDetails()));
-            String expectedCurrent = hashBlock(
-                    block.getPreviousHash(),
-                    block.getTsEpochMs(),
-                    block.getSessionId(),
+            String expectedHash = computeHash(
+                    block.getPrevHash(),
+                    block.getSeq(),
                     block.getEventType(),
-                    canonicalPayload
+                    canonicalJson.serialize(block.getPayload()),
+                    block.getCreatedAt()
             );
-            if (!expectedCurrent.equals(block.getCurrentHash())) {
-                return ChainVerificationResult.broken(
-                        blocks.size(),
-                        i,
-                        expectedCurrent,
-                        block.getCurrentHash()
-                );
+            if (!expectedHash.equals(block.getHash())) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
             }
         }
-        return ChainVerificationResult.ok(blocks.size());
+        return TenantChainVerification.ok(blocks.size());
     }
 
-    public Page<AuditBlockView> chain(String sessionId, Pageable pageable) {
-        return repository.findBySessionIdOrderByBlockIndexAsc(sessionId, pageable).map(this::toView);
+    /** @deprecated session-scoped verify; prefer {@link #verifyTenant(UUID)}. */
+    public ChainVerificationResult verify(String sessionId) {
+        TenantChainVerification v = verifyTenant(BootstrapTenant.ID);
+        if (v.blocksChecked() == 0) {
+            return ChainVerificationResult.empty();
+        }
+        if (v.valid()) {
+            return ChainVerificationResult.ok(v.blocksChecked());
+        }
+        int broken = v.firstBrokenSeq() == null ? 0 : v.firstBrokenSeq().intValue();
+        return ChainVerificationResult.broken(v.blocksChecked(), broken, "chain", "mismatch");
+    }
+
+    public List<AuditBlock> listTenant(UUID tenantId) {
+        return repository.findByTenantIdOrderBySeqAsc(tenantId);
     }
 
     public AuditBlockView toView(AuditBlock block) {
+        Map<String, Object> payload = block.getPayload() == null ? Map.of() : block.getPayload();
+        String sessionId = block.sessionIdFromPayload();
+        if (sessionId == null) {
+            sessionId = "";
+        }
+        double smoothedRisk = 0.0;
+        Object risk = payload.get("smoothedRisk");
+        if (risk instanceof Number number) {
+            smoothedRisk = number.doubleValue();
+        }
+        Object levelObj = payload.get("level");
+        String level = levelObj == null ? "LEVEL_1_SILENT" : String.valueOf(levelObj);
         return new AuditBlockView(
                 AuditBlockView.SCHEMA,
-                block.getSessionId(),
-                block.getBlockIndex(),
-                block.getTsEpochMs(),
+                sessionId,
+                (int) Math.min(block.getSeq(), Integer.MAX_VALUE),
+                block.getCreatedAt().toEpochMilli(),
                 block.getEventType(),
-                canonicalJson.deserialize(block.getDetails()),
-                block.getSmoothedRisk(),
-                block.getLevel(),
-                block.getPreviousHash(),
-                block.getCurrentHash()
+                payload,
+                smoothedRisk,
+                level,
+                block.getPrevHash(),
+                block.getHash()
         );
     }
 
-    public static String genesisPreviousHash(String genesisPrefix, String sessionId, long createdAtEpochMs) {
-        return sha256Hex(genesisPrefix + "|" + sessionId + "|" + createdAtEpochMs);
-    }
+    private AuditBlock persistLocked(
+            UUID tenantId,
+            AuditEventType type,
+            String actorType,
+            String actorId,
+            Map<String, Object> payload
+    ) {
+        entityManager.createNativeQuery(
+                        "SELECT pg_advisory_xact_lock(hashtext(CAST(:tid AS text)))")
+                .setParameter("tid", tenantId.toString())
+                .getResultList();
 
-    private AuditBlock persistLocked(String sessionId, AuditEventType type, Map<String, Object> payload) {
-        ChainCursor cursor = cursors.computeIfAbsent(sessionId, this::loadCursor);
-        long tsEpochMs = Instant.now().toEpochMilli();
-        String previousHash = cursor.tailHash();
-        if (previousHash == null) {
-            previousHash = genesisPreviousHash(properties.audit().genesisPrefix(), sessionId, tsEpochMs);
-        }
+        var tip = repository.findTopByTenantIdOrderBySeqDesc(tenantId);
+        long nextSeq = tip.map(b -> b.getSeq() + 1L).orElse(1L);
+        String prevHash = tip.map(AuditBlock::getHash).orElse(BootstrapTenant.GENESIS_PREV_HASH);
+
+        Instant createdAt = Instant.now();
         String canonicalPayload = canonicalJson.serialize(payload);
-        String currentHash = hashBlock(previousHash, tsEpochMs, sessionId, type.name(), canonicalPayload);
+        String hash = computeHash(prevHash, nextSeq, type.name(), canonicalPayload, createdAt);
 
         AuditBlock block = new AuditBlock();
-        block.setSessionId(sessionId);
-        block.setBlockIndex(cursor.nextIndex());
+        block.setId(UUID.randomUUID());
+        block.setTenantId(tenantId);
+        block.setSeq(nextSeq);
+        block.setPrevHash(prevHash);
+        block.setHash(hash);
         block.setEventType(type.name());
-        block.setDetails(canonicalPayload);
-        block.setTsEpochMs(tsEpochMs);
-        block.setSmoothedRisk(extractSmoothedRisk(payload));
-        block.setLevel(extractLevel(payload));
-        block.setPreviousHash(previousHash);
-        block.setCurrentHash(currentHash);
-        AuditBlock saved = repository.saveAndFlush(block);
-        cursors.put(sessionId, new ChainCursor(currentHash, cursor.nextIndex() + 1));
-        return saved;
+        block.setActorType(actorType);
+        block.setActorId(actorId);
+        block.setPayload(payload);
+        block.setCreatedAt(createdAt);
+        return repository.saveAndFlush(block);
     }
 
-    private ChainCursor loadCursor(String sessionId) {
-        return repository.findTopBySessionIdOrderByBlockIndexDesc(sessionId)
-                .map(block -> new ChainCursor(block.getCurrentHash(), block.getBlockIndex() + 1))
-                .orElseGet(() -> new ChainCursor(null, 0));
-    }
-
-    private Object lockFor(String sessionId) {
-        return sessionLocks.computeIfAbsent(sessionId, id -> new Object());
-    }
-
-    private static String hashBlock(
-            String previousHash,
-            long tsEpochMs,
-            String sessionId,
+    static String computeHash(
+            String prevHash,
+            long seq,
             String eventType,
-            String canonicalPayload
+            String canonicalPayload,
+            Instant createdAt
     ) {
-        return sha256Hex(previousHash + "|" + tsEpochMs + "|" + sessionId + "|" + eventType + "|" + canonicalPayload);
+        String createdIso = ISO.format(createdAt);
+        return sha256Hex(prevHash + seq + eventType + canonicalPayload + createdIso);
     }
 
     static String sha256Hex(String input) {
@@ -186,24 +230,5 @@ public class AuditLedgerService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm is unavailable", e);
         }
-    }
-
-    private static double extractSmoothedRisk(Map<String, Object> payload) {
-        Object value = payload.get("smoothedRisk");
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        return 0.0;
-    }
-
-    private static String extractLevel(Map<String, Object> payload) {
-        Object value = payload.get("level");
-        if (value instanceof String string && !string.isBlank()) {
-            return string;
-        }
-        return InterventionLevel.LEVEL_1_SILENT.name();
-    }
-
-    private record ChainCursor(String tailHash, int nextIndex) {
     }
 }

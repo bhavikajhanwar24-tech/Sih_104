@@ -5,26 +5,31 @@ spring:
     virtual:
       enabled: true
   datasource:
-    url: jdbc:h2:file:./data/sentinelvoice;MODE=LEGACY;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: password
+    # Runtime pool uses sv_app (no BYPASSRLS, cannot ALTER). See docs/v2/features/F1.md.
+    # options=TimeZone=UTC avoids FATAL when the host JVM zone is obsolete (e.g. Asia/Calcutta).
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:15432/sentinelvoice?options=-c%20TimeZone%3DUTC}
+    username: ${DB_APP_USER:sv_app}
+    password: ${DB_APP_PASSWORD:changeme_app}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    # Migrations run as sv_owner so RLS (F3) cannot be bypassed by the app role.
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:15432/sentinelvoice?options=-c%20TimeZone%3DUTC}
+    user: ${DB_OWNER_USER:sv_owner}
+    password: ${DB_OWNER_PASSWORD:changeme_owner}
+    locations: classpath:db/migration
   jpa:
     hibernate:
-      ddl-auto: update
-    database-platform: org.hibernate.dialect.H2Dialect
+      ddl-auto: validate
+    open-in-view: false
     show-sql: false
-    defer-datasource-initialization: true
-  sql:
-    init:
-      mode: always
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
 
 server:
-  port: 8080
+  port: 8081
 
 management:
   endpoints:
@@ -41,8 +46,16 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [cid=%X{cid:-}] [%15.15t] %-40.40logger{39} : %m%n"
 
-# Values from Context ┬º9.1 (fusion weights / EMA / family thresholds) and ┬º9.5 (intervention hysteresis).
+# Values from Context (fusion weights / EMA / family thresholds) and intervention hysteresis.
 sentinelvoice:
+  auth:
+    # Fail-fast if missing / short — set JWT_SECRET in env (see .env.example).
+    jwt-secret: ${JWT_SECRET:}
+    access-token-ttl-seconds: 900
+    refresh-token-ttl-seconds: 1209600
+    cookie-secure: ${COOKIE_SECURE:false}
+    cookie-domain: ${COOKIE_DOMAIN:}
+    cors-origins: ${SENTINELVOICE_CORS_ORIGINS:http://127.0.0.1:5173,http://localhost:5173}
   fusion:
     weights:
       wideband:
@@ -192,7 +205,7 @@ sentinelvoice:
       connect-timeout-ms: 2000
       read-timeout-ms: 3000
     # In-process MOCK CBS freeze sink (see MockCbsController).
-    cbs-freeze-url: http://127.0.0.1:${server.port:8080}/mock-cbs/freeze
+    cbs-freeze-url: http://127.0.0.1:${server.port:8081}/mock-cbs/freeze
     supervisor-endpoint: PJSIP/agent
   compliance:
     telemetry-ttl-days: 90

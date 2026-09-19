@@ -2,14 +2,8 @@ package com.sentinelvoice.scenario;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.sentinelvoice.context.model.CrossChannelEvent;
-import com.sentinelvoice.context.model.InteractionEdge;
-import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.SessionStartRequest;
-import com.sentinelvoice.repository.CrossChannelEventRepository;
-import com.sentinelvoice.repository.DirectoryRecordRepository;
-import com.sentinelvoice.repository.InteractionEdgeRepository;
 import com.sentinelvoice.scenario.model.Scenario;
 import com.sentinelvoice.scenario.model.ScenarioSessionDescriptor;
 import com.sentinelvoice.service.CallSessionManager;
@@ -20,14 +14,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -35,22 +26,18 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
- * Loads Context §14 scenario fixtures, seeds directory / relationship / cross-channel
- * state, and opens a Decision Plane session for replay or live Asterisk.
+ * Loads scenario fixtures and opens sessions.
+ * Directory / relationship / cross-channel DB seeding deferred to F4 / F15 / F18.
  */
 @Service
 public class ScenarioService {
 
     private static final Logger log = LoggerFactory.getLogger(ScenarioService.class);
 
-    private final DirectoryRecordRepository directoryRecordRepository;
-    private final InteractionEdgeRepository interactionEdgeRepository;
-    private final CrossChannelEventRepository crossChannelEventRepository;
     private final CallSessionManager callSessionManager;
     private final ScenarioSessionContext scenarioSessionContext;
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
@@ -63,15 +50,9 @@ public class ScenarioService {
     private String ingestWsBase;
 
     public ScenarioService(
-            DirectoryRecordRepository directoryRecordRepository,
-            InteractionEdgeRepository interactionEdgeRepository,
-            CrossChannelEventRepository crossChannelEventRepository,
             CallSessionManager callSessionManager,
             ScenarioSessionContext scenarioSessionContext
     ) {
-        this.directoryRecordRepository = directoryRecordRepository;
-        this.interactionEdgeRepository = interactionEdgeRepository;
-        this.crossChannelEventRepository = crossChannelEventRepository;
         this.callSessionManager = callSessionManager;
         this.scenarioSessionContext = scenarioSessionContext;
     }
@@ -114,10 +95,6 @@ public class ScenarioService {
         return scenario;
     }
 
-    /**
-     * Apply seed state and open a session. {@code mode} is {@code replay} or {@code live}.
-     */
-    @Transactional
     public ScenarioSessionDescriptor load(String id, String mode) {
         Scenario scenario = require(id);
         String normalisedMode = normaliseMode(mode);
@@ -125,9 +102,11 @@ public class ScenarioService {
             throw new IllegalArgumentException("scenario " + id + " does not allow live mode");
         }
 
-        applyDirectoryOverrides(scenario.directoryOverrides());
-        applyRelationshipEdges(scenario.relationshipEdges());
-        applyCrossChannelEvents(scenario.crossChannelEvents());
+        // F1: DB seed of directory/edges/cross-channel removed — returns in F4/F15/F18.
+        log.warn(
+                "scenario_load_without_db_seed id={} reason=F1_postgres_baseline",
+                scenario.id()
+        );
 
         ChannelProfile profile = ChannelProfile.valueOf(scenario.channelProfile());
         String sessionId = "scen-" + scenario.id() + "-" + Long.toHexString(System.currentTimeMillis());
@@ -179,14 +158,6 @@ public class ScenarioService {
             trajectory.add(row);
         }
 
-        log.info(
-                "Loaded scenario id={} mode={} sessionId={} expectedFinal={}",
-                scenario.id(),
-                normalisedMode,
-                sessionId,
-                scenario.expectedFinalLevel()
-        );
-
         return new ScenarioSessionDescriptor(
                 scenario.id(),
                 scenario.title(),
@@ -226,7 +197,6 @@ public class ScenarioService {
         Path cwd = Path.of("").toAbsolutePath().normalize();
         roots.add(cwd.resolve("scenarios"));
         roots.add(cwd.resolve("..").resolve("scenarios").normalize());
-        // Maven surefire often runs with user.dir = backend/
         roots.add(cwd.getParent() != null ? cwd.getParent().resolve("scenarios") : null);
 
         List<Path> found = new ArrayList<>();
@@ -269,127 +239,14 @@ public class ScenarioService {
         }
     }
 
-    private void applyDirectoryOverrides(List<Scenario.DirectoryOverride> overrides) {
-        for (Scenario.DirectoryOverride o : overrides) {
-            if (o.employeeId() == null || o.employeeId().isBlank()) {
-                continue;
-            }
-            DirectoryRecord record = directoryRecordRepository.findById(o.employeeId())
-                    .orElseGet(DirectoryRecord::new);
-            if (record.getEmployeeId() == null) {
-                record.setEmployeeId(o.employeeId());
-                // Defaults for newly inserted senior-shield / demo rows
-                record.setName(Optional.ofNullable(o.name()).orElse(o.employeeId()));
-                record.setRole(Optional.ofNullable(o.role()).orElse("Demo"));
-                record.setDepartment(Optional.ofNullable(o.department()).orElse("Demo"));
-                record.setPrimaryCli(Optional.ofNullable(o.primaryCli()).orElse("unknown"));
-                record.setVerbalAuthorityLimitInr(
-                        o.verbalAuthorityLimitInr() != null ? o.verbalAuthorityLimitInr() : 0.0
-                );
-                record.setPermittedChannels(
-                        Optional.ofNullable(o.permittedChannels()).orElse("BRANCH")
-                );
-                record.setHierarchyLevel(o.hierarchyLevel() != null ? o.hierarchyLevel() : 99);
-                record.setPassportEnrolled(Boolean.TRUE.equals(o.passportEnrolled()));
-            }
-            if (o.name() != null) {
-                record.setName(o.name());
-            }
-            if (o.role() != null) {
-                record.setRole(o.role());
-            }
-            if (o.department() != null) {
-                record.setDepartment(o.department());
-            }
-            if (o.primaryCli() != null) {
-                record.setPrimaryCli(o.primaryCli());
-            }
-            if (o.extension() != null) {
-                record.setExtension(o.extension());
-            }
-            if (o.verbalAuthorityLimitInr() != null) {
-                record.setVerbalAuthorityLimitInr(o.verbalAuthorityLimitInr());
-            }
-            if (o.permittedChannels() != null) {
-                record.setPermittedChannels(o.permittedChannels());
-            }
-            if (o.presenceStatus() != null) {
-                record.setPresenceStatus(o.presenceStatus());
-            }
-            if (o.calendarLocation() != null) {
-                record.setCalendarLocation(o.calendarLocation());
-            }
-            if (o.managerEmployeeId() != null) {
-                record.setManagerEmployeeId(o.managerEmployeeId());
-            }
-            if (o.hierarchyLevel() != null) {
-                record.setHierarchyLevel(o.hierarchyLevel());
-            }
-            if (o.passportEnrolled() != null) {
-                record.setPassportEnrolled(o.passportEnrolled());
-            }
-            directoryRecordRepository.save(record);
-        }
-    }
-
-    private void applyRelationshipEdges(List<Scenario.RelationshipEdgeSeed> edges) {
-        Instant now = Instant.now();
-        for (Scenario.RelationshipEdgeSeed seed : edges) {
-            InteractionEdge edge = interactionEdgeRepository
-                    .findByCallerEmployeeIdAndCalleeEmployeeId(
-                            seed.callerEmployeeId(),
-                            seed.calleeEmployeeId()
-                    )
-                    .orElseGet(InteractionEdge::new);
-            edge.setCallerEmployeeId(seed.callerEmployeeId());
-            edge.setCalleeEmployeeId(seed.calleeEmployeeId());
-            edge.setInteractionCount(seed.interactionCount());
-            edge.setTypicalHourOfDay(seed.typicalHourOfDay());
-            edge.setTypicalDurationSec(seed.typicalDurationSec());
-            if (edge.getFirstSeenAt() == null) {
-                edge.setFirstSeenAt(now.minus(180, ChronoUnit.DAYS));
-            }
-            edge.setLastSeenAt(now.minus(1, ChronoUnit.DAYS));
-            interactionEdgeRepository.save(edge);
-        }
-    }
-
-    private void applyCrossChannelEvents(List<Scenario.CrossChannelSeed> seeds) {
-        // Replace events for campaigns referenced by this scenario so reloads are idempotent.
-        seeds.stream()
-                .map(Scenario.CrossChannelSeed::campaignId)
-                .filter(id -> id != null && !id.isBlank())
-                .distinct()
-                .forEach(campaignId -> {
-                    List<CrossChannelEvent> existing = crossChannelEventRepository.findByCampaignId(campaignId);
-                    if (!existing.isEmpty()) {
-                        crossChannelEventRepository.deleteAll(existing);
-                    }
-                });
-
-        Instant now = Instant.now();
-        for (Scenario.CrossChannelSeed seed : seeds) {
-            CrossChannelEvent event = new CrossChannelEvent();
-            event.setId(seed.id());
-            event.setChannel(CrossChannelEvent.Channel.valueOf(seed.channel().toUpperCase(Locale.ROOT)));
-            event.setTargetEmployeeId(seed.targetEmployeeId());
-            event.setOccurredAt(now.minus((long) (seed.occurredHoursAgo() * 3600), ChronoUnit.SECONDS));
-            event.setSeverity(CrossChannelEvent.Severity.valueOf(seed.severity().toUpperCase(Locale.ROOT)));
-            event.setIndicator(seed.indicator());
-            event.setCampaignId(seed.campaignId());
-            event.setDescription(seed.description());
-            crossChannelEventRepository.save(event);
-        }
-    }
-
     private static String normaliseMode(String mode) {
         if (mode == null || mode.isBlank()) {
             return "replay";
         }
         String m = mode.trim().toLowerCase(Locale.ROOT);
-        if (!m.equals("replay") && !m.equals("live")) {
-            throw new IllegalArgumentException("mode must be 'replay' or 'live', got: " + mode);
+        if ("live".equals(m) || "replay".equals(m)) {
+            return m;
         }
-        return m;
+        throw new IllegalArgumentException("mode must be replay or live");
     }
 }

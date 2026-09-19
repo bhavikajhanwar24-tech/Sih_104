@@ -1,55 +1,27 @@
 package com.sentinelvoice.passport.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
 import java.time.Instant;
 
 /**
- * Purpose-limited consent gate for Voice Passport enrolment (DPDP §4 / §6).
+ * Consent DTO (non-persistent). Persistence returns in F12.
  */
-@Entity
-@Table(name = "consent_records")
 public class ConsentRecord {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(name = "employee_id", nullable = false, length = 32)
     private String employeeId;
-
-    @Column(nullable = false)
     private String purpose;
-
-    @Column(name = "notice_version", nullable = false)
     private String noticeVersion;
-
-    @Column(name = "granted_at", nullable = false)
     private Instant grantedAt;
-
-    @Column(name = "granted_by", nullable = false)
     private String grantedBy;
-
-    @Column(name = "withdrawn_at")
-    private Instant withdrawnAt;
-
-    @Column(nullable = false)
     private String method;
-
-    public ConsentRecord() {
-    }
-
-    public boolean isActive() {
-        return withdrawnAt == null;
-    }
+    private Instant withdrawnAt;
 
     public Long getId() {
         return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
     }
 
     public String getEmployeeId() {
@@ -92,6 +64,14 @@ public class ConsentRecord {
         this.grantedBy = grantedBy;
     }
 
+    public String getMethod() {
+        return method;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
     public Instant getWithdrawnAt() {
         return withdrawnAt;
     }
@@ -100,11 +80,7 @@ public class ConsentRecord {
         this.withdrawnAt = withdrawnAt;
     }
 
-    public String getMethod() {
-        return method;
-    }
-
-    public void setMethod(String method) {
-        this.method = method;
+    public boolean isActive() {
+        return withdrawnAt == null;
     }
 }
