@@ -8,8 +8,8 @@
 
 | Field | Value |
 |---|---|
-| Generated (UTC) | 2026-09-18T18:33:34Z |
-| Git commit | `91dafd902acbfe1630f620db69a23243bd9a4826` |
+| Generated (UTC) | 2026-09-19T10:36:59Z |
+| Git commit | `8ce5e25c5f4e2fd218383e8e222462f6650b2242` |
 | Random seed | `42` |
 | Harness version | `1` |
 | Synthetic smoke | `True` |
@@ -19,8 +19,8 @@
 
 | Model ID | Checkpoint | Calibration |
 |---|---|---|
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `ml-engine\models\antispoof\baseline_no_codec_aug.pt` | `sigmoid-fallback` |
-| `lfcc-lcnn-tier1/codec_aug` | `ml-engine\models\antispoof\codec_aug.pt` | `sigmoid-fallback` |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `ml-engine/models/antispoof/baseline_no_codec_aug.pt` | `C:/Users/Bhavika Jhanwar/Desktop/Sih_104/ml-engine/models/antispoof/calibration.json` |
+| `lfcc-lcnn-tier1/codec_aug` | `ml-engine/models/antispoof/codec_aug.pt` | `C:/Users/Bhavika Jhanwar/Desktop/Sih_104/ml-engine/models/antispoof/calibration.json` |
 
 ### Dataset versions
 
@@ -37,11 +37,11 @@ Before/after codec-augmented training. Empty cells mean that checkpoint was not 
 
 | Condition | EER (baseline) | EER (codec-augmented) | min t-DCF (baseline) | min t-DCF (codec-aug) |
 |---|---|---|---|---|
-| Clean 16 kHz | 0.00% | 10.00% | 0.0000 | 0.4500 |
-| Opus 24 kbps | 0.00% | 10.00% | 0.0000 | 0.5000 |
-| G.711 µ-law 8 kHz | 15.00% | 25.00% | 0.9000 | 0.9000 |
-| AMR-NB 12.2 kbps | 15.00% | 25.00% | 0.9000 | 0.9000 |
-| In-the-Wild | 15.00% | 20.00% | 0.8500 | 0.9000 |
+| Clean 16 kHz | 5.00% | 0.00% | 0.2000 | 0.0000 |
+| Opus 24 kbps | 10.00% | 0.00% | 0.4000 | 0.0000 |
+| G.711 µ-law 8 kHz | 35.00% | 0.00% | 0.9000 | 0.0000 |
+| AMR-NB 12.2 kbps | 35.00% | 0.00% | 0.9000 | 0.0000 |
+| In-the-Wild | 20.00% | 5.00% | 0.9000 | 0.1000 |
 
 ## Full detection metrics (every dataset × channel × model)
 
@@ -49,36 +49,36 @@ Scores: higher ⇒ more spoof-like. min t-DCF uses ASVspoof 2019 CM costs (Todis
 
 | Model | Dataset | Channel | N | EER | EER θ | min t-DCF | AUC | FPR@TPR0.90 | ECE | Source |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `clean_16k` | 40 | 0.00% | -0.3764 | 0.0000 | 1.0000 | 0.00% | 0.4626 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `opus_24k` | 40 | 0.00% | -0.3262 | 0.0000 | 1.0000 | 0.00% | 0.4204 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `g711_ulaw_8k` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `amr_nb_12k2` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `clean_16k` | 40 | 0.00% | -0.3764 | 0.0000 | 1.0000 | 0.00% | 0.4626 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `opus_24k` | 40 | 0.00% | -0.3262 | 0.0000 | 1.0000 | 0.00% | 0.4204 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `g711_ulaw_8k` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `amr_nb_12k2` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `clean_16k` | 40 | 15.00% | -0.3136 | 0.8500 | 0.9150 | 20.00% | 0.0796 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `opus_24k` | 40 | 10.00% | -0.2654 | 0.1500 | 0.9850 | 10.00% | 0.0682 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `g711_ulaw_8k` | 40 | 5.00% | -0.2770 | 0.5500 | 0.9725 | 5.00% | 0.0713 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `amr_nb_12k2` | 40 | 5.00% | -0.2770 | 0.5500 | 0.9725 | 5.00% | 0.0713 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `opus_24k` | 40 | 0.00% | -0.3262 | 0.0000 | 1.0000 | 0.00% | 0.4204 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `g711_ulaw_8k` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `amr_nb_12k2` | 40 | 15.00% | -0.3273 | 0.9000 | 0.8850 | 15.00% | 0.0829 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `clean_16k` | 40 | 10.00% | -0.4046 | 0.4500 | 0.9725 | 5.00% | 0.3839 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `opus_24k` | 40 | 10.00% | -0.3682 | 0.5000 | 0.9700 | 5.00% | 0.4233 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `g711_ulaw_8k` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `amr_nb_12k2` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `clean_16k` | 40 | 10.00% | -0.4046 | 0.4500 | 0.9725 | 5.00% | 0.3839 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `opus_24k` | 40 | 10.00% | -0.3682 | 0.5000 | 0.9700 | 5.00% | 0.4233 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `g711_ulaw_8k` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `amr_nb_12k2` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `clean_16k` | 40 | 20.00% | -0.3441 | 0.9000 | 0.8400 | 20.00% | 0.1249 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `opus_24k` | 40 | 20.00% | -0.3015 | 0.8000 | 0.8950 | 20.00% | 0.0763 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `g711_ulaw_8k` | 40 | 20.00% | -0.2977 | 0.9000 | 0.8625 | 25.00% | 0.0747 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `amr_nb_12k2` | 40 | 20.00% | -0.2977 | 0.9000 | 0.8625 | 25.00% | 0.0747 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `opus_24k` | 40 | 10.00% | -0.3682 | 0.5000 | 0.9700 | 5.00% | 0.4233 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `g711_ulaw_8k` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
-| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `amr_nb_12k2` | 40 | 25.00% | -0.3557 | 0.9000 | 0.8225 | 25.00% | 0.1479 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `clean_16k` | 40 | 5.00% | 0.3950 | 0.2000 | 0.9900 | 5.00% | 0.3468 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `opus_24k` | 40 | 10.00% | 0.5413 | 0.4000 | 0.9750 | 5.00% | 0.3161 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `g711_ulaw_8k` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2019_la_eval` | `amr_nb_12k2` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `clean_16k` | 40 | 5.00% | 0.3950 | 0.2000 | 0.9900 | 5.00% | 0.3468 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `opus_24k` | 40 | 10.00% | 0.5413 | 0.4000 | 0.9750 | 5.00% | 0.3161 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `g711_ulaw_8k` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `asvspoof2021_df_eval` | `amr_nb_12k2` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `clean_16k` | 40 | 20.00% | 0.3096 | 0.9000 | 0.8225 | 20.00% | 0.4218 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `opus_24k` | 40 | 20.00% | 0.5221 | 0.8500 | 0.8575 | 20.00% | 0.3137 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `g711_ulaw_8k` | 40 | 20.00% | 0.4746 | 0.9000 | 0.8575 | 20.00% | 0.3324 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `in_the_wild` | `amr_nb_12k2` | 40 | 20.00% | 0.4746 | 0.9000 | 0.8575 | 20.00% | 0.3324 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `opus_24k` | 40 | 10.00% | 0.5413 | 0.4000 | 0.9750 | 5.00% | 0.3161 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `g711_ulaw_8k` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/baseline_no_codec_aug` | `codec_degraded` | `amr_nb_12k2` | 40 | 35.00% | 0.4359 | 0.9000 | 0.6925 | 55.00% | 0.3531 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `clean_16k` | 40 | 0.00% | 1.2076 | 0.0000 | 1.0000 | 0.00% | 0.1909 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `opus_24k` | 40 | 0.00% | 1.5049 | 0.0000 | 1.0000 | 0.00% | 0.2189 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `g711_ulaw_8k` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2019_la_eval` | `amr_nb_12k2` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `clean_16k` | 40 | 0.00% | 1.2076 | 0.0000 | 1.0000 | 0.00% | 0.1909 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `opus_24k` | 40 | 0.00% | 1.5049 | 0.0000 | 1.0000 | 0.00% | 0.2189 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `g711_ulaw_8k` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `asvspoof2021_df_eval` | `amr_nb_12k2` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `clean_16k` | 40 | 5.00% | 1.1304 | 0.1000 | 0.9950 | 0.00% | 0.3363 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `opus_24k` | 40 | 0.00% | 1.4364 | 0.0000 | 1.0000 | 0.00% | 0.3814 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `g711_ulaw_8k` | 40 | 0.00% | 1.3797 | 0.0000 | 1.0000 | 0.00% | 0.3903 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `in_the_wild` | `amr_nb_12k2` | 40 | 0.00% | 1.3797 | 0.0000 | 1.0000 | 0.00% | 0.3903 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `opus_24k` | 40 | 0.00% | 1.5049 | 0.0000 | 1.0000 | 0.00% | 0.2189 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `g711_ulaw_8k` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
+| `lfcc-lcnn-tier1/codec_aug` | `codec_degraded` | `amr_nb_12k2` | 40 | 0.00% | 1.2987 | 0.0000 | 1.0000 | 0.00% | 0.3674 | synthetic |
 
 ## Fairness — false positive rate by group (§13.5)
 
@@ -86,12 +86,12 @@ Metric: **FPR parity** at the model's EER threshold on the fairness probe set. A
 
 | Group | N bona | FPR | Notes |
 |---|---|---|---|
-| `age_senior` | 45 | 44.44% | proxy group assignment when Common Voice metadata absent |
-| `age_young` | 45 | 55.56% | proxy group assignment when Common Voice metadata absent |
-| `dravidian` | 60 | 18.33% | proxy group assignment when Common Voice metadata absent |
-| `gender_f` | 45 | 13.33% | proxy group assignment when Common Voice metadata absent |
-| `gender_m` | 45 | 24.44% | proxy group assignment when Common Voice metadata absent |
-| `indo_aryan` | 60 | 30.00% | proxy group assignment when Common Voice metadata absent |
+| `age_senior` | 45 | 0.00% | proxy group assignment when Common Voice metadata absent |
+| `age_young` | 45 | 20.00% | proxy group assignment when Common Voice metadata absent |
+| `dravidian` | 60 | 0.00% | proxy group assignment when Common Voice metadata absent |
+| `gender_f` | 45 | 0.00% | proxy group assignment when Common Voice metadata absent |
+| `gender_m` | 45 | 6.67% | proxy group assignment when Common Voice metadata absent |
+| `indo_aryan` | 60 | 10.00% | proxy group assignment when Common Voice metadata absent |
 
 > Groups are assigned from speaker-id heuristics or a deterministic rotation when Common Voice language labels are absent. Replace with CV language tags for the compliance slide (§13.5).
 
@@ -102,9 +102,9 @@ Measured on the same host as the eval run. Fast path = antispoof window; slow pa
 
 | Path | p50 | p95 | p99 | mean | n |
 |---|---|---|---|---|---|
-| fast_path | 5.03 | 6.05 | 6.55 | 5.02 | 20 |
-| slow_path | 4.09 | 4.47 | 4.79 | 4.11 | 20 |
-| end_to_end | 9.15 | 10.07 | 10.55 | 9.13 | 20 |
+| fast_path | 56.22 | 240.34 | 595.27 | 99.45 | 20 |
+| slow_path | 9.67 | 16.78 | 18.56 | 10.84 | 20 |
+| end_to_end | 65.94 | 256.69 | 613.74 | 110.28 | 20 |
 
 ## Reliability diagrams
 

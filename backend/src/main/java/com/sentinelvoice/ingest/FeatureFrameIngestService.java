@@ -31,6 +31,7 @@ import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.model.TelemetryFrame;
+import com.sentinelvoice.scenario.ScenarioSessionContext;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
@@ -76,6 +77,7 @@ public class FeatureFrameIngestService {
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final ActuationService actuationService;
     private final ChallengeService challengeService;
+    private final ScenarioSessionContext scenarioSessionContext;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -98,6 +100,7 @@ public class FeatureFrameIngestService {
             TelemetryBroadcaster telemetryBroadcaster,
             @Lazy ActuationService actuationService,
             ChallengeService challengeService,
+            ScenarioSessionContext scenarioSessionContext,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -116,6 +119,7 @@ public class FeatureFrameIngestService {
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.actuationService = actuationService;
         this.challengeService = challengeService;
+        this.scenarioSessionContext = scenarioSessionContext;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -209,6 +213,7 @@ public class FeatureFrameIngestService {
         InterventionLevel previousLevel = session.getCurrentLevel();
 
         IdentityAssessment identity = identityResolutionService.resolve(session, frame);
+        FeatureFrame working = scenarioSessionContext.enrich(frame);
         RelationshipAssessment relationship = relationshipGraphService.assess(
                 new RelationshipQuery(session.getCallerId(), session.getCalleeId(), null)
         );
@@ -223,10 +228,10 @@ public class FeatureFrameIngestService {
                 && identity.directoryRecordForClaim().get("employeeId") instanceof String empId) {
             claimed = directoryService.findByEmployeeId(empId).orElse(null);
         }
-        TransactionAssessment transaction = transactionPolicyService.assess(frame, claimed);
+        TransactionAssessment transaction = transactionPolicyService.assess(working, claimed);
 
         FusionContext fusionContext = FusionContext.withIdentity(
-                frame,
+                working,
                 transaction.score(),
                 true,
                 relationshipScore,

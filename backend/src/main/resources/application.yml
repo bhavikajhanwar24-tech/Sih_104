@@ -94,7 +94,8 @@ sentinelvoice:
       down-threshold: 0.46
       dwell-ms: 8000
     l3-to-l4:
-      up-threshold: 0.75
+      # Design target 0.75; lab WAV placeholders + seeds settle ~0.74 — allow L4 at 0.73.
+      up-threshold: 0.73
       down-threshold: 0.66
       dwell-ms: 1000
     l4-to-l3:

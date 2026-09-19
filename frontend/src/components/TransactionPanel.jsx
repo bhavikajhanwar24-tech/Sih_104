@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
 import { INTERVENTION_LEVELS } from '@/contracts';
 
 const LOCK_LEVELS = new Set([
@@ -112,10 +113,13 @@ export function TransactionPanel({ sessionId, frame }) {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-2" data-testid="transaction-panel">
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] uppercase tracking-wider text-sv-muted">
-          CBS · Wire transfer
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[10px] uppercase tracking-wider text-sv-muted">
+            CBS · Wire transfer
+          </p>
+          <SimulatedSignalBadge label="mock CBS — not a real bank API" />
+        </div>
         <span
           className={`font-mono text-[10px] ${
             lockedByTelemetry ? 'text-risk-critical' : 'text-risk-clear'

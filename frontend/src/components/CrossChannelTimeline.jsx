@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
 import { riskRamp, palette } from '@/theme.js';
 
 const SEVERITY_COLOUR = Object.freeze({
@@ -24,9 +25,15 @@ const CHANNEL_LABEL = Object.freeze({
  * @param {Object} props
  * @param {string | null | undefined} props.sessionId
  * @param {number} [props.callStartedAtMs]
+ * @param {boolean} [props.fixtureSeeded] when true, events come from scenario YAML seeds
  * @param {string} [props.className]
  */
-export function CrossChannelTimeline({ sessionId, callStartedAtMs, className = '' }) {
+export function CrossChannelTimeline({
+  sessionId,
+  callStartedAtMs,
+  fixtureSeeded = false,
+  className = '',
+}) {
   const [payload, setPayload] = useState(/** @type {object | null} */ (null));
   const [error, setError] = useState(/** @type {string | null} */ (null));
 
@@ -131,12 +138,15 @@ export function CrossChannelTimeline({ sessionId, callStartedAtMs, className = '
         <p className="font-display text-xs font-semibold text-sv-fg">
           This attack started ~{formatHours(hoursAgo)} ago
         </p>
-        <p className="font-mono text-[10px] tabular-nums text-sv-muted">
-          corr {score.toFixed(2)}
-          {payload?.matchingCampaign ? (
-            <span className="ml-2 text-risk-elevated">· campaign match</span>
-          ) : null}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {fixtureSeeded ? <SimulatedSignalBadge /> : null}
+          <p className="font-mono text-[10px] tabular-nums text-sv-muted">
+            corr {score.toFixed(2)}
+            {payload?.matchingCampaign ? (
+              <span className="ml-2 text-risk-elevated">· campaign match</span>
+            ) : null}
+          </p>
+        </div>
       </div>
 
       <p className="px-1 text-[10px] leading-snug text-sv-muted">
@@ -188,6 +198,7 @@ export function CrossChannelTimeline({ sessionId, callStartedAtMs, className = '
 CrossChannelTimeline.propTypes = {
   sessionId: PropTypes.string,
   callStartedAtMs: PropTypes.number,
+  fixtureSeeded: PropTypes.bool,
   className: PropTypes.string,
 };
 

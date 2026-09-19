@@ -52,6 +52,7 @@ public class ScenarioService {
     private final InteractionEdgeRepository interactionEdgeRepository;
     private final CrossChannelEventRepository crossChannelEventRepository;
     private final CallSessionManager callSessionManager;
+    private final ScenarioSessionContext scenarioSessionContext;
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
     private final ConcurrentHashMap<String, Scenario> scenarios = new ConcurrentHashMap<>();
 
@@ -65,12 +66,14 @@ public class ScenarioService {
             DirectoryRecordRepository directoryRecordRepository,
             InteractionEdgeRepository interactionEdgeRepository,
             CrossChannelEventRepository crossChannelEventRepository,
-            CallSessionManager callSessionManager
+            CallSessionManager callSessionManager,
+            ScenarioSessionContext scenarioSessionContext
     ) {
         this.directoryRecordRepository = directoryRecordRepository;
         this.interactionEdgeRepository = interactionEdgeRepository;
         this.crossChannelEventRepository = crossChannelEventRepository;
         this.callSessionManager = callSessionManager;
+        this.scenarioSessionContext = scenarioSessionContext;
     }
 
     @PostConstruct
@@ -139,6 +142,7 @@ public class ScenarioService {
                 profile,
                 scenario.id()
         ));
+        scenarioSessionContext.bind(sessionId, scenario.transactionSeed(), scenario);
 
         String audioSource = scenario.audio() != null ? scenario.audio().source() : "live";
         if ("live".equals(normalisedMode)) {

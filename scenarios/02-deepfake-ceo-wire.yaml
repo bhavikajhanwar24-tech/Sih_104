@@ -26,6 +26,10 @@ directoryOverrides:
     presenceStatus: OFFSITE
     calendarLocation: London
     passportEnrolled: true
+    verbalAuthorityLimitInr: 0
+    permittedChannels: "SWIFT,BRANCH"
+    role: "Chief Financial Officer"
+    name: "Rajesh Kumar"
 relationshipEdges: []   # first-contact anomaly: no CFO→Sunita edge
 crossChannelEvents:
   - id: cc-bec-email-sunitarao
@@ -47,5 +51,15 @@ crossChannelEvents:
 audio:
   source: scenarios/audio/02-deepfake-ceo-wire.wav
   liveAllowed: true
+transactionSeed:
+  amountInr: 5000000
+  currency: INR
+  type: wire_transfer
+  beneficiaryHint: "unknown HK vendor settlement"
+  deadline: immediate
+  urgency: 0.93
+  secrecy: 0.91
+  authorityInvocation: 0.9
+  language: en
 expectedFinalLevel: LEVEL_4_AUTO_HOLD
 teachingPoint: The full ladder; approve button locks live on corroborating families.

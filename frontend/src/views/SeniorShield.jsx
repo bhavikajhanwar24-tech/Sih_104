@@ -39,6 +39,8 @@ function friendlyClock() {
   }
 }
 
+const SENIOR_SCENARIO_ID = 'hinglish-grandparent';
+
 /**
  * Senior Shield — high-contrast protective UI for elderly / vulnerable users
  * (Context §7.4 / Scenario 4). Completely different visual language from the analyst console.
@@ -47,16 +49,16 @@ export function SeniorShield() {
   const { sessionId, isRunning, startSession, setScenarioId, scenarioId } = useSession();
   const { latest } = useTelemetrySocket(sessionId);
 
-  const [lang, setLang] = useState(scenarioId === 'grandparent-scam' ? 'hi' : 'en');
+  const [lang, setLang] = useState(scenarioId === SENIOR_SCENARIO_ID ? 'hi' : 'en');
   /** Scenario 4 fixture trajectory when live fusion has not yet escalated. */
   const [demoPhase, setDemoPhase] = useState(/** @type {0|1|2} */ (0));
 
   useEffect(() => {
-    if (scenarioId === 'grandparent-scam') setLang('hi');
+    if (scenarioId === SENIOR_SCENARIO_ID) setLang('hi');
   }, [scenarioId]);
 
   useEffect(() => {
-    if (scenarioId !== 'grandparent-scam' || !isRunning) {
+    if (scenarioId !== SENIOR_SCENARIO_ID || !isRunning) {
       setDemoPhase(0);
       return undefined;
     }
@@ -89,10 +91,9 @@ export function SeniorShield() {
   const sosBody = t(lang, 'sosConfirmBody', { time: friendlyClock() });
 
   async function onStart() {
-    setScenarioId('grandparent-scam');
     setLang('hi');
     if (!isRunning) {
-      await startSession();
+      await startSession(SENIOR_SCENARIO_ID);
     }
   }
 

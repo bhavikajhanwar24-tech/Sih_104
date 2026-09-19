@@ -68,7 +68,14 @@ class ActuationServiceTest {
         org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.forensics.ForensicDossierService> dossiers =
                 mock(org.springframework.beans.factory.ObjectProvider.class);
         when(dossiers.getIfAvailable()).thenReturn(null);
-        service = new ActuationService(port, oobMfa, cbs, audit, sync, clock, props, dossiers);
+        @SuppressWarnings("unchecked")
+        org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.challenge.ChallengeService> challenges =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        com.sentinelvoice.challenge.ChallengeService challengeSvc =
+                mock(com.sentinelvoice.challenge.ChallengeService.class);
+        when(challenges.getIfAvailable()).thenReturn(challengeSvc);
+        when(challengeSvc.issue(anyString(), anyString())).thenReturn(java.util.Map.of("status", "ISSUED"));
+        service = new ActuationService(port, oobMfa, cbs, audit, sync, clock, props, dossiers, challenges);
     }
 
     @Test
@@ -83,10 +90,26 @@ class ActuationServiceTest {
     void level3SendsOobMfaAndLocksTxn() {
         service.applySync("s1", InterventionLevel.LEVEL_3_STEP_UP_MFA);
         assertThat(service.firedActions("s1")).containsExactlyInAnyOrder(
+                ActuationAction.UI_BANNER,
                 ActuationAction.TXN_APPROVE_LOCKED,
-                ActuationAction.OOB_MFA_SENT
+                ActuationAction.OOB_MFA_SENT,
+                ActuationAction.CHALLENGE_ISSUED
         );
         verify(oobMfa).sendChallenge("s1");
+    }
+
+    @Test
+    void skipEscalationL1ToL4StillIssuesChallenge() {
+        service.applySync("s-skip", InterventionLevel.LEVEL_4_AUTO_HOLD);
+        assertThat(service.firedActions("s-skip")).contains(
+                ActuationAction.UI_BANNER,
+                ActuationAction.CHALLENGE_ISSUED,
+                ActuationAction.OOB_MFA_SENT,
+                ActuationAction.TXN_APPROVE_LOCKED,
+                ActuationAction.CALL_HELD,
+                ActuationAction.SUPERVISOR_BRIDGED
+        );
+        verify(oobMfa).sendChallenge("s-skip");
     }
 
     @Test
@@ -95,7 +118,8 @@ class ActuationServiceTest {
         assertThat(service.firedActions("s1")).contains(
                 ActuationAction.CALL_HELD,
                 ActuationAction.SUPERVISOR_BRIDGED,
-                ActuationAction.TXN_APPROVE_LOCKED
+                ActuationAction.TXN_APPROVE_LOCKED,
+                ActuationAction.CHALLENGE_ISSUED
         );
         verify(port).hold("s1");
         verify(port).bridgeSupervisor(eq("s1"), anyString());
@@ -149,7 +173,8 @@ class ActuationServiceTest {
                 Runnable::run,
                 Clock.systemUTC(),
                 props,
-                dossiersProvider()
+                dossiersProvider(),
+                challengesProvider()
         );
         assertThatCode(() -> {
             noopService.applySync("demo", InterventionLevel.LEVEL_2_SOFT_NUDGE);
@@ -169,7 +194,11 @@ class ActuationServiceTest {
         assertThat(ActuationService.actionsForLevel(InterventionLevel.LEVEL_2_SOFT_NUDGE))
                 .isEqualTo(Set.of(ActuationAction.UI_BANNER));
         assertThat(ActuationService.actionsForLevel(InterventionLevel.LEVEL_3_STEP_UP_MFA))
-                .containsExactlyInAnyOrder(ActuationAction.TXN_APPROVE_LOCKED, ActuationAction.OOB_MFA_SENT);
+                .containsExactlyInAnyOrder(
+                        ActuationAction.TXN_APPROVE_LOCKED,
+                        ActuationAction.OOB_MFA_SENT,
+                        ActuationAction.CHALLENGE_ISSUED
+                );
         assertThat(ActuationService.actionsForLevel(InterventionLevel.LEVEL_4_AUTO_HOLD))
                 .containsExactlyInAnyOrder(
                         ActuationAction.CALL_HELD,
@@ -182,6 +211,14 @@ class ActuationServiceTest {
                         ActuationAction.BENEFICIARY_FROZEN,
                         ActuationAction.DOSSIER_GENERATED
                 );
+        assertThat(ActuationService.actionsCrossing(
+                InterventionLevel.LEVEL_1_SILENT,
+                InterventionLevel.LEVEL_4_AUTO_HOLD
+        )).contains(
+                ActuationAction.UI_BANNER,
+                ActuationAction.CHALLENGE_ISSUED,
+                ActuationAction.CALL_HELD
+        );
     }
 
     @SuppressWarnings("unchecked")
@@ -189,6 +226,16 @@ class ActuationServiceTest {
         org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.forensics.ForensicDossierService> provider =
                 mock(org.springframework.beans.factory.ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(null);
+        return provider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.challenge.ChallengeService> challengesProvider() {
+        org.springframework.beans.factory.ObjectProvider<com.sentinelvoice.challenge.ChallengeService> provider =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        com.sentinelvoice.challenge.ChallengeService svc = mock(com.sentinelvoice.challenge.ChallengeService.class);
+        when(provider.getIfAvailable()).thenReturn(svc);
+        when(svc.issue(anyString(), anyString())).thenReturn(java.util.Map.of("status", "ISSUED"));
         return provider;
     }
 }

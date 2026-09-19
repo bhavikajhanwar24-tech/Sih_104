@@ -16,21 +16,26 @@ const FREQ_8K = 8000;
 /**
  * Scrolling spectrogram waterfall — FFT in a Web Worker; painted on canvas.
  * Uses the same PCM the capture pipeline produces (pcmBus), never over the wire.
+ * When PCM is empty (SIP / WAV replay), paints a lightweight energy strip from
+ * telemetry family scores — honesty, not a fake spectrogram.
  *
  * @param {Object} props
  * @param {string} [props.channelProfile]
+ * @param {import('@/contracts').TelemetryFrame | null | undefined} [props.frame]
  * @param {string} [props.className]
  */
-export function SpectrogramCanvas({ channelProfile, className = '' }) {
+export function SpectrogramCanvas({ channelProfile, frame = null, className = '' }) {
   const { channelProfile: sessionProfile } = useSession();
   const profile = channelProfile ?? sessionProfile;
   const narrowband = profile === CHANNEL_PROFILES.PSTN_NARROWBAND;
 
   const canvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
   const overlayRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
+  const energyRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));
   const columnQueue = useRef(/** @type {Float32Array[]} */ ([]));
   const metaRef = useRef({ binHz: SPECTROGRAM_SAMPLE_RATE / 512, nyquistHz: 8000 });
   const [fps, setFps] = useState(0);
+  const [hasPcm, setHasPcm] = useState(false);
   const analyzerRef = useRef(/** @type {ReturnType<typeof createSpectrogramAnalyzer> | null} */ (null));
 
   // Analyzer + PCM subscription
@@ -46,6 +51,7 @@ export function SpectrogramCanvas({ channelProfile, className = '' }) {
     analyzerRef.current = analyzer;
 
     const unsub = subscribePcm((samples, sampleRate) => {
+      setHasPcm(true);
       analyzer.push(samples, sampleRate);
     });
 
@@ -119,6 +125,44 @@ export function SpectrogramCanvas({ channelProfile, className = '' }) {
     paintOverlay(canvas, cssW, cssH, dpr, narrowband, metaRef.current.nyquistHz);
   }, [narrowband]);
 
+  // Energy strip from telemetry when browser PCM is absent (SIP / fixture replay)
+  useEffect(() => {
+    const canvas = energyRef.current;
+    if (!canvas || hasPcm) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 320;
+    const cssH = canvas.clientHeight || 24;
+    const w = Math.max(1, Math.floor(cssW * dpr));
+    const h = Math.max(1, Math.floor(cssH * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, w, h);
+
+    const voice = frame?.families?.voice?.score ?? 0;
+    const prosody = frame?.families?.prosody?.score ?? 0;
+    const channel = frame?.families?.channel?.score ?? 0;
+    const energy = Math.min(1, Math.max(0, voice * 0.45 + prosody * 0.35 + channel * 0.2));
+    const barW = Math.max(2, Math.floor(w * energy));
+    const grad = ctx.createLinearGradient(0, 0, barW, 0);
+    grad.addColorStop(0, 'rgba(56, 189, 248, 0.25)');
+    grad.addColorStop(1, 'rgba(56, 189, 248, 0.85)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, Math.floor(h * 0.2), barW, Math.floor(h * 0.6));
+  }, [frame, hasPcm]);
+
+  const statusLabel = hasPcm
+    ? fps > 0
+      ? `${fps} fps`
+      : 'mic live'
+    : frame
+      ? 'energy from telemetry (no browser PCM)'
+      : 'awaiting mic';
+
   return (
     <div className={`relative h-full min-h-[8rem] w-full overflow-hidden ${className}`}>
       <canvas
@@ -131,8 +175,15 @@ export function SpectrogramCanvas({ channelProfile, className = '' }) {
         className="pointer-events-none absolute inset-0 h-full w-full"
         aria-hidden
       />
+      {!hasPcm ? (
+        <canvas
+          ref={energyRef}
+          className="pointer-events-none absolute bottom-6 left-0 right-0 h-6 w-full"
+          aria-hidden
+        />
+      ) : null}
       <div className="pointer-events-none absolute bottom-1 right-2 font-mono text-[9px] text-sv-muted">
-        {fps > 0 ? `${fps} fps` : 'awaiting mic'}
+        {statusLabel}
       </div>
     </div>
   );
@@ -140,6 +191,7 @@ export function SpectrogramCanvas({ channelProfile, className = '' }) {
 
 SpectrogramCanvas.propTypes = {
   channelProfile: PropTypes.string,
+  frame: PropTypes.object,
   className: PropTypes.string,
 };
 

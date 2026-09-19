@@ -42,6 +42,47 @@ export function ChallengePanel({ sessionId }) {
   }, [sessionId]);
 
   useEffect(() => {
+    if (!sessionId) {
+      setIssued(null);
+      setResult(null);
+      setStatus(null);
+      setDisplayAcked(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const syncAutoIssued = async () => {
+      try {
+        const res = await fetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
+        if (cancelled || res.status === 404 || !res.ok) return;
+        const body = await res.json();
+        if (!body || body.status === 'EVALUATED' || body.status === 'TIMEOUT') return;
+        // Auto-issued by Decision Plane on L3 — adopt into panel without clicking Issue.
+        if (!issued && (body.phrase || body.nonce)) {
+          setIssued({
+            phrase: body.phrase,
+            nonce: body.nonce,
+            humanLatencyMs: body.humanLatencyMs,
+            suspiciousLatencyMs: body.suspiciousLatencyMs,
+            expiryMs: body.expiryMs ?? body.remainingMs,
+          });
+          setStatus(body.status ?? 'ISSUED');
+          if (typeof body.remainingMs === 'number') setRemainingMs(body.remainingMs);
+        }
+      } catch {
+        /* best-effort */
+      }
+    };
+    void syncAutoIssued();
+    const id = window.setInterval(() => {
+      void syncAutoIssued();
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [sessionId, issued]);
+
+  useEffect(() => {
     if (!sessionId || !issued) return undefined;
     const id = window.setInterval(() => {
       void poll();

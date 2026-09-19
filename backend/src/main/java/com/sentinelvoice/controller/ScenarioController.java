@@ -1,5 +1,6 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.scenario.ScenarioReplayLauncher;
 import com.sentinelvoice.scenario.ScenarioService;
 import com.sentinelvoice.scenario.model.Scenario;
 import com.sentinelvoice.scenario.model.ScenarioSessionDescriptor;
@@ -21,9 +22,11 @@ import java.util.NoSuchElementException;
 public class ScenarioController {
 
     private final ScenarioService scenarioService;
+    private final ScenarioReplayLauncher replayLauncher;
 
-    public ScenarioController(ScenarioService scenarioService) {
+    public ScenarioController(ScenarioService scenarioService, ScenarioReplayLauncher replayLauncher) {
         this.scenarioService = scenarioService;
+        this.replayLauncher = replayLauncher;
     }
 
     @GetMapping
@@ -44,15 +47,48 @@ public class ScenarioController {
      * Seed directory / relationship / cross-channel state and open a session.
      *
      * @param mode {@code replay} (default) or {@code live} Asterisk path
+     * @param autoReplay when mode=replay, start {@code replay_audio.py} into ml-engine
      */
     @PostMapping("/{id}/load")
     public ResponseEntity<?> load(
             @PathVariable String id,
-            @RequestParam(defaultValue = "replay") String mode
+            @RequestParam(defaultValue = "replay") String mode,
+            @RequestParam(defaultValue = "true") boolean autoReplay
     ) {
         try {
             ScenarioSessionDescriptor descriptor = scenarioService.load(id, mode);
-            return ResponseEntity.ok(descriptor);
+            boolean replayStarted = false;
+            if (autoReplay
+                    && "replay".equalsIgnoreCase(descriptor.mode())
+                    && descriptor.audioSource() != null
+                    && !"live".equalsIgnoreCase(descriptor.audioSource())) {
+                replayStarted = replayLauncher.startReplay(
+                        descriptor.sessionId(),
+                        descriptor.audioSource(),
+                        descriptor.ingestWsUrl(),
+                        descriptor.channelProfile() != null ? descriptor.channelProfile().name() : null
+                );
+            }
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("scenarioId", descriptor.scenarioId());
+            body.put("title", descriptor.title());
+            body.put("sessionId", descriptor.sessionId());
+            body.put("mode", descriptor.mode());
+            body.put("channelProfile", descriptor.channelProfile());
+            body.put("callerCli", descriptor.callerCli());
+            body.put("calleeCli", descriptor.calleeCli());
+            body.put("claimedIdentity", descriptor.claimedIdentity());
+            body.put("claimedRole", descriptor.claimedRole());
+            body.put("audioSource", descriptor.audioSource());
+            body.put("ingestWsUrl", descriptor.ingestWsUrl());
+            body.put("replayCommand", descriptor.replayCommand());
+            body.put("replayStarted", replayStarted);
+            body.put("expectedFinalLevel", descriptor.expectedFinalLevel());
+            body.put("mustNotExceed", descriptor.mustNotExceed());
+            body.put("seniorShield", descriptor.seniorShield());
+            body.put("teachingPoint", descriptor.teachingPoint());
+            body.put("expectedTrajectory", descriptor.expectedTrajectory());
+            return ResponseEntity.ok(body);
         } catch (NoSuchElementException ex) {
             return ResponseEntity.notFound().build();
         } catch (IllegalArgumentException ex) {

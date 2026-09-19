@@ -52,32 +52,59 @@ export const typography = Object.freeze({
   mono: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace',
 });
 
-/** Pre-seeded demo scenarios for SessionControl. */
+/**
+ * Pre-seeded scenarios for SessionControl.
+ * Fixture ids MUST match scenarios/*.yaml (Context §14).
+ * live-browser / pstn-narrowband are live attach paths (not YAML fixtures).
+ */
 export const SEED_SCENARIOS = Object.freeze([
-  Object.freeze({
-    id: 'live-browser',
-    title: 'Live browser mic',
-    description: 'WebRTC tap — agent workstation / Senior Shield path',
-  }),
-  Object.freeze({
-    id: 'cfo-wire-inr',
-    title: 'CFO wire (₹50L)',
-    description: 'Classic deepfake vishing — urgency + secrecy + wire ask',
-  }),
-  Object.freeze({
-    id: 'vendor-callback',
-    title: 'Vendor callback',
-    description: 'Callback to a known vendor number with spoofed CLI',
-  }),
   Object.freeze({
     id: 'pstn-narrowband',
     title: 'Live SIP (AudioSocket)',
-    description: 'Softphone → Asterisk tap — Analyst attaches; gauge follows the call',
+    description: 'Softphone → Asterisk → real FeatureFrames — gauge follows the call',
+    kind: 'live-sip',
   }),
   Object.freeze({
-    id: 'grandparent-scam',
-    title: 'Grandparent scam (Scenario 4)',
-    description: 'Hinglish bail urgency — Senior Shield red alert + family SOS',
+    id: 'live-browser',
+    title: 'Live browser mic',
+    description: 'WebRTC mic → ml-engine ingest — real acoustic + spectrogram',
+    kind: 'live-browser',
+  }),
+  Object.freeze({
+    id: 'deepfake-ceo-wire',
+    title: 'Deepfake CFO wire (₹50L)',
+    description: 'Loads fixture + replays WAV into ml-engine (seeds BEC / first-contact)',
+    kind: 'fixture',
+  }),
+  Object.freeze({
+    id: 'legit-cfo',
+    title: 'Legit CFO tax payment',
+    description: 'Quiet on routine CXO traffic — should stay low',
+    kind: 'fixture',
+  }),
+  Object.freeze({
+    id: 'hinglish-grandparent',
+    title: 'Grandparent scam (Hinglish)',
+    description: 'Senior Shield path — fixture + audio replay',
+    kind: 'fixture',
+  }),
+  Object.freeze({
+    id: 'false-positive-stress',
+    title: 'False-positive stress',
+    description: 'Noisy genuine line — corroboration gate must NOT exceed L2',
+    kind: 'fixture',
+  }),
+  Object.freeze({
+    id: 'liveness-challenge',
+    title: 'Liveness challenge',
+    description: 'Amber Falcon interactive defeat of RVC',
+    kind: 'fixture',
+  }),
+  Object.freeze({
+    id: 'adversarial-evasion',
+    title: 'Adversarial evasion',
+    description: 'Room tone + breath — context holds when acoustics drop',
+    kind: 'fixture',
   }),
 ]);
 

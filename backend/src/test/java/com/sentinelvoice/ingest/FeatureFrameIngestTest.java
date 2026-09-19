@@ -220,6 +220,7 @@ class FeatureFrameIngestTest {
                 broadcaster,
                 actuationService,
                 challengeService,
+                new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 meters,
                 clock
         );

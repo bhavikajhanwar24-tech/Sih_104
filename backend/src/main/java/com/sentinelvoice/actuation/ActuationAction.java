@@ -13,6 +13,7 @@ public enum ActuationAction {
     SUPERVISOR_BRIDGED,
     CALL_TERMINATED,
     BENEFICIARY_FROZEN,
+    CHALLENGE_ISSUED,
     DOSSIER_GENERATED,
 
     // --- CallControlPort capabilities ---

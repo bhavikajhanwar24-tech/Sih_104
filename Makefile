@@ -1,49 +1,130 @@
 # SentinelVoice — development orchestration
-# Targets print TODO until the corresponding Phase lands an implementation.
+# On Windows without GNU make: use .\make.cmd <target> (wraps scripts/sv.ps1).
+# On Linux/macOS with GNU make: these recipes call the same PowerShell script
+# when pwsh is available, otherwise fall back to native shell commands.
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev backend ml frontend asterisk test eval codec-study demo clean
+.PHONY: help ensure-antispoof backend ml frontend asterisk dev demo test eval codec-study clean health
+
+SV_PS1 := scripts/sv.ps1
+
+ifeq ($(OS),Windows_NT)
+  SV := powershell -NoProfile -ExecutionPolicy Bypass -File $(SV_PS1)
+else
+  # Prefer pwsh if present; else native recipes below for non-Windows CI.
+  PWSH := $(shell command -v pwsh 2>/dev/null)
+  ifneq ($(PWSH),)
+    SV := pwsh -NoProfile -File $(SV_PS1)
+  else
+    SV :=
+  endif
+endif
 
 help:
+ifeq ($(SV),)
 	@echo "SentinelVoice - available targets:"
-	@echo "  make dev        - start all services for development"
-	@echo "  make backend    - run Spring Boot"
-	@echo "  make ml         - run FastAPI with reload"
-	@echo "  make frontend   - run Vite dev server"
-	@echo "  make asterisk   - start the Asterisk container"
-	@echo "  make test       - run all test suites"
-	@echo "  make eval       - run the ML benchmark suite"
-	@echo "  make codec-study - codec robustness before/after table (§15.3)"
-	@echo "  make demo       - seed scenarios and start everything"
-	@echo "  make clean      - remove build artifacts"
+	@echo "  make ensure-antispoof - train/copy Tier-1 voice checkpoint if missing"
+	@echo "  make asterisk  - docker compose up -d asterisk"
+	@echo "  make ml        - uvicorn Inference Plane :8000"
+	@echo "  make backend   - Spring Boot Decision Plane :8080"
+	@echo "  make frontend  - Vite Presentation Plane :5173 (strictPort)"
+	@echo "  make dev       - all four planes + health waits"
+	@echo "  make demo      - ensure-antispoof + dev"
+	@echo "  make test      - per-plane test suites"
+	@echo "  make eval      - ML benchmark suite"
+	@echo "  make clean     - stop processes started by make dev"
+	@echo "  make health    - probe health endpoints"
+else
+	@$(SV) help
+endif
 
-dev:
-	@echo "TODO: start all services for development (docker compose / run_all)"
-
-backend:
-	@echo "TODO: run Spring Boot (cd backend && mvn spring-boot:run)"
-
-ml:
-	@echo "TODO: run FastAPI with reload (uvicorn app.main:app --reload --port 8000)"
-
-frontend:
-	@echo "TODO: run Vite dev server (cd frontend && npm run dev)"
+ensure-antispoof:
+ifeq ($(SV),)
+	cd ml-engine && python ../scripts/ensure_antispoof_checkpoint.py
+else
+	@$(SV) ensure-antispoof
+endif
 
 asterisk:
-	@echo "TODO: start the Asterisk container (docker compose up asterisk)"
+ifeq ($(SV),)
+	docker compose up -d asterisk
+else
+	@$(SV) asterisk
+endif
 
-test:
-	@echo "TODO: run all test suites (backend + ml-engine + frontend)"
+ml:
+ifeq ($(SV),)
+	cd ml-engine && (test -x .venv/bin/uvicorn && .venv/bin/uvicorn || python -m uvicorn) app.main:app --reload --host 127.0.0.1 --port 8000
+else
+	@$(SV) ml
+endif
 
-eval:
-	cd ml-engine && python -m benchmarks.run_eval --limit 40 --synthetic --seed 42 --train-epochs 2
+backend:
+ifeq ($(SV),)
+	cd backend && mvn spring-boot:run
+else
+	@$(SV) backend
+endif
 
-codec-study:
-	cd ml-engine && python -m benchmarks.codec_study --limit 40 --synthetic --epochs 4 --seed 42 --retrain
+frontend:
+ifeq ($(SV),)
+	cd frontend && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+else
+	@$(SV) frontend
+endif
+
+dev:
+ifeq ($(SV),)
+	@echo "GNU make without pwsh: start planes manually — Media→ml→backend→frontend"
+	@echo "On Windows use: .\\make.cmd dev"
+	@exit 1
+else
+	@$(SV) dev
+endif
 
 demo:
-	@echo "TODO: seed scenarios and start everything (preflight + up + seed)"
+ifeq ($(SV),)
+	@$(MAKE) ensure-antispoof
+	@$(MAKE) dev
+else
+	@$(SV) demo
+endif
+
+health:
+ifeq ($(SV),)
+	@curl -sf http://127.0.0.1:8000/health && echo && curl -sf http://127.0.0.1:8080/actuator/health && echo && curl -sf -o /dev/null -w "frontend:%{http_code}\n" http://127.0.0.1:5173/
+else
+	@$(SV) health
+endif
+
+test:
+ifeq ($(SV),)
+	cd backend && mvn -q test
+	cd ml-engine && python -m pytest
+	cd frontend && npm test
+	@echo "test: gateway — no automated suite yet"
+else
+	@$(SV) test
+endif
+
+eval:
+ifeq ($(SV),)
+	cd ml-engine && python -m benchmarks.run_eval --limit 40 --synthetic --seed 42 --train-epochs 2
+else
+	@$(SV) eval
+endif
+
+codec-study:
+ifeq ($(SV),)
+	cd ml-engine && python -m benchmarks.codec_study --limit 40 --synthetic --epochs 4 --seed 42 --retrain
+else
+	@$(SV) codec-study
+endif
 
 clean:
-	@echo "TODO: remove build artifacts (backend/target, frontend/dist, caches)"
+ifeq ($(SV),)
+	@echo "clean: stop local uvicorn/java/vite manually, or use .\\make.cmd clean on Windows"
+else
+	@$(SV) clean
+endif

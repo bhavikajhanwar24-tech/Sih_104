@@ -19,6 +19,7 @@ public record Scenario(
         List<RelationshipEdgeSeed> relationshipEdges,
         List<CrossChannelSeed> crossChannelEvents,
         AudioSpec audio,
+        TransactionSeed transactionSeed,
         InterventionLevel expectedFinalLevel,
         InterventionLevel mustNotExceed,
         Boolean seniorShield,
@@ -107,6 +108,23 @@ public record Scenario(
     public record ChallengeHint(
             String phraseHint,
             Integer expectedLatencyMs
+    ) {
+    }
+
+    /**
+     * Optional wire/UPI ask for replay demos when ASR has not yet extracted linguistic.ask.
+     * Mirrors the scenario narrative (₹50L wire, UPI bail, …) — not a hardcoded risk score.
+     */
+    public record TransactionSeed(
+            Double amountInr,
+            String currency,
+            String type,
+            String beneficiaryHint,
+            String deadline,
+            Double urgency,
+            Double secrecy,
+            Double authorityInvocation,
+            String language
     ) {
     }
 }

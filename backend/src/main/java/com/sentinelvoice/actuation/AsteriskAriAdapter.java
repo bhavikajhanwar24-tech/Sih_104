@@ -102,6 +102,16 @@ public class AsteriskAriAdapter implements CallControlPort {
             amiClient.muteConference(conf, true);
             log.info("ari_hold ok sessionId={} conf={} via=confbridge_mute", sessionId, conf);
         } catch (Exception ex) {
+            String msg = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+            // Fixture WAV replay has no Asterisk conference — Decision Plane L4 still stands.
+            if (msg.contains("no conference") || msg.contains("not found")) {
+                log.info(
+                        "ari_hold skipped sessionId={} conf={} reason=no_live_conference (replay/UI-only hold)",
+                        sessionId,
+                        conf
+                );
+                return;
+            }
             if (ex instanceof RuntimeException re) {
                 throw re;
             }

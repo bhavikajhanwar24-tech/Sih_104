@@ -1,5 +1,9 @@
 # SentinelVoice — four-plane stack
-# Services: asterisk (media) → ml-engine (inference) → backend (decision) → frontend (presentation)
+#
+# Media plane (Asterisk) is containerized below.
+# Inference (ml-engine), Decision (backend), and Presentation (frontend) run on the
+# HOST via `.\make.cmd dev` — they have no production-ready Dockerfiles yet.
+# Do not add stub containers that look like they work; start those planes with Make.
 
 services:
   asterisk:
@@ -34,26 +38,16 @@ services:
       - ./gateway/asterisk/scripts/ami_mute.py:/opt/sentinelvoice/ami_mute.py:ro
       - ./gateway/asterisk/sounds/sentinel-hold.wav:/var/lib/asterisk/sounds/sentinel-hold.wav:ro
       - ./gateway/asterisk/sounds/sentinel-whisper-warning.wav:/var/lib/asterisk/sounds/sentinel-whisper-warning.wav:ro
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'core show version' >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     # Configs are also baked into the image; mounts win for live edits.
 
-  ml-engine:
-    # Implemented in Phase 2 (P2.1 — FastAPI scaffold + ring buffer)
-    build: ./ml-engine
-    ports:
-      - "8000:8000"
-
-  backend:
-    # Implemented in Phase 1 (Decision Plane); Docker image packaging in Phase 14
-    build: ./backend
-    ports:
-      - "8080:8080"
-    depends_on:
-      - ml-engine
-
-  frontend:
-    # Implemented in Phase 3 / Phase 6 (WebRTC capture + analyst console)
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    depends_on:
-      - backend
+  # Intentionally omitted until Dockerfiles exist:
+  #   ml-engine  → .\make.cmd ml      (host :8000)
+  #   backend    → .\make.cmd backend (host :8080)
+  #   frontend   → .\make.cmd frontend (host :5173)
+  # Full stack: .\make.cmd dev  (starts asterisk via compose, then host planes)

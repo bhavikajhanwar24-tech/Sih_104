@@ -46,6 +46,16 @@ crossChannelEvents:
 audio:
   source: scenarios/audio/04-hinglish-grandparent.wav
   liveAllowed: true
+transactionSeed:
+  amountInr: 25000
+  currency: INR
+  type: upi_transfer
+  beneficiaryHint: "bail UPI"
+  deadline: turant
+  urgency: 0.95
+  secrecy: 0.7
+  authorityInvocation: 0.4
+  language: hi-en
 expectedFinalLevel: LEVEL_4_AUTO_HOLD
 seniorShield: true
 teachingPoint: Social impact; code-switch Hinglish handling under Senior Shield.

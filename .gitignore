@@ -24,9 +24,8 @@ apache-maven-3.9.9-bin.zip
 .DS_Store
 Thumbs.db
 
-# Environment / local config
-.env
-.env.*
+# Local make.cmd / sv.ps1 runtime
+.sv-run/
 
 # Git
 .git/

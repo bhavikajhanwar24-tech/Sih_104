@@ -2,6 +2,7 @@ package com.sentinelvoice.actuation;
 
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.challenge.ChallengeService;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.forensics.ForensicDossierService;
 import com.sentinelvoice.model.InterventionLevel;
@@ -46,7 +47,9 @@ public class ActuationService {
     private final Clock clock;
     private final String supervisorEndpoint;
     private final ObjectProvider<ForensicDossierService> forensicDossierService;
+    private final ObjectProvider<ChallengeService> challengeService;
     private final ConcurrentMap<String, Set<ActuationAction>> firedBySession = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, InterventionLevel> lastLevelBySession = new ConcurrentHashMap<>();
 
     public ActuationService(
             CallControlPort callControl,
@@ -56,7 +59,8 @@ public class ActuationService {
             @Qualifier("actuationExecutor") Executor actuationExecutor,
             Clock clock,
             SentinelProperties properties,
-            ObjectProvider<ForensicDossierService> forensicDossierService
+            ObjectProvider<ForensicDossierService> forensicDossierService,
+            ObjectProvider<ChallengeService> challengeService
     ) {
         this.callControl = callControl;
         this.oobMfaService = oobMfaService;
@@ -66,18 +70,23 @@ public class ActuationService {
         this.clock = clock;
         this.supervisorEndpoint = properties.actuation().supervisorEndpoint();
         this.forensicDossierService = forensicDossierService;
+        this.challengeService = challengeService;
     }
 
     /**
      * Diff desired actions for {@code level} against already-fired actions and execute the delta.
-     * Never throws — failures are audited and logged.
+     * On escalation skips (e.g. L1→L4), unions actions for every intermediate level so L3
+     * surprise-challenge still fires. Never throws — failures are audited and logged.
      */
     public void onLevelChanged(String sessionId, InterventionLevel previous, InterventionLevel level) {
         if (sessionId == null || sessionId.isBlank() || level == null) {
             return;
         }
         try {
-            Set<ActuationAction> desired = actionsForLevel(level);
+            InterventionLevel from = previous != null
+                    ? previous
+                    : lastLevelBySession.getOrDefault(sessionId, InterventionLevel.LEVEL_1_SILENT);
+            Set<ActuationAction> desired = actionsCrossing(from, level);
             Set<ActuationAction> already = firedBySession.computeIfAbsent(
                     sessionId,
                     id -> EnumSet.noneOf(ActuationAction.class)
@@ -101,6 +110,7 @@ public class ActuationService {
             }
             // Snapshot outside the lock — execute async so fusion/STOMP stay unblocked.
             Set<ActuationAction> batch = EnumSet.copyOf(toFire);
+            lastLevelBySession.put(sessionId, level);
             actuationExecutor.execute(() -> fireBatch(sessionId, previous, level, batch));
         } catch (Exception ex) {
             log.error("actuation_schedule_failed sessionId={} level={} err={}", sessionId, level, ex.toString(), ex);
@@ -114,6 +124,7 @@ public class ActuationService {
 
     public void clearSession(String sessionId) {
         firedBySession.remove(sessionId);
+        lastLevelBySession.remove(sessionId);
         oobMfaService.clear(sessionId);
         if (callControl instanceof AsteriskAriAdapter ari) {
             ari.unbind(sessionId);
@@ -209,7 +220,8 @@ public class ActuationService {
             case LEVEL_2_SOFT_NUDGE -> EnumSet.of(ActuationAction.UI_BANNER);
             case LEVEL_3_STEP_UP_MFA -> EnumSet.of(
                     ActuationAction.TXN_APPROVE_LOCKED,
-                    ActuationAction.OOB_MFA_SENT
+                    ActuationAction.OOB_MFA_SENT,
+                    ActuationAction.CHALLENGE_ISSUED
             );
             case LEVEL_4_AUTO_HOLD -> EnumSet.of(
                     ActuationAction.CALL_HELD,
@@ -222,6 +234,24 @@ public class ActuationService {
                     ActuationAction.DOSSIER_GENERATED
             );
         };
+    }
+
+    /**
+     * Actions for the destination level, plus every intermediate level when escalating
+     * (FSM may skip L2/L3 when risk arrives already above L4 threshold).
+     */
+    static Set<ActuationAction> actionsCrossing(InterventionLevel previous, InterventionLevel level) {
+        InterventionLevel from = previous == null ? InterventionLevel.LEVEL_1_SILENT : previous;
+        if (level.ordinal() <= from.ordinal()) {
+            return EnumSet.copyOf(actionsForLevel(level));
+        }
+        Set<ActuationAction> union = EnumSet.noneOf(ActuationAction.class);
+        for (InterventionLevel step : InterventionLevel.values()) {
+            if (step.ordinal() > from.ordinal() && step.ordinal() <= level.ordinal()) {
+                union.addAll(actionsForLevel(step));
+            }
+        }
+        return union;
     }
 
     private void fireBatch(
@@ -269,6 +299,22 @@ public class ActuationService {
             case OOB_MFA_SENT -> {
                 oobMfaService.sendChallenge(sessionId);
                 yield ActionResult.SUCCESS;
+            }
+            case CHALLENGE_ISSUED -> {
+                ChallengeService challenges = challengeService.getIfAvailable();
+                if (challenges == null) {
+                    yield ActionResult.UNSUPPORTED;
+                }
+                try {
+                    challenges.issue(sessionId, "en");
+                    log.info("actuation CHALLENGE_ISSUED sessionId={}", sessionId);
+                    yield ActionResult.SUCCESS;
+                } catch (IllegalStateException ex) {
+                    if ("active_challenge_exists".equals(ex.getMessage())) {
+                        yield ActionResult.SKIPPED_IDEMPOTENT;
+                    }
+                    throw ex;
+                }
             }
             case CALL_HELD -> {
                 if (!caps.contains(ActuationAction.HOLD)) {
@@ -351,7 +397,8 @@ public class ActuationService {
 
     /** Test helper: run synchronously without the executor. */
     void applySync(String sessionId, InterventionLevel level) {
-        Set<ActuationAction> desired = actionsForLevel(level);
+        InterventionLevel from = lastLevelBySession.getOrDefault(sessionId, InterventionLevel.LEVEL_1_SILENT);
+        Set<ActuationAction> desired = actionsCrossing(from, level);
         Set<ActuationAction> already = firedBySession.computeIfAbsent(
                 sessionId,
                 id -> EnumSet.noneOf(ActuationAction.class)
@@ -360,6 +407,7 @@ public class ActuationService {
         synchronized (already) {
             toFire = desired.stream().filter(a -> !already.contains(a)).toList();
         }
-        fireBatch(sessionId, null, level, new LinkedHashSet<>(toFire));
+        lastLevelBySession.put(sessionId, level);
+        fireBatch(sessionId, from, level, new LinkedHashSet<>(toFire));
     }
 }

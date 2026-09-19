@@ -6,6 +6,10 @@ import { SEED_SCENARIOS } from '@/theme.js';
 /** Softphone / AudioSocket path — attach to Decision Plane session opened by the bridge. */
 export const SIP_SCENARIO_ID = 'pstn-narrowband';
 
+const FIXTURE_IDS = new Set(
+  SEED_SCENARIOS.filter((s) => s.kind === 'fixture').map((s) => s.id),
+);
+
 /**
  * @typedef {Object} SessionContextValue
  * @property {string | null} sessionId
@@ -20,7 +24,7 @@ export const SIP_SCENARIO_ID = 'pstn-narrowband';
  * @property {(profile: string) => void} setChannelProfile
  * @property {(scenarioId: string) => void} setScenarioId
  * @property {(code: string | null, family?: string | null) => void} setHighlightedReason
- * @property {() => Promise<void>} startSession
+ * @property {(overrideScenarioId?: string) => Promise<void>} startSession
  * @property {() => Promise<void>} stopSession
  */
 
@@ -36,8 +40,8 @@ export function SessionProvider({ children }) {
   const [sessionId, setSessionId] = useState(/** @type {string | null} */ (null));
   const [isRunning, setIsRunning] = useState(false);
   const [awaitingSip, setAwaitingSip] = useState(false);
-  const [channelProfile, setChannelProfile] = useState(CHANNEL_PROFILES.WEBRTC_WIDEBAND);
-  const [scenarioId, setScenarioIdState] = useState(SEED_SCENARIOS[0].id);
+  const [channelProfile, setChannelProfile] = useState(CHANNEL_PROFILES.PSTN_NARROWBAND);
+  const [scenarioId, setScenarioIdState] = useState(SIP_SCENARIO_ID);
   const [startedAtMs, setStartedAtMs] = useState(/** @type {number | null} */ (null));
   const [highlightedReasonCode, setHighlightedReasonCode] = useState(
     /** @type {string | null} */ (null),
@@ -51,7 +55,7 @@ export function SessionProvider({ children }) {
 
   const setScenarioId = useCallback((id) => {
     setScenarioIdState(id);
-    if (id === SIP_SCENARIO_ID || id === 'grandparent-scam') {
+    if (id === SIP_SCENARIO_ID || id === 'hinglish-grandparent' || id === 'deepfake-ceo-wire') {
       setChannelProfile(CHANNEL_PROFILES.PSTN_NARROWBAND);
     } else if (id === 'live-browser') {
       setChannelProfile(CHANNEL_PROFILES.WEBRTC_WIDEBAND);
@@ -83,12 +87,18 @@ export function SessionProvider({ children }) {
     }
   }, [sessionId, setHighlightedReason]);
 
-  const startSession = useCallback(async () => {
+  const startSession = useCallback(async (overrideScenarioId) => {
     setSessionError(null);
     setHighlightedReason(null, null);
+    const activeScenario =
+      typeof overrideScenarioId === 'string' && overrideScenarioId.length > 0
+        ? overrideScenarioId
+        : scenarioId;
+    if (typeof overrideScenarioId === 'string' && overrideScenarioId.length > 0) {
+      setScenarioIdState(overrideScenarioId);
+    }
 
-    if (scenarioId === SIP_SCENARIO_ID) {
-      // Listen for a Decision Plane session created by gateway/asterisk_bridge.py
+    if (activeScenario === SIP_SCENARIO_ID) {
       try {
         const snap = await fetch('/api/v1/session');
         const body = snap.ok ? await snap.json().catch(() => ({})) : {};
@@ -107,7 +117,43 @@ export function SessionProvider({ children }) {
       return;
     }
 
-    const id = `sv-${scenarioId}-${Date.now().toString(36)}`;
+    if (FIXTURE_IDS.has(activeScenario)) {
+      sipOwnedRef.current = false;
+      setAwaitingSip(false);
+      try {
+        const res = await fetch(
+          `/api/v1/scenario/${encodeURIComponent(activeScenario)}/load?mode=replay&autoReplay=true`,
+          { method: 'POST' },
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`scenario load failed (${res.status}): ${text.slice(0, 200)}`);
+        }
+        const body = await res.json();
+        const resolvedId = typeof body.sessionId === 'string' ? body.sessionId : null;
+        if (!resolvedId) {
+          throw new Error('scenario load returned no sessionId');
+        }
+        if (body.channelProfile && typeof body.channelProfile === 'string') {
+          setChannelProfile(body.channelProfile);
+        }
+        if (body.replayStarted !== true) {
+          console.warn('scenario audio replay did not start — check Java logs / WAV path');
+        }
+        setSessionId(resolvedId);
+        setStartedAtMs(Date.now());
+        setIsRunning(true);
+      } catch (err) {
+        setSessionError(err instanceof Error ? err.message : 'scenario load failed');
+        setIsRunning(false);
+        setSessionId(null);
+        setStartedAtMs(null);
+      }
+      return;
+    }
+
+    // live-browser (or unknown): open Decision Plane session; MicControl feeds ml-engine.
+    const id = `sv-${activeScenario}-${Date.now().toString(36)}`;
     sipOwnedRef.current = false;
     setAwaitingSip(false);
     try {
@@ -117,11 +163,10 @@ export function SessionProvider({ children }) {
         body: JSON.stringify({
           schema: 'sentinelvoice.SessionStartRequest/1',
           sessionId: id,
-          callerId: isScenario2Wire(scenarioId) ? '+91-unreg-sip-unknown' : 'browser-agent',
-          // Scenario 2: callee is Sunita Rao (EMP-50040) — cross-channel precursors target her.
-          calleeId: isScenario2Wire(scenarioId) ? '+91-22-6655-5040' : 'desk-1',
+          callerId: 'browser-agent',
+          calleeId: 'desk-1',
           channelProfile,
-          scenarioId,
+          scenarioId: activeScenario,
         }),
       });
       if (!res.ok) {
@@ -214,15 +259,6 @@ export function SessionProvider({ children }) {
 SessionProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
-
-/** Scenario 2 demo aliases — CFO/deepfake wire against Sunita Rao. */
-function isScenario2Wire(scenarioId) {
-  return (
-    scenarioId === 'cfo-wire-inr' ||
-    scenarioId === 'deepfake-ceo-wire' ||
-    scenarioId === 'deepfake-cfo-wire'
-  );
-}
 
 /**
  * @returns {SessionContextValue}

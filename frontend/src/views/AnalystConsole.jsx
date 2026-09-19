@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
-import PropTypes from 'prop-types';
 import { ChallengePanel } from '@/components/ChallengePanel.jsx';
 import { CrossChannelTimeline } from '@/components/CrossChannelTimeline.jsx';
+import { DemoStatusStrip } from '@/components/DemoStatusStrip.jsx';
 import { EvidencePanel } from '@/components/EvidencePanel.jsx';
 import { IdentityCard } from '@/components/IdentityCard.jsx';
 import { InterventionBar } from '@/components/InterventionBar.jsx';
 import { MicControl } from '@/components/MicControl.jsx';
 import { OverrideDialog } from '@/components/OverrideDialog.jsx';
-import { ReasonsList } from '@/components/ReasonsList.jsx';
 import { RiskGauge } from '@/components/RiskGauge.jsx';
 import { RiskTimeline } from '@/components/RiskTimeline.jsx';
 import { SessionControl } from '@/components/SessionControl.jsx';
 import { SpectrogramCanvas } from '@/components/SpectrogramCanvas.jsx';
 import { SupervisorAlert } from '@/components/SupervisorAlert.jsx';
+import { TranscriptPanel } from '@/components/TranscriptPanel.jsx';
 import { TransactionPanel } from '@/components/TransactionPanel.jsx';
+import { WhyPanel } from '@/components/WhyPanel.jsx';
 import { Panel } from '@/components/ui/Panel.jsx';
 import { useSession } from '@/context/SessionContext.jsx';
 import { useTelemetrySocket } from '@/hooks/useTelemetrySocket.js';
@@ -21,11 +22,6 @@ import { INTERVENTION_LEVELS } from '@/contracts';
 
 /**
  * Analyst operations view — named grid slots for later widgets.
- *
- * Layout (1280×720 safe):
- *   [ identity ][ risk gauge ][ intervention ]
- *   [ spectrogram     ][ evidence panel      ]
- *   [ live transcript ][ reasons | txn       ]
  */
 export function AnalystConsole() {
   const {
@@ -36,6 +32,7 @@ export function AnalystConsole() {
     awaitingSip,
     channelProfile,
     startedAtMs,
+    highlightedFamily,
   } = useSession();
   const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -55,12 +52,18 @@ export function AnalystConsole() {
         : 'empty';
 
   const emptyMsg = !isRunning
-    ? 'Start a session to begin'
+    ? 'Pick Live SIP or a fixture scenario, then Start'
     : awaitingSip
-      ? 'Waiting for SIP call… dial 1002 from softphone'
-      : 'waiting for audio';
+      ? 'Waiting for SIP call… dial 1002 from softphone (caller → agent)'
+      : 'waiting for FeatureFrames from ml-engine';
   const errMsg = sessionError || telemetryError || 'Telemetry error';
   const showMic = Boolean(sessionId) && scenarioId === 'live-browser';
+  const spectroHint =
+    scenarioId === 'pstn-narrowband'
+      ? 'Spectrogram needs browser mic — Live SIP drives the gauge from Asterisk audio'
+      : scenarioId !== 'live-browser'
+        ? 'Server WAV replay drives the gauge; switch to Live browser mic for spectrogram'
+        : null;
 
   async function postAcceptHold() {
     if (!sessionId) return;
@@ -70,7 +73,6 @@ export function AnalystConsole() {
         method: 'POST',
       });
       if (!res.ok) {
-        // Keep banner text; softphones may still be unbound — log for lab debug.
         console.warn('force hold failed', res.status, await res.text());
       }
     } catch (err) {
@@ -92,16 +94,47 @@ export function AnalystConsole() {
     });
   }
 
+  async function downloadDossier() {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/v1/forensics/${encodeURIComponent(sessionId)}/dossier.pdf`);
+      if (!res.ok) {
+        console.warn('dossier download failed', res.status, await res.text());
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sentinelvoice-${sessionId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('dossier download error', err);
+    }
+  }
+
   return (
     <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-2 p-2 md:gap-3 md:p-3">
-      <div className="flex shrink-0 flex-col gap-2 lg:flex-row">
+      <div className="flex shrink-0 flex-col gap-2 lg:flex-row lg:items-stretch">
         <SessionControl className="min-w-0 flex-1" />
         {showMic ? (
           <div className="w-full shrink-0 lg:w-72">
             <MicControl sessionId={sessionId} autoStart />
           </div>
         ) : null}
+        {sessionId ? (
+          <button
+            type="button"
+            onClick={() => void downloadDossier()}
+            className="shrink-0 rounded border border-sv-border bg-sv-panel px-3 py-2 font-mono text-[11px] text-sv-fg hover:border-sv-accent"
+          >
+            Download forensic PDF
+          </button>
+        ) : null}
       </div>
+
+      <DemoStatusStrip frame={latest} isRunning={isRunning} className="shrink-0" />
 
       <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-12 gap-2 md:gap-3">
         <Panel
@@ -153,10 +186,19 @@ export function AnalystConsole() {
           status={isRunning ? 'ready' : 'empty'}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[14rem] md:col-span-6"
+          className="relative col-span-12 h-[14rem] md:col-span-6"
           variant="flush"
         >
-          <SpectrogramCanvas channelProfile={channelProfile} className="h-full" />
+          {spectroHint ? (
+            <div className="absolute z-10 m-2 max-w-[90%] rounded bg-sv-bg/80 px-2 py-1 font-mono text-[10px] text-sv-muted">
+              {spectroHint}
+            </div>
+          ) : null}
+          <SpectrogramCanvas
+            channelProfile={channelProfile}
+            frame={latest}
+            className="h-full"
+          />
         </Panel>
 
         <Panel
@@ -185,6 +227,7 @@ export function AnalystConsole() {
           <CrossChannelTimeline
             sessionId={sessionId}
             callStartedAtMs={startedAtMs ?? undefined}
+            fixtureSeeded={Boolean(scenarioId) && scenarioId !== 'live-browser' && scenarioId !== 'pstn-narrowband'}
             className="h-full"
           />
         </Panel>
@@ -208,28 +251,25 @@ export function AnalystConsole() {
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
           className="col-span-12 h-[10rem] md:col-span-5"
+          variant="flush"
         >
-          <PlaceholderBody
-            lines={[
-              latest?.transcriptDelta?.text
-                ? latest.transcriptDelta.text
-                : 'No transcript delta yet',
-            ]}
-          />
+          <TranscriptPanel frame={latest} />
         </Panel>
 
         <Panel
-          title="Reasons"
+          title="Why / reasons"
           slot="reasons"
           status={bootStatus}
           emptyMessage={emptyMsg}
           errorMessage={errMsg}
-          className="col-span-12 h-[10rem] md:col-span-3"
+          className="col-span-12 h-[16rem] md:col-span-3"
           variant="flush"
         >
-          <div className="p-2">
-            <ReasonsList frame={latest} />
-          </div>
+          <WhyPanel
+            frame={latest}
+            channelProfile={channelProfile}
+            highlightedFamily={highlightedFamily}
+          />
         </Panel>
 
         <Panel
@@ -272,24 +312,4 @@ export function AnalystConsole() {
   );
 }
 
-/**
- * Temporary body until dedicated widgets land.
- *
- * @param {Object} props
- * @param {string[]} props.lines
- */
-function PlaceholderBody({ lines }) {
-  return (
-    <ul className="space-y-1 font-mono text-[11px] tabular-nums text-sv-fg">
-      {lines.map((line) => (
-        <li key={line} className="truncate text-sv-muted">
-          {line}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-PlaceholderBody.propTypes = {
-  lines: PropTypes.arrayOf(PropTypes.string).isRequired,
-};
+AnalystConsole.propTypes = {};

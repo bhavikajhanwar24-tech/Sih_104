@@ -30,6 +30,8 @@ python -m scripts.inspect_features --compare bonafide.wav spoof.wav --profile wi
 ```bash
 cd ml-engine
 pip install -e .
+# From repo root once: ensure models/antispoof/codec_aug.pt exists
+#   make ensure-antispoof
 pytest
 uvicorn app.main:app --reload --port 8000
 ```
