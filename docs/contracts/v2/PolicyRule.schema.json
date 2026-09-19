@@ -118,7 +118,8 @@
               "NON_DISCRIMINATING",
               "UNGBOUNDED_CLAUSE",
               "EMPTY_WHEN",
-              "INVALID_LEVEL"
+              "INVALID_LEVEL",
+              "POSSIBLE_DUPLICATE"
             ]
           },
           "message": { "type": "string" }

@@ -142,7 +142,8 @@ sentinelvoice:
     # policy_compile budget is 90s; leave headroom for gateway + repair retry
     read-timeout-ms: 120000
   policy-compile:
-    max-documents-per-compile: 5
+    # Default one document set per compile (UI can raise via compile-limits if configured higher)
+    max-documents-per-compile: 1
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500

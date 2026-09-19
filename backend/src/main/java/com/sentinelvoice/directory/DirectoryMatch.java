@@ -33,6 +33,19 @@ public record DirectoryMatch(
         EXTERNAL_UNKNOWN
     }
 
+    /** Allowed directory_employees.status values (F4). Used by FactCatalogue caller.status. */
+    public static final List<String> EMPLOYEE_STATUSES = List.of(
+            "ACTIVE", "ON_LEAVE", "TRAVELLING", "SUSPENDED", "TERMINATED"
+    );
+
+    public static List<String> matchTypeNames() {
+        return java.util.Arrays.stream(MatchType.values()).map(Enum::name).toList();
+    }
+
+    public static List<String> numberProvenanceNames() {
+        return java.util.Arrays.stream(NumberProvenance.values()).map(Enum::name).toList();
+    }
+
     public static DirectoryMatch none(NumberProvenance provenance) {
         return new DirectoryMatch(
                 null,

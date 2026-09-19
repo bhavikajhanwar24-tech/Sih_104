@@ -25,13 +25,17 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @EnableConfigurationProperties(PolicyCompileProperties.class)
@@ -317,7 +321,9 @@ public class PolicyCompileService {
                                         RuleValidator.validate(enriched, chunk.getText(), injection);
                                 if (validated.autoReject()) {
                                     localRejected++;
-                                    hallucinated++;
+                                    if (isHallucinationReject(validated.warnings())) {
+                                        hallucinated++;
+                                    }
                                     compileRepository.insertRule(tenantId, setId, validated.rule());
                                     continue;
                                 }
@@ -367,6 +373,7 @@ public class PolicyCompileService {
                 }
 
                 int ruleCount = compileRepository.countRulesInSet(tenantId, setId);
+                flagPossibleDuplicates(tenantId, setId);
                 List<Map<String, Object>> results = compileRepository.listChunkResults(compilationId);
                 mergeDiagnosticCounts(progress, results);
                 String summary = formatSummary(progress);
@@ -657,6 +664,139 @@ public class PolicyCompileService {
         return isTimeoutError(error);
     }
 
+    /** Hallucination-class rejects feed rulesRejectedHallucinated (quote / value not in source). */
+    private static boolean isHallucinationReject(List<Map<String, Object>> warnings) {
+        if (warnings == null) {
+            return false;
+        }
+        for (Map<String, Object> w : warnings) {
+            String code = String.valueOf(w.get("code"));
+            if ("HALLUCINATED_QUOTE".equals(code)
+                    || "VALUE_NOT_IN_SOURCE".equals(code)
+                    || "REJECTED_VALUE_NOT_IN_SOURCE".equals(code)
+                    || "MISSING_CLAUSE_REF".equals(code)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final Pattern CLAUSE_NUM = Pattern.compile("(\\d+)\\.(\\d+)");
+
+    /**
+     * Flag near-identical rules from adjacent clauses (e.g. 5.1 vs 5.2) with POSSIBLE_DUPLICATE
+     * instead of silently proposing both as independent.
+     */
+    @SuppressWarnings("unchecked")
+    private void flagPossibleDuplicates(UUID tenantId, UUID setId) {
+        List<Map<String, Object>> rules = setRepository.listRules(tenantId, setId);
+        if (rules.size() < 2) {
+            return;
+        }
+        Set<Integer> flagged = new HashSet<>();
+        for (int i = 0; i < rules.size(); i++) {
+            if (flagged.contains(i)) {
+                continue;
+            }
+            Map<String, Object> a = rules.get(i);
+            if ("REJECTED".equals(String.valueOf(a.get("status")))) {
+                continue;
+            }
+            String whenA = canonicalJson(a.get("when"));
+            int levelA = thenLevel(a);
+            ClauseRef refA = parseClauseRef(a);
+            for (int j = i + 1; j < rules.size(); j++) {
+                if (flagged.contains(j)) {
+                    continue;
+                }
+                Map<String, Object> b = rules.get(j);
+                if ("REJECTED".equals(String.valueOf(b.get("status")))) {
+                    continue;
+                }
+                String whenB = canonicalJson(b.get("when"));
+                if (!whenA.equals(whenB) || levelA != thenLevel(b)) {
+                    continue;
+                }
+                ClauseRef refB = parseClauseRef(b);
+                boolean adjacent = refA != null && refB != null
+                        && refA.major == refB.major
+                        && Math.abs(refA.minor - refB.minor) == 1;
+                boolean sameFingerprint = whenA.equals(whenB) && levelA == thenLevel(b);
+                if (!adjacent && !sameFingerprint) {
+                    continue;
+                }
+                String peer = refB != null ? refB.raw : String.valueOf(b.get("ruleId"));
+                String peerA = refA != null ? refA.raw : String.valueOf(a.get("ruleId"));
+                appendDuplicateWarning(tenantId, a, peer);
+                appendDuplicateWarning(tenantId, b, peerA);
+                flagged.add(i);
+                flagged.add(j);
+            }
+        }
+    }
+
+    private void appendDuplicateWarning(UUID tenantId, Map<String, Object> rule, String peerRef) {
+        List<Map<String, Object>> warnings = new ArrayList<>();
+        if (rule.get("warnings") instanceof List<?> prior) {
+            for (Object o : prior) {
+                if (o instanceof Map<?, ?> m) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> wm = (Map<String, Object>) m;
+                    if ("POSSIBLE_DUPLICATE".equals(String.valueOf(wm.get("code")))) {
+                        return;
+                    }
+                    warnings.add(new LinkedHashMap<>(wm));
+                }
+            }
+        }
+        Map<String, Object> w = new LinkedHashMap<>();
+        w.put("code", "POSSIBLE_DUPLICATE");
+        w.put("message", "Near-identical condition/level as clause " + peerRef
+                + " — review before accepting both");
+        warnings.add(w);
+        rule.put("warnings", warnings);
+        UUID rulePk = UUID.fromString(String.valueOf(rule.get("id")));
+        setRepository.updateRuleStatus(tenantId, rulePk, String.valueOf(rule.get("status")), rule);
+        log.info("rule_validation_flag ruleId={} check=POSSIBLE_DUPLICATE peer={}",
+                rule.get("ruleId"), peerRef);
+    }
+
+    private String canonicalJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (Exception e) {
+            return String.valueOf(value);
+        }
+    }
+
+    private static int thenLevel(Map<String, Object> rule) {
+        Object then = rule.get("then");
+        if (then instanceof Map<?, ?> m && m.get("minLevel") instanceof Number n) {
+            return n.intValue();
+        }
+        return -1;
+    }
+
+    private record ClauseRef(int major, int minor, String raw) {
+    }
+
+    private static ClauseRef parseClauseRef(Map<String, Object> rule) {
+        Object source = rule.get("source");
+        if (!(source instanceof Map<?, ?> s)) {
+            return null;
+        }
+        Object ref = s.get("clauseRef");
+        if (ref == null) {
+            return null;
+        }
+        String raw = String.valueOf(ref).strip();
+        Matcher m = CLAUSE_NUM.matcher(raw);
+        if (!m.find()) {
+            return null;
+        }
+        return new ClauseRef(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), raw);
+    }
+
     private Map<String, Object> enrich(
             Map<String, Object> raw, UUID documentId, UUID chunkId, String chunkText
     ) {
@@ -667,9 +807,7 @@ public class PolicyCompileService {
         }
         source.put("documentId", documentId.toString());
         source.put("chunkIds", List.of(chunkId.toString()));
-        if (source.get("clauseRef") == null || String.valueOf(source.get("clauseRef")).isBlank()) {
-            source.put("clauseRef", "chunk-" + chunkId.toString().substring(0, 8));
-        }
+        // Do NOT invent clauseRef or quote for live LLM output — RuleValidator rejects gaps.
         if ("LLM_MOCK".equals(String.valueOf(rule.get("origin"))) && chunkText != null) {
             String q = chunkText.strip().replaceAll("\\s+", " ");
             if (q.length() > 180) {
@@ -781,9 +919,10 @@ public class PolicyCompileService {
                 Output rules[0].when = {"all":[{"fact":"ask.type","op":"EQ","value":"WIRE_TRANSFER"},{"fact":"ask.amountInr","op":"GT","value":1000000},{"fact":"ask.beneficiaryKnown","op":"EQ","value":false}]}
                 then.minLevel = 3; source.quote copied from the clause; source.clauseRef = "5.2"
 
-                Worked example B (general clause → empty list):
-                Clause: "This policy applies to all employees of Demo Bank and defines terms used herein."
+                Worked example B (general / definition / scope → empty list — e.g. clauses 1.1, 1.2, 6.1):
+                Clause: "1.1 Definitions. This policy applies to all employees of Demo Bank and defines terms used herein."
                 Output: {"schemaVersion":"2","rules":[]}
+                Do the same for pure scope statements (1.2) and glossary-only clauses (6.1) with no obligation.
 
                 Chunk heading: %s
                 Chunk page: %s

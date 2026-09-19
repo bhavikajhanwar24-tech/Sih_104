@@ -6,20 +6,20 @@
     {
       "path": "caller.matchType",
       "type": "string",
-      "enum": ["EXACT", "FUZZY", "NONE", "PARTIAL"],
-      "description": "Directory match type"
+      "enum": ["NUMBER_EXACT", "EXT_EXACT", "NAME_FUZZY", "NONE"],
+      "description": "Directory match type (DirectoryMatch.MatchType)"
     },
     {
       "path": "caller.status",
       "type": "string",
-      "enum": ["ACTIVE", "INACTIVE", "SUSPENDED", "TERMINATED", "UNKNOWN"],
-      "description": "Directory employment status"
+      "enum": ["ACTIVE", "ON_LEAVE", "TRAVELLING", "SUSPENDED", "TERMINATED"],
+      "description": "Directory employment status (directory_employees.status)"
     },
     {
       "path": "caller.numberProvenance",
       "type": "string",
-      "enum": ["DIRECTORY", "CLAIMED", "UNKNOWN", "SPOOFED"],
-      "description": "How the calling number was attributed"
+      "enum": ["INTERNAL_EXT", "KNOWN_MOBILE", "EXTERNAL_UNKNOWN"],
+      "description": "How the calling number was attributed (DirectoryMatch.NumberProvenance)"
     },
     { "path": "caller.authorityLimitInr", "type": "number", "description": "Verbal authority limit INR for the action type" },
     { "path": "caller.isHighAuthority", "type": "boolean", "description": "Caller is in a high-authority role" },

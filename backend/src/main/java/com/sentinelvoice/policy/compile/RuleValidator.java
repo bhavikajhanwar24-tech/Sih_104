@@ -44,13 +44,48 @@ public final class RuleValidator {
     );
 
     private static final Pattern BLOCK_PROHIBITION = Pattern.compile(
-            "(?i)\\b(must not|shall not|prohibited|not permitted|forbidden|block|lock|"
-                    + "deny|refuse|do not (process|allow|share))\\b"
+            "(?i)\\b(must not|shall not|must never|shall never|"
+                    + "never (share|ask|accept|process|release|rely)|"
+                    + "prohibited|not permitted|forbidden|block|lock|"
+                    + "deny|refuse|do not (process|allow|share|ask|accept|rely))\\b"
     );
 
+    /** Soft obligations — only used when BLOCK/HALT did not match. */
     private static final Pattern ADVICE_VERIFY = Pattern.compile(
             "(?i)\\b(advice|advise|verify|verification|approval|approve|confirm|"
-                    + "step[- ]?up|escalat)\\b"
+                    + "dual approval|step[- ]?up|escalat|out[- ]of[- ]band)\\b"
+    );
+
+    /**
+     * Hard credential prohibition → floor 3.
+     * e.g. "must never share OTP or PIN", "never ask … password or card verification value".
+     */
+    private static final Pattern CREDENTIAL_PROHIBITION_FLOOR = Pattern.compile(
+            "(?i)(?:must\\s+never|shall\\s+never|never|must\\s+not|shall\\s+not|do\\s+not)\\s+"
+                    + "(?:share|ask|solicit|request|disclose|reveal|read\\s+out).{0,120}"
+                    + "\\b(?:otp|pins?|password|passwd|cvv|cvv2|card\\s+verification|credentials?)\\b"
+                    + "|"
+                    + "\\b(?:otp|pins?|password|passwd|cvv|cvv2|card\\s+verification|credentials?)\\b.{0,80}"
+                    + "(?:must\\s+never|never|must\\s+not|shall\\s+not).{0,40}"
+                    + "(?:share|ask|solicit|disclose|reveal)"
+    );
+
+    /**
+     * Must-not-accept unverified → floor 3.
+     * e.g. "must not be accepted from … unverified numbers".
+     */
+    private static final Pattern UNVERIFIED_ACCEPT_FLOOR = Pattern.compile(
+            "(?i)(?:must\\s+not|shall\\s+not|do\\s+not|never).{0,40}"
+                    + "(?:accept|accepted|process|release|honou?r|act\\s+on).{0,100}unverif"
+                    + "|"
+                    + "unverif.{0,80}(?:must\\s+not|shall\\s+not|do\\s+not|never).{0,40}"
+                    + "(?:accept|accepted|process|release)"
+    );
+
+    /** Approval / verification required → floor 2. */
+    private static final Pattern APPROVAL_VERIFY_FLOOR = Pattern.compile(
+            "(?i)\\b(?:dual\\s+approval|supervisor\\s+approval|out[- ]of[- ]band|"
+                    + "approval|approve|verify|verification|step[- ]?up|confirm)\\b"
     );
 
     private RuleValidator() {
@@ -143,7 +178,7 @@ public final class RuleValidator {
             }
             if (!SourceNumberParser.containsNumber(chunkText, n)) {
                 log.info(
-                        "rule_validation_reject ruleId={} check=REJECTED_VALUE_NOT_IN_SOURCE value={} chunkNums={}",
+                        "rule_validation_reject ruleId={} check=VALUE_NOT_IN_SOURCE value={} chunkNums={}",
                         ruleId,
                         n,
                         SourceNumberParser.extractNumbers(chunkText)
@@ -152,7 +187,7 @@ public final class RuleValidator {
                         rule,
                         warnings,
                         ruleId,
-                        "REJECTED_VALUE_NOT_IN_SOURCE",
+                        "VALUE_NOT_IN_SOURCE",
                         "Numeric literal " + n + " does not equal any number found in the cited chunk"
                 );
             }
@@ -170,7 +205,7 @@ public final class RuleValidator {
                         rule,
                         warnings,
                         ruleId,
-                        "REJECTED_VALUE_NOT_IN_SOURCE",
+                        "VALUE_NOT_IN_SOURCE",
                         "Threshold for " + fact + "=" + n + " is not grounded in the chunk"
                 );
             }
@@ -190,11 +225,29 @@ public final class RuleValidator {
             minLevel = 4;
         }
 
+        int floor = levelFloor(chunkText, quote);
         int cap = levelCap(chunkText, quote);
-        if (minLevel > cap) {
-            log.info("rule_validation_flag ruleId={} check=LEVEL_ADJUSTED from={} to={}", ruleId, minLevel, cap);
+        // Floor first (raise), then cap (clamp down). Both may emit LEVEL_ADJUSTED.
+        if (minLevel < floor) {
+            log.info(
+                    "rule_validation_flag ruleId={} check=LEVEL_ADJUSTED from={} to={} reason=below_floor",
+                    ruleId, minLevel, floor
+            );
             warnings.add(warn("LEVEL_ADJUSTED",
-                    "minLevel " + minLevel + " clamped to " + cap + " based on clause language"));
+                    "minLevel " + minLevel + " raised to floor " + floor
+                            + " (credential never-share/ask→3, must-not-accept unverified→3,"
+                            + " approval/verification→2; floor=" + floor + ", cap=" + cap + ")"));
+            minLevel = floor;
+        }
+        if (minLevel > cap) {
+            log.info(
+                    "rule_validation_flag ruleId={} check=LEVEL_ADJUSTED from={} to={} reason=above_cap",
+                    ruleId, minLevel, cap
+            );
+            warnings.add(warn("LEVEL_ADJUSTED",
+                    "minLevel " + minLevel + " clamped down to cap " + cap
+                            + " (halt→4, must-never/must-not/block→3, advice/verify/approval→2;"
+                            + " floor=" + floor + ", cap=" + cap + ")"));
             minLevel = cap;
         }
         then.put("minLevel", minLevel);
@@ -233,6 +286,11 @@ public final class RuleValidator {
         String quote = source == null || source.get("quote") == null
                 ? ""
                 : String.valueOf(source.get("quote"));
+        if (source == null
+                || source.get("clauseRef") == null
+                || String.valueOf(source.get("clauseRef")).isBlank()) {
+            errors.add("source.clauseRef is required");
+        }
         if (quote.isBlank()) {
             errors.add("quote not found in source");
             warnings.add(warn("HALLUCINATED_QUOTE", "quote not found in source"));
@@ -264,7 +322,7 @@ public final class RuleValidator {
                                 + " is not in the source clause (Indian/Western formats checked)"
                 );
                 warnings.add(warn(
-                        "REJECTED_VALUE_NOT_IN_SOURCE",
+                        "VALUE_NOT_IN_SOURCE",
                         "Numeric literal " + n + " not found in source"
                 ));
             }
@@ -273,6 +331,26 @@ public final class RuleValidator {
             Object ml = then.get("minLevel");
             if (!(ml instanceof Number n) || n.intValue() <= 0 || n.intValue() > 4) {
                 errors.add("minLevel must be an integer 1..4");
+            } else {
+                int minLevel = n.intValue();
+                int floor = levelFloor(chunkText, quote);
+                int cap = levelCap(chunkText, quote);
+                if (minLevel < floor) {
+                    warnings.add(warn("LEVEL_ADJUSTED",
+                            "minLevel " + minLevel + " is below floor " + floor
+                                    + " (floor=" + floor + ", cap=" + cap + ")"));
+                    errors.add("minLevel " + minLevel + " is below clause floor " + floor
+                            + " (credential never-share/ask ≥3, must-not-accept unverified ≥3,"
+                            + " approval/verification ≥2)");
+                }
+                if (minLevel > cap) {
+                    warnings.add(warn("LEVEL_ADJUSTED",
+                            "minLevel " + minLevel + " would be clamped to " + cap
+                                    + " based on clause language (floor=" + floor + ", cap=" + cap + ")"));
+                    // Surface as error on edit so Save does not persist an over-cap level silently
+                    errors.add("minLevel " + minLevel + " exceeds clause cap " + cap
+                            + " (advice/verify ≤2, block ≤3, halt/terminate only for 4)");
+                }
             }
         }
         return new EditValidation(errors.isEmpty(), errors, warnings);
@@ -285,7 +363,9 @@ public final class RuleValidator {
         }
         for (Map<String, Object> w : warnings) {
             String code = String.valueOf(w.get("code"));
-            if ("HALLUCINATED_QUOTE".equals(code) || "REJECTED_VALUE_NOT_IN_SOURCE".equals(code)) {
+            if ("HALLUCINATED_QUOTE".equals(code)
+                    || "VALUE_NOT_IN_SOURCE".equals(code)
+                    || "REJECTED_VALUE_NOT_IN_SOURCE".equals(code)) {
                 return true;
             }
         }
@@ -306,6 +386,25 @@ public final class RuleValidator {
         }
         // Default: treat as verification/approval class
         return 2;
+    }
+
+    /**
+     * Language floor for minLevel. 0 means no floor (do not raise).
+     * Credential never-share/ask and must-not-accept-unverified → 3;
+     * approval/verification-required → 2. Highest matching floor wins.
+     */
+    private static int levelFloor(String chunkText, String quote) {
+        String text = ((chunkText == null ? "" : chunkText) + " " + (quote == null ? "" : quote))
+                .toLowerCase(Locale.ROOT);
+        int floor = 0;
+        if (CREDENTIAL_PROHIBITION_FLOOR.matcher(text).find()
+                || UNVERIFIED_ACCEPT_FLOOR.matcher(text).find()) {
+            floor = Math.max(floor, 3);
+        }
+        if (APPROVAL_VERIFY_FLOOR.matcher(text).find()) {
+            floor = Math.max(floor, 2);
+        }
+        return floor;
     }
 
     private static Result reject(

@@ -24,6 +24,8 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | LLM health exposes ollama/openaiCompat/activeProvider/degraded (no false reachable) | F5 Settings agreement |
 | 2026-09-20 | Default Ollama model gemma3:4b; structured format schema; selftest; concurrency 1 | F5 small-model reliability |
 | 2026-09-20 | v1 TransactionPolicy YAML/`TransactionScoring` removed; policy is tenant data (DSL + ACTIVE sets) | F6 — LLM proposes, humans approve |
+| 2026-09-20 | FactCatalogue directory enums bound to `DirectoryMatch`; REJECTED rules kept for Edit-to-fix; POSSIBLE_DUPLICATE flag; level clamp down-only | F6 follow-up quality |
+| 2026-09-20 | Level floors (credential never-share/ask & unverified-accept →3; approval/verify →2) with LEVEL_ADJUSTED up | F6 level bounds |
 
 ## New dependencies
 
@@ -56,3 +58,4 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | F6 | Chunk diagnostics + COMPLETED_NO_RULES; quote normalisation; 90s retry; empty review + re-run failed |
 | 2026-09-20 | F6 | Catalogue-enum schema; Indian number grounding; level caps; plain-English; cancel/delete/max-docs |
 | 2026-09-20 | F6 | Verification pass: edit quote grounding; no silent mock; Keywords tab; verify_f6.sql |
+| 2026-09-20 | F6 | Quality follow-up: VALUE_NOT_IN_SOURCE; no invented clauseRef; max-docs=1; must-never level cap; F6.md checklist + Quick Policy re-compile |

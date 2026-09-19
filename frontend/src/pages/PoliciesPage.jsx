@@ -66,7 +66,7 @@ export function PoliciesPage() {
   const [compilations, setCompilations] = useState([]);
   const [compileBusy, setCompileBusy] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState([]);
-  const [maxDocs, setMaxDocs] = useState(5);
+  const [maxDocs, setMaxDocs] = useState(1);
   const fileRef = useRef(null);
   const pollRef = useRef(null);
 

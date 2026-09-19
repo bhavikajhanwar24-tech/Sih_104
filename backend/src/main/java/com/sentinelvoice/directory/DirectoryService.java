@@ -647,7 +647,7 @@ public class DirectoryService {
     }
 
     private void validateStatus(String status) {
-        if (status == null || !List.of("ACTIVE", "ON_LEAVE", "TRAVELLING", "SUSPENDED", "TERMINATED").contains(status)) {
+        if (status == null || !DirectoryMatch.EMPLOYEE_STATUSES.contains(status)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid status");
         }
     }

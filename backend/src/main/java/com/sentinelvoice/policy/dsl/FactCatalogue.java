@@ -2,6 +2,7 @@ package com.sentinelvoice.policy.dsl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sentinelvoice.directory.DirectoryMatch;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -53,14 +54,24 @@ public final class FactCatalogue {
             });
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> raw = (List<Map<String, Object>>) root.get("facts");
+            // Directory-backed facts always take enum values from DirectoryMatch — never free text
+            // (rejects e.g. caller.status=INACTIVE).
+            Map<String, List<String>> directoryEnums = Map.of(
+                    "caller.status", DirectoryMatch.EMPLOYEE_STATUSES,
+                    "caller.matchType", DirectoryMatch.matchTypeNames(),
+                    "caller.numberProvenance", DirectoryMatch.numberProvenanceNames()
+            );
             FACTS = raw.stream()
                     .map(m -> {
+                        String path = String.valueOf(m.get("path"));
                         List<String> enums = List.of();
-                        if (m.get("enum") instanceof List<?> el) {
+                        if (directoryEnums.containsKey(path)) {
+                            enums = directoryEnums.get(path);
+                        } else if (m.get("enum") instanceof List<?> el) {
                             enums = el.stream().map(String::valueOf).toList();
                         }
                         return new FactDef(
-                                String.valueOf(m.get("path")),
+                                path,
                                 String.valueOf(m.get("type")),
                                 String.valueOf(m.get("description")),
                                 enums

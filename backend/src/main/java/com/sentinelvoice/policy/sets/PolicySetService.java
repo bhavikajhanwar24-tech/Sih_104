@@ -95,15 +95,18 @@ public class PolicySetService {
         if (patch.containsKey("severity")) body.put("severity", patch.get("severity"));
         if (patch.containsKey("source")) body.put("source", patch.get("source"));
 
+        String priorStatus = String.valueOf(existing.get("status"));
         String status = patch.get("status") == null
-                ? String.valueOf(existing.get("status"))
+                ? priorStatus
                 : String.valueOf(patch.get("status")).toUpperCase(Locale.ROOT);
         if ("ACCEPTED".equals(status) || "EDITED".equals(status) || "REJECTED".equals(status)
                 || "PROPOSED".equals(status)) {
             body.put("status", status);
         }
-        if (!"PROPOSED".equals(existing.get("status")) && !"REJECTED".equals(status)
-                && patch.containsKey("when")) {
+        // when-edit on any non-PROPOSED rule (including validator REJECTED) → EDITED so admins
+        // can rescue clauses like 6.3 via "Edit to fix".
+        if (patch.containsKey("when") && !"PROPOSED".equals(priorStatus)
+                && !"REJECTED".equalsIgnoreCase(String.valueOf(patch.getOrDefault("status", "")))) {
             body.put("status", "EDITED");
             status = "EDITED";
         }
@@ -138,7 +141,16 @@ public class PolicySetService {
         }
         warnings.removeIf(w -> {
             String c = String.valueOf(w.get("code"));
-            return "HALLUCINATED_QUOTE".equals(c) || "REJECTED_VALUE_NOT_IN_SOURCE".equals(c);
+            return "HALLUCINATED_QUOTE".equals(c)
+                    || "VALUE_NOT_IN_SOURCE".equals(c)
+                    || "REJECTED_VALUE_NOT_IN_SOURCE".equals(c)
+                    || "INVALID_VALUE".equals(c)
+                    || "UNKNOWN_FACT".equals(c)
+                    || "EMPTY_WHEN".equals(c)
+                    || "NON_DISCRIMINATING".equals(c)
+                    || "MISSING_CLAUSE_REF".equals(c)
+                    || "UNGBOUNDED_CLAUSE".equals(c)
+                    || "INVALID_LEVEL".equals(c);
         });
         warnings.addAll(editCheck.warnings());
         body.put("warnings", warnings);
@@ -163,6 +175,10 @@ public class PolicySetService {
                     "INVALID_EDIT",
                     String.join("; ", editCheck.errors())
             );
+        } else if ("REJECTED".equals(priorStatus) && patch.containsKey("when")) {
+            // Validator-rejected rule rescued by a valid edit
+            status = "EDITED";
+            body.put("status", status);
         }
 
         body.put("plainEnglish", ConditionEnglish.render(

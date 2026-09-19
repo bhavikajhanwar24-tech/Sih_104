@@ -238,6 +238,7 @@ public class PolicySetRepository {
                 WHERE tenant_id = ? AND policy_set_id = ?
                   AND status IN ('ACCEPTED','EDITED')
                   AND NOT (warnings @> '[{"code":"HALLUCINATED_QUOTE"}]'::jsonb)
+                  AND NOT (warnings @> '[{"code":"VALUE_NOT_IN_SOURCE"}]'::jsonb)
                   AND NOT (warnings @> '[{"code":"REJECTED_VALUE_NOT_IN_SOURCE"}]'::jsonb)
                 """, Long.class, tenantId, setId);
         return n == null ? 0 : n;

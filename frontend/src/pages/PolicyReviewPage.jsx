@@ -41,6 +41,8 @@ export function PolicyReviewPage() {
   const [rerunBusy, setRerunBusy] = useState(false);
   const [editError, setEditError] = useState('');
   const [builderError, setBuilderError] = useState('');
+  const [rejectedOpen, setRejectedOpen] = useState(true);
+  const [builderFocusKey, setBuilderFocusKey] = useState(0);
 
   const canWrite = hasPermission('policies:write');
 
@@ -78,7 +80,16 @@ export function PolicyReviewPage() {
   );
 
   const diagnostics = set?.compileDiagnostics || null;
-  const ruleCount = (set?.rules || []).length;
+  const allRules = set?.rules || [];
+  const reviewRules = useMemo(
+    () => allRules.filter((r) => r.status !== 'REJECTED'),
+    [allRules]
+  );
+  const rejectedRules = useMemo(
+    () => allRules.filter((r) => r.status === 'REJECTED'),
+    [allRules]
+  );
+  const ruleCount = allRules.length;
   const canSubmit = Boolean(set?.canSubmit);
   const compilationId = diagnostics?.compilationId || null;
   const canRerun =
@@ -87,6 +98,15 @@ export function PolicyReviewPage() {
     (diagnostics?.hasFailedChunks ||
       diagnostics?.compilationStatus === 'COMPLETED_NO_RULES' ||
       ruleCount === 0);
+
+  function editToFix(rule) {
+    setSelectedRuleId(rule.id);
+    setAdvanced(false);
+    setBuilderError('');
+    setEditError('');
+    setRejectedOpen(true);
+    setBuilderFocusKey((k) => k + 1);
+  }
 
   async function rerunFailed() {
     if (!canRerun || !compilationId) return;
@@ -347,37 +367,49 @@ export function PolicyReviewPage() {
                 onRerun={rerunFailed}
               />
             ) : (
-              <ul className="mb-4 max-h-[42vh] space-y-2 overflow-y-auto pr-1">
-                {(set.rules || []).map((r) => (
+              <>
+              <ul className="mb-4 max-h-[36vh] space-y-2 overflow-y-auto pr-1">
+                {reviewRules.map((r) => (
                   <li key={r.id}>
-                    <button
-                      type="button"
-                      className={`w-full rounded border px-3 py-2 text-left text-sm ${
-                        r.id === selectedRuleId
-                          ? 'border-sv-accent bg-sv-accent/10'
-                          : 'border-sv-border hover:bg-sv-elevated/40'
-                      }`}
-                      onClick={() => setSelectedRuleId(r.id)}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-sv-fg">{r.title}</span>
-                        <Badge tone={SEVERITY_TONE[r.severity] || 'neutral'}>{r.severity}</Badge>
-                        <Badge tone={STATUS_TONE[r.status] || 'neutral'}>{r.status}</Badge>
-                        <OriginBadge origin={r.origin} />
-                      </div>
-                      <p className="mt-1 text-xs text-sv-muted">{r.plainEnglish}</p>
-                      {r.source?.quote ? (
-                        <p className="mt-1 border-l-2 border-sv-border pl-2 text-xs italic text-sv-muted">
-                          “{r.source.quote}”
-                          {r.source.clauseRef ? (
-                            <span className="not-italic text-sv-muted"> · {r.source.clauseRef}</span>
-                          ) : null}
-                        </p>
-                      ) : null}
-                    </button>
+                    <RuleCard
+                      rule={r}
+                      selected={r.id === selectedRuleId}
+                      onSelect={() => setSelectedRuleId(r.id)}
+                    />
                   </li>
                 ))}
               </ul>
+              {rejectedRules.length > 0 ? (
+                <div className="mb-4 rounded border border-risk-critical/40 bg-risk-critical/5">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-risk-critical"
+                    onClick={() => setRejectedOpen((v) => !v)}
+                    aria-expanded={rejectedOpen}
+                  >
+                    <span>
+                      Rejected by validator · {rejectedRules.length}
+                    </span>
+                    <span aria-hidden>{rejectedOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {rejectedOpen ? (
+                    <ul className="max-h-[28vh] space-y-2 overflow-y-auto border-t border-risk-critical/20 px-2 py-2">
+                      {rejectedRules.map((r) => (
+                        <li key={r.id}>
+                          <RuleCard
+                            rule={r}
+                            selected={r.id === selectedRuleId}
+                            onSelect={() => setSelectedRuleId(r.id)}
+                            rejected
+                            onEditToFix={canWrite && set.status === 'DRAFT' ? () => editToFix(r) : undefined}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+              </>
             )}
 
             {selected ? (
@@ -385,18 +417,32 @@ export function PolicyReviewPage() {
                 {(selected.warnings || []).length > 0 ? (
                   <div className="space-y-1">
                     {selected.warnings.map((w, i) => (
-                      <p key={i} className="text-xs text-risk-watch">
+                      <p
+                        key={i}
+                        className={`text-xs ${
+                          w.code === 'POSSIBLE_DUPLICATE' ? 'text-risk-watch font-medium' : 'text-risk-watch'
+                        }`}
+                      >
                         ⚠ {w.code}: {w.message}
                       </p>
                     ))}
                   </div>
+                ) : null}
+                {selected.status === 'REJECTED' && canWrite && set.status === 'DRAFT' ? (
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    disabled={busy}
+                    onClick={() => editToFix(selected)}
+                  >
+                    Edit to fix
+                  </Button>
                 ) : null}
                 {editError ? (
                   <p className="text-xs text-risk-critical" role="alert">
                     {editError}
                   </p>
                 ) : null}
-                {canWrite && set.status === 'DRAFT' ? (
+                {canWrite && set.status === 'DRAFT' && selected.status !== 'REJECTED' ? (
                   <div className="flex flex-wrap gap-2">
                     <Button className="px-2 py-1 text-xs" disabled={busy} onClick={() => setStatus('ACCEPTED')}>
                       Accept
@@ -413,9 +459,19 @@ export function PolicyReviewPage() {
                     </Button>
                   </div>
                 ) : null}
+                {canWrite && set.status === 'DRAFT' && selected.status === 'REJECTED' ? (
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    variant="ghost"
+                    onClick={() => setAdvanced((v) => !v)}
+                  >
+                    {advanced ? 'Hide JSON' : 'Advanced JSON'}
+                  </Button>
+                ) : null}
 
                 {!advanced && canWrite && set.status === 'DRAFT' ? (
                   <ConditionBuilder
+                    key={`${selected.id}-${builderFocusKey}`}
                     facts={facts}
                     when={selected.when}
                     error={builderError}
@@ -478,6 +534,61 @@ function OriginBadge({ origin }) {
 }
 
 OriginBadge.propTypes = { origin: PropTypes.string };
+
+function RuleCard({ rule, selected, onSelect, rejected, onEditToFix }) {
+  const dup = (rule.warnings || []).find((w) => w.code === 'POSSIBLE_DUPLICATE');
+  const rejectReason = rejected
+    ? (rule.warnings || []).map((w) => `${w.code}: ${w.message}`).join(' · ')
+    : '';
+  return (
+    <div
+      className={`w-full rounded border px-3 py-2 text-left text-sm ${
+        selected
+          ? 'border-sv-accent bg-sv-accent/10'
+          : rejected
+            ? 'border-risk-critical/40 bg-sv-bg'
+            : 'border-sv-border hover:bg-sv-elevated/40'
+      }`}
+    >
+      <button type="button" className="w-full text-left" onClick={onSelect}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-sv-fg">{rule.title}</span>
+          <Badge tone={SEVERITY_TONE[rule.severity] || 'neutral'}>{rule.severity}</Badge>
+          <Badge tone={STATUS_TONE[rule.status] || 'neutral'}>{rule.status}</Badge>
+          <OriginBadge origin={rule.origin} />
+          {dup ? <Badge tone="warn">possible duplicate</Badge> : null}
+        </div>
+        <p className="mt-1 text-xs text-sv-muted">{rule.plainEnglish}</p>
+        {rejectReason ? (
+          <p className="mt-1 text-xs text-risk-critical">{rejectReason}</p>
+        ) : null}
+        {rule.source?.quote ? (
+          <p className="mt-1 border-l-2 border-sv-border pl-2 text-xs italic text-sv-muted">
+            “{rule.source.quote}”
+            {rule.source.clauseRef ? (
+              <span className="not-italic text-sv-muted"> · {rule.source.clauseRef}</span>
+            ) : null}
+          </p>
+        ) : null}
+      </button>
+      {onEditToFix ? (
+        <div className="mt-2">
+          <Button className="px-2 py-1 text-xs" onClick={onEditToFix}>
+            Edit to fix
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+RuleCard.propTypes = {
+  rule: PropTypes.object.isRequired,
+  selected: PropTypes.bool,
+  onSelect: PropTypes.func,
+  rejected: PropTypes.bool,
+  onEditToFix: PropTypes.func,
+};
 
 function validateWhenObject(when, facts) {
   if (!when || typeof when !== 'object') return 'Condition is required';
@@ -646,10 +757,37 @@ function highlightQuote(text, quote) {
 }
 
 function ConditionBuilder({ facts, when, onApply, error }) {
-  const [fact, setFact] = useState(facts[0]?.path || '');
-  const [op, setOp] = useState('EQ');
-  const [value, setValue] = useState('');
-  const [group, setGroup] = useState('all');
+  const firstLeaf = useMemo(() => {
+    const leaves = collectLeaves(when);
+    return leaves[0] || null;
+  }, [when]);
+
+  const [fact, setFact] = useState(firstLeaf?.fact || facts[0]?.path || '');
+  const [op, setOp] = useState(firstLeaf?.op || 'EQ');
+  const [value, setValue] = useState(
+    firstLeaf?.value === undefined || firstLeaf?.value === null
+      ? ''
+      : Array.isArray(firstLeaf.value)
+        ? firstLeaf.value.join(',')
+        : String(firstLeaf.value)
+  );
+  const [group, setGroup] = useState(
+    when?.all ? 'all' : when?.any ? 'any' : 'leaf'
+  );
+
+  useEffect(() => {
+    if (!firstLeaf) return;
+    setFact(firstLeaf.fact || facts[0]?.path || '');
+    setOp(firstLeaf.op || 'EQ');
+    setValue(
+      firstLeaf.value === undefined || firstLeaf.value === null
+        ? ''
+        : Array.isArray(firstLeaf.value)
+          ? firstLeaf.value.join(',')
+          : String(firstLeaf.value)
+    );
+    setGroup(when?.all ? 'all' : when?.any ? 'any' : 'leaf');
+  }, [firstLeaf, facts, when]);
 
   const selectedFact = (facts || []).find((f) => f.path === fact);
   const valueInvalid =

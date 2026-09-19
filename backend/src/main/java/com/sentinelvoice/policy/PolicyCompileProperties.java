@@ -11,7 +11,7 @@ public record PolicyCompileProperties(
 ) {
     public PolicyCompileProperties {
         if (maxDocumentsPerCompile <= 0) {
-            maxDocumentsPerCompile = 5;
+            maxDocumentsPerCompile = 1;
         }
     }
 }
