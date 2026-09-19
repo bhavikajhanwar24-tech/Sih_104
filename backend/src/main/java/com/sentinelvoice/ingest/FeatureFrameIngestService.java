@@ -354,7 +354,12 @@ public class FeatureFrameIngestService {
         long now = nowMs();
         long windowEnd = frame.windowEndMs();
         if (windowEnd > EPOCH_MS_THRESHOLD) {
-            return now - windowEnd;
+            long age = now - windowEnd;
+            // Clock leaps / sleep on the lab laptop: rebase instead of killing the gauge.
+            if (age < 0 || age > properties.ml().frameStalenessMs()) {
+                return 0L;
+            }
+            return age;
         }
         // Call-relative windows track media time, not session-create time.
         // Analyst UI often starts the mic several seconds after Start session.
@@ -363,7 +368,23 @@ public class FeatureFrameIngestService {
             mediaOrigin = now - windowEnd;
             session.setMediaOriginEpochMs(mediaOrigin);
         }
-        return now - (mediaOrigin + windowEnd);
+        long age = now - (mediaOrigin + windowEnd);
+        if (age < 0) {
+            session.setMediaOriginEpochMs(now - windowEnd);
+            return 0L;
+        }
+        // ASR / CPU backlog or Windows clock leap: rebase origin so the feed keeps flowing.
+        if (age > properties.ml().frameStalenessMs()) {
+            log.info(
+                    "feature_frame_rebase sessionId={} seq={} ageMs={} — continuing (lab clock/backlog recovery)",
+                    frame.sessionId(),
+                    frame.seq(),
+                    age
+            );
+            session.setMediaOriginEpochMs(now - windowEnd);
+            return 0L;
+        }
+        return age;
     }
 
     private static String baselineForReasonCode(String code) {

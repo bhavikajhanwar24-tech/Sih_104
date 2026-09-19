@@ -9,8 +9,9 @@ import { INTERVENTION_LEVELS } from '@/contracts';
  * @param {string | null | undefined} props.sessionId
  * @param {() => void} [props.onAccept]
  * @param {() => void} [props.onRelease]
+ * @param {boolean} [props.accepted]  true after analyst clicks Accept hold
  */
-export function SupervisorAlert({ frame, sessionId, onAccept, onRelease }) {
+export function SupervisorAlert({ frame, sessionId, onAccept, onRelease, accepted = false }) {
   const level = frame?.intervention?.level;
   if (
     level !== INTERVENTION_LEVELS.LEVEL_4_AUTO_HOLD
@@ -88,9 +89,10 @@ export function SupervisorAlert({ frame, sessionId, onAccept, onRelease }) {
         <button
           type="button"
           onClick={onAccept}
-          className="flex-1 rounded bg-risk-elevated px-2 py-1.5 text-[11px] font-semibold text-sv-bg"
+          disabled={accepted || !onAccept}
+          className="flex-1 rounded bg-risk-elevated px-2 py-1.5 text-[11px] font-semibold text-sv-bg disabled:opacity-60"
         >
-          Accept hold
+          {accepted ? 'Hold accepted' : 'Accept hold'}
         </button>
         <button
           type="button"
@@ -109,4 +111,5 @@ SupervisorAlert.propTypes = {
   sessionId: PropTypes.string,
   onAccept: PropTypes.func,
   onRelease: PropTypes.func,
+  accepted: PropTypes.bool,
 };

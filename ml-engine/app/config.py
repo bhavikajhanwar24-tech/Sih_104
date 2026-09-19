@@ -49,12 +49,12 @@ class Settings(BaseSettings):
 
     # Slow-path ASR (Context §7.2 / §10.6) — faster-whisper / CTranslate2.
     asr_enabled: bool = True
-    # sweet spot on CPU: small + int8 (~4× real-time). Use medium on GPU.
-    asr_model_size: str = "small"
+    # Lab CPU: tiny keeps the fast-path/gauge alive; small starves the 500ms tick.
+    asr_model_size: str = "tiny"
     asr_device: str = "auto"  # auto | cpu | cuda
     asr_compute_type: str = "default"  # default → int8 (cpu) / float16 (cuda)
     asr_window_seconds: float = 6.0
-    asr_interval_ms: int = 2500
+    asr_interval_ms: int = 4000
     asr_vad_speech_ratio_min: float = 0.3
     asr_snippet_chars: int = 160
     asr_latency_budget_ms: float = 900.0

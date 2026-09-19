@@ -1,4 +1,4 @@
-﻿"""
+"""
 Asterisk AudioSocket bridge ΓÇö media tap into the inference plane (P7.2 / Context ┬º11.3).
 
 Listens on TCP :9092 for AudioSocket clients. For each call:
@@ -423,6 +423,7 @@ class AriSnoopController:
             timeout=5.0,
         )
         self._snooped: set[str] = set()
+        self._agent_bound: set[str] = set()
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -442,14 +443,16 @@ class AriSnoopController:
     async def _snoop_channel(self, channel_id: str, name: str) -> None:
         if channel_id in self._snooped:
             return
+        # Dialplan sets SV_SESSION before Dial; never invent a UUID here — that orphans
+        # channel binds from the AudioSocket session and makes ARI hold miss the call.
         sid = await self._get_var(channel_id, "SV_SESSION")
         if not sid:
-            sid = str(uuid.uuid4())
-            LOG.warning(
-                "ari_snoop missing SV_SESSION on %s ΓÇö generated sid=%s",
+            LOG.info(
+                "ari_snoop_defer channel=%s name=%s reason=missing_SV_SESSION",
+                channel_id,
                 name,
-                sid,
             )
+            return
         snoop_id = str(uuid.uuid4())
         try:
             r = await self._http.post(
@@ -528,9 +531,17 @@ class AriSnoopController:
         if name.startswith("PJSIP/caller"):
             await self._snoop_channel(channel_id, name)
         elif name.startswith("PJSIP/agent") and self.decision is not None:
-            sid = await self._get_var(channel_id, "SV_SESSION")
-            if sid:
-                await self.decision.bind_channel(sid, channel_id, role="agent")
+            await self._bind_agent_once(channel_id)
+
+    async def _bind_agent_once(self, channel_id: str) -> None:
+        """Bind agent leg once — re-POSTing every 0.5s starves Java feature ingest."""
+        if channel_id in self._agent_bound or self.decision is None:
+            return
+        sid = await self._get_var(channel_id, "SV_SESSION")
+        if not sid:
+            return
+        await self.decision.bind_channel(sid, channel_id, role="agent")
+        self._agent_bound.add(channel_id)
 
     async def _poll_channels_once(self) -> None:
         try:
@@ -544,22 +555,22 @@ class AriSnoopController:
 
         live_ids = {c.get("id") for c in channels if c.get("id")}
         self._snooped &= live_ids  # drop hung-up ids
+        self._agent_bound &= live_ids
 
         for ch in channels:
             name = ch.get("name") or ""
             channel_id = ch.get("id")
             state = ch.get("state") or ""
-            if not channel_id or channel_id in self._snooped:
+            if not channel_id:
                 continue
             if state != "Up":
                 continue
             # Tap caller when up (bridged or ringing-answered).
             if name.startswith("PJSIP/caller"):
-                await self._snoop_channel(channel_id, name)
+                if channel_id not in self._snooped:
+                    await self._snoop_channel(channel_id, name)
             elif name.startswith("PJSIP/agent") and self.decision is not None:
-                sid = await self._get_var(channel_id, "SV_SESSION")
-                if sid:
-                    await self.decision.bind_channel(sid, channel_id, role="agent")
+                await self._bind_agent_once(channel_id)
 
     async def _poll_loop(self) -> None:
         LOG.info("ARI channel poller started (0.5s)")

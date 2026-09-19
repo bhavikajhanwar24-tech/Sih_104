@@ -111,7 +111,8 @@ sentinelvoice:
     base-url: http://localhost:8000
     websocket-url: ws://localhost:8000/ingest
     connect-timeout-ms: 2000
-    frame-staleness-ms: 1500
+    # Lab SIP path: rebase on backlog (see FeatureFrameIngestService); keep generous.
+    frame-staleness-ms: 60000
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500
@@ -181,8 +182,8 @@ sentinelvoice:
         - "payroll suspense 1001"
         - "rbi settlement pool"
   actuation:
-    # noop | webrtc | asterisk  ΓÇö lab default is noop so unit tests need no Asterisk.
-    adapter: noop
+    # noop | webrtc | asterisk — lab default noop; use asterisk for live SIP hold/whisper.
+    adapter: asterisk
     ari:
       base-url: http://127.0.0.1:8088/ari
       username: sentinel

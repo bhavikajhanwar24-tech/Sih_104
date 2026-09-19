@@ -120,6 +120,89 @@ public class ActuationService {
         }
     }
 
+    /**
+     * Analyst "Accept hold" / retry — always attempt physical hold (ignores idempotency).
+     * Used when L4 already fired but channel bind arrived late, or first ARI attempt missed.
+     */
+    public ActionResult forceHold(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return ActionResult.FAILURE;
+        }
+        long started = clock.millis();
+        ActionResult result = ActionResult.FAILURE;
+        try {
+            if (!callControl.capabilities().contains(ActuationAction.HOLD)) {
+                result = ActionResult.UNSUPPORTED;
+            } else {
+                callControl.hold(sessionId);
+                markFired(sessionId, ActuationAction.CALL_HELD);
+                result = ActionResult.SUCCESS;
+            }
+        } catch (Exception ex) {
+            result = ActionResult.FAILURE;
+            log.warn(
+                    "actuation_force_hold_failed sessionId={} adapter={} err={}",
+                    sessionId,
+                    callControl.adapterName(),
+                    ex.toString()
+            );
+        } finally {
+            long latencyMs = Math.max(0L, clock.millis() - started);
+            auditAction(
+                    sessionId,
+                    InterventionLevel.LEVEL_4_AUTO_HOLD,
+                    InterventionLevel.LEVEL_4_AUTO_HOLD,
+                    ActuationAction.CALL_HELD,
+                    result,
+                    latencyMs
+            );
+        }
+        return result;
+    }
+
+    /** Supervisor release — unmute softphones and clear CALL_HELD so L4 can re-fire later. */
+    public ActionResult forceUnhold(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return ActionResult.FAILURE;
+        }
+        long started = clock.millis();
+        ActionResult result = ActionResult.FAILURE;
+        try {
+            if (!callControl.capabilities().contains(ActuationAction.UNHOLD)) {
+                result = ActionResult.UNSUPPORTED;
+            } else {
+                callControl.unhold(sessionId);
+                Set<ActuationAction> set = firedBySession.get(sessionId);
+                if (set != null) {
+                    synchronized (set) {
+                        set.remove(ActuationAction.CALL_HELD);
+                        set.remove(ActuationAction.SUPERVISOR_BRIDGED);
+                    }
+                }
+                result = ActionResult.SUCCESS;
+            }
+        } catch (Exception ex) {
+            result = ActionResult.FAILURE;
+            log.warn(
+                    "actuation_force_unhold_failed sessionId={} adapter={} err={}",
+                    sessionId,
+                    callControl.adapterName(),
+                    ex.toString()
+            );
+        } finally {
+            long latencyMs = Math.max(0L, clock.millis() - started);
+            auditAction(
+                    sessionId,
+                    InterventionLevel.LEVEL_4_AUTO_HOLD,
+                    InterventionLevel.LEVEL_2_SOFT_NUDGE,
+                    ActuationAction.UNHOLD,
+                    result,
+                    latencyMs
+            );
+        }
+        return result;
+    }
+
     static Set<ActuationAction> actionsForLevel(InterventionLevel level) {
         return switch (level) {
             case LEVEL_1_SILENT -> EnumSet.noneOf(ActuationAction.class);

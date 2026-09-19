@@ -298,12 +298,19 @@ def model_info() -> dict[str, Any]:
     }
 
 
+_import_failed: bool = False
+_import_error: Optional[str] = None
+
+
 def warmup(force: bool = False) -> dict[str, Any]:
     """Load faster-whisper once at startup; log size/device/compute."""
     global _model, _model_size, _device, _compute_type, _warmup_ms
+    global _import_failed, _import_error
 
     if _model is not None and not force:
         return model_info()
+    if _import_failed and not force:
+        return {"ready": False, "error": _import_error or "import_failed"}
 
     size = settings.asr_model_size
     device, compute = _resolve_device_compute()
@@ -311,8 +318,10 @@ def warmup(force: bool = False) -> dict[str, Any]:
     try:
         from faster_whisper import WhisperModel
     except Exception as exc:
-        logger.exception("asr_import_failed error=%s", type(exc).__name__)
-        return {"ready": False, "error": type(exc).__name__}
+        _import_failed = True
+        _import_error = type(exc).__name__
+        logger.exception("asr_import_failed error=%s — will not retry until restart", _import_error)
+        return {"ready": False, "error": _import_error}
 
     try:
         _model = WhisperModel(size, device=device, compute_type=compute)

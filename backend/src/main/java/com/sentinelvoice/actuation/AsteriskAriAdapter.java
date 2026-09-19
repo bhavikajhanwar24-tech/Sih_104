@@ -44,6 +44,7 @@ public class AsteriskAriAdapter implements CallControlPort {
     private final String supervisorEndpoint;
     private final ConcurrentMap<String, String> sessionToChannel = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> sessionToAgentChannel = new ConcurrentHashMap<>();
+    private final AsteriskAmiClient amiClient;
 
     public AsteriskAriAdapter(
             RestTemplate ariRestTemplate,
@@ -60,6 +61,7 @@ public class AsteriskAriAdapter implements CallControlPort {
         this.supervisorEndpoint = supervisorEndpoint == null || supervisorEndpoint.isBlank()
                 ? "PJSIP/agent"
                 : supervisorEndpoint.trim();
+        this.amiClient = new AsteriskAmiClient("127.0.0.1", 5038, username, password, 8000);
     }
 
     /** Bind Decision Plane session to an Asterisk channel id (caller / bridged leg). */
@@ -94,39 +96,39 @@ public class AsteriskAriAdapter implements CallControlPort {
 
     @Override
     public void hold(String sessionId) {
-        String channelId = resolveChannel(sessionId);
+        // ConfBridge mute silences both softphones without hangup (no AMI / no redirect).
+        String conf = conferenceName(sessionId);
         try {
-            exchange(HttpMethod.POST, "/channels/" + channelId + "/hold", null);
-            // Play hold tone so the demo is audible even if MOH is not configured.
-            announce(sessionId, SOUND_HOLD);
-            log.info("ari_hold ok sessionId={} channelId={}", sessionId, channelId);
-        } catch (HttpStatusCodeException ex) {
-            // Idempotent: already on hold / unknown channel → treat as success for re-entry.
-            if (ex.getStatusCode().value() == 404 || ex.getStatusCode().value() == 409) {
-                log.info(
-                        "ari_hold idempotent sessionId={} channelId={} status={}",
-                        sessionId,
-                        channelId,
-                        ex.getStatusCode().value()
-                );
-                return;
+            amiClient.muteConference(conf, true);
+            log.info("ari_hold ok sessionId={} conf={} via=confbridge_mute", sessionId, conf);
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException re) {
+                throw re;
             }
-            throw ex;
+            throw new IllegalStateException(
+                    "Hold/mute failed sessionId=" + sessionId + " conf=" + conf,
+                    ex
+            );
         }
+    }
+
+    /** Dialplan CONF = {@code sv} + session UUID with dashes stripped. */
+    static String conferenceName(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId required for ConfBridge hold");
+        }
+        String hex = sessionId.trim().replace("-", "");
+        return "sv" + hex;
     }
 
     @Override
     public void unhold(String sessionId) {
-        String channelId = resolveChannel(sessionId);
+        String conf = conferenceName(sessionId);
         try {
-            exchange(HttpMethod.DELETE, "/channels/" + channelId + "/hold", null);
-            log.info("ari_unhold ok sessionId={} channelId={}", sessionId, channelId);
-        } catch (HttpStatusCodeException ex) {
-            if (ex.getStatusCode().value() == 404 || ex.getStatusCode().value() == 409) {
-                log.info("ari_unhold idempotent sessionId={} status={}", sessionId, ex.getStatusCode().value());
-                return;
-            }
-            throw ex;
+            amiClient.muteConference(conf, false);
+            log.info("ari_unhold ok sessionId={} conf={} via=confbridge_unmute", sessionId, conf);
+        } catch (Exception ex) {
+            log.warn("ari_unhold_failed sessionId={} conf={} err={}", sessionId, conf, ex.toString());
         }
     }
 
@@ -168,36 +170,50 @@ public class AsteriskAriAdapter implements CallControlPort {
                 : supervisorEndpoint;
         String channelId = resolveChannel(sessionId);
 
-        // Best-effort: create a mixing bridge, add the live channel, originate supervisor into it.
-        Map<?, ?> bridge = exchange(HttpMethod.POST, "/bridges?type=mixing", null).getBody();
-        String bridgeId = extractId(bridge, null);
-        if (bridgeId == null) {
-            throw new IllegalStateException("ARI create bridge returned no id");
-        }
-        exchange(HttpMethod.POST, "/bridges/" + bridgeId + "/addChannel?channel=" + channelId, null);
+        try {
+            // Best-effort: create a mixing bridge, add the live channel, originate supervisor into it.
+            Map<?, ?> bridge = exchange(HttpMethod.POST, "/bridges?type=mixing", null).getBody();
+            String bridgeId = extractId(bridge, null);
+            if (bridgeId == null) {
+                throw new IllegalStateException("ARI create bridge returned no id");
+            }
+            exchange(HttpMethod.POST, "/bridges/" + bridgeId + "/addChannel?channel=" + channelId, null);
 
-        URI originate = UriComponentsBuilder
-                .fromHttpUrl(ariBaseUrl + "/channels")
-                .queryParam("endpoint", endpoint)
-                .queryParam("app", "sentinel-supervisor")
-                .queryParam("appArgs", sessionId)
-                .build(true)
-                .toUri();
-        ResponseEntity<Map> origResp = exchangeUri(HttpMethod.POST, originate, null);
-        String supervisorChannel = extractId(origResp.getBody(), null);
-        if (supervisorChannel != null) {
-            exchange(
-                    HttpMethod.POST,
-                    "/bridges/" + bridgeId + "/addChannel?channel=" + supervisorChannel,
-                    null
+            URI originate = UriComponentsBuilder
+                    .fromHttpUrl(ariBaseUrl + "/channels")
+                    .queryParam("endpoint", endpoint)
+                    .queryParam("app", "sentinel-supervisor")
+                    .queryParam("appArgs", sessionId)
+                    .build(true)
+                    .toUri();
+            ResponseEntity<Map> origResp = exchangeUri(HttpMethod.POST, originate, null);
+            String supervisorChannel = extractId(origResp.getBody(), null);
+            if (supervisorChannel != null) {
+                exchange(
+                        HttpMethod.POST,
+                        "/bridges/" + bridgeId + "/addChannel?channel=" + supervisorChannel,
+                        null
+                );
+            }
+            log.info(
+                    "ari_bridge_supervisor ok sessionId={} bridge={} supervisor={}",
+                    sessionId,
+                    bridgeId,
+                    supervisorChannel
             );
+        } catch (HttpStatusCodeException ex) {
+            // Dialplan / AudioSocket legs are not in a Stasis app — ARI cannot re-bridge them.
+            // Hold + announce still apply; treat as soft-success for the lab path.
+            if (ex.getStatusCode().value() == 422) {
+                log.warn(
+                        "ari_bridge_supervisor skipped sessionId={} channelId={} reason=not_in_stasis (hold remains)",
+                        sessionId,
+                        channelId
+                );
+                return;
+            }
+            throw ex;
         }
-        log.info(
-                "ari_bridge_supervisor ok sessionId={} bridge={} supervisor={}",
-                sessionId,
-                bridgeId,
-                supervisorChannel
-        );
     }
 
     @Override

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { ChallengePanel } from '@/components/ChallengePanel.jsx';
 import { CrossChannelTimeline } from '@/components/CrossChannelTimeline.jsx';
@@ -39,6 +39,11 @@ export function AnalystConsole() {
   } = useSession();
   const { latest, history, error: telemetryError } = useTelemetrySocket(sessionId);
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const [holdAccepted, setHoldAccepted] = useState(false);
+
+  useEffect(() => {
+    setHoldAccepted(false);
+  }, [sessionId, latest?.intervention?.level]);
 
   const hasFrame = latest != null;
   const bootStatus = !isRunning
@@ -56,6 +61,22 @@ export function AnalystConsole() {
       : 'waiting for audio';
   const errMsg = sessionError || telemetryError || 'Telemetry error';
   const showMic = Boolean(sessionId) && scenarioId === 'live-browser';
+
+  async function postAcceptHold() {
+    if (!sessionId) return;
+    setHoldAccepted(true);
+    try {
+      const res = await fetch(`/api/v1/actuation/${encodeURIComponent(sessionId)}/hold`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        // Keep banner text; softphones may still be unbound — log for lab debug.
+        console.warn('force hold failed', res.status, await res.text());
+      }
+    } catch (err) {
+      console.warn('force hold error', err);
+    }
+  }
 
   async function postRelease() {
     if (!sessionId) return;
@@ -229,10 +250,12 @@ export function AnalystConsole() {
       <SupervisorAlert
         frame={latest}
         sessionId={sessionId}
+        accepted={holdAccepted}
         onAccept={() => {
-          /* hold acknowledged — lock remains server-side */
+          void postAcceptHold();
         }}
         onRelease={() => {
+          setHoldAccepted(false);
           void postRelease();
         }}
       />

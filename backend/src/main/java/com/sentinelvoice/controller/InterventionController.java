@@ -86,6 +86,13 @@ public class InterventionController {
             } catch (Exception ignored) {
                 // ActuationService never throws by contract; belt-and-braces.
             }
+        } else if (decision.level() == InterventionLevel.LEVEL_4_AUTO_HOLD) {
+            // Already at L4 — still re-attempt hold (channel bind may have arrived late).
+            try {
+                actuationService.forceHold(sessionId);
+            } catch (Exception ignored) {
+                // never throw from intervention path
+            }
         }
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -107,6 +114,11 @@ public class InterventionController {
             @PathVariable String sessionId,
             @Valid @RequestBody ReleaseRequest request
     ) {
+        try {
+            actuationService.forceUnhold(sessionId);
+        } catch (Exception ignored) {
+            // never throw from intervention path
+        }
         // Supervisor "Release" → audited down-step toward L2 (soft nudge) with mandatory reason.
         OverrideRequest override = new OverrideRequest(
                 request.analystId(),

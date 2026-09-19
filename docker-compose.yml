@@ -15,6 +15,8 @@ services:
     # (then ARI stays on 127.0.0.1 inside http.conf).
     ports:
       - "127.0.0.1:8088:8088"           # ARI (localhost only on the host)
+      # AMI :5038 is NOT published — Docker Desktop TCP proxy wedges Manager
+      # (host connects, no banner). Hold uses docker exec → in-container AMI MuteAudio.
       - "5060:5060/udp"                 # SIP
       - "10000-10020:10000-10020/udp"   # RTP (narrow map for Docker Desktop)
     extra_hosts:
@@ -23,11 +25,13 @@ services:
       # Bind-mount lab configs so the image cannot reset http bindaddr to 127.0.0.1
       - ./gateway/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
       - ./gateway/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./gateway/asterisk/config/manager.conf:/etc/asterisk/manager.conf:ro
       - ./gateway/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
       - ./gateway/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
       - ./gateway/asterisk/config/modules.conf:/etc/asterisk/modules.conf:ro
       - ./gateway/asterisk/config/logger.conf:/etc/asterisk/logger.conf:ro
       - ./gateway/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./gateway/asterisk/scripts/ami_mute.py:/opt/sentinelvoice/ami_mute.py:ro
       - ./gateway/asterisk/sounds/sentinel-hold.wav:/var/lib/asterisk/sounds/sentinel-hold.wav:ro
       - ./gateway/asterisk/sounds/sentinel-whisper-warning.wav:/var/lib/asterisk/sounds/sentinel-whisper-warning.wav:ro
     # Configs are also baked into the image; mounts win for live edits.
