@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -83,6 +84,12 @@ public class TenantSettingsController {
     @PreAuthorize("hasAnyRole('TENANT_ADMIN','AUDITOR','POLICY_APPROVER')")
     public Map<String, Object> llmHealth() {
         return llmGatewayClient.health();
+    }
+
+    @PostMapping("/llm-selftest")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> llmSelftest() {
+        return llmGatewayClient.selftest();
     }
 
     private TenantSettingsEntity requireSettings(UUID tenantId) {

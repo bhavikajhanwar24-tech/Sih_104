@@ -21,6 +21,8 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | v1 TrunkClassifier + DirectoryService stubs replaced by F4 DirectoryMatch resolve | F4 — tenant directory |
 | 2026-09-19 | LLM calls only via Inference-plane `llm_gateway` (never in 500ms path); MockProvider labelled `provider:mock` | F5 — provider-agnostic gateway |
 | 2026-09-19 | PDF extraction uses layout strip (headers/footers/tables) + per-clause chunks; injection flags store phrase+char range | F5 chunking quality |
+| 2026-09-19 | LLM health exposes ollama/openaiCompat/activeProvider/degraded (no false reachable) | F5 Settings agreement |
+| 2026-09-20 | Default Ollama model gemma3:4b; structured format schema; selftest; concurrency 1 | F5 small-model reliability |
 
 ## New dependencies
 

@@ -20,7 +20,7 @@ public record LlmGatewayProperties(
             connectTimeoutMs = 2000;
         }
         if (readTimeoutMs <= 0) {
-            readTimeoutMs = 65_000;
+            readTimeoutMs = 120_000;
         }
     }
 }

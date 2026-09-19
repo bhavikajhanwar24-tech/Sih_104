@@ -103,7 +103,14 @@ services:
       SENTINELVOICE_ML_JAVA_INGEST_WS: ws://backend:8081/ws/features
       SENTINELVOICE_ML_JAVA_DECISION_HTTP: http://backend:8081
       SENTINELVOICE_ML_JAVA_PASSPORT_URL: http://backend:8081/api/v1/passport/register
-    volumes:
+      # Host Ollama (Windows/Mac Docker Desktop). Override if Ollama is a compose service.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:4b}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      LLM_GATEWAY_CONCURRENCY: ${LLM_GATEWAY_CONCURRENCY:-1}
+      LLM_FORCE_MOCK: ${LLM_FORCE_MOCK:-false}
+      SENTINELVOICE_ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN}    volumes:
       - ./ml-engine/models:/app/models:ro
     ports:
       - "127.0.0.1:8000:8000"
@@ -132,8 +139,9 @@ services:
       retries: 5
       start_period: 20s
 
-  # Optional local LLM (F5). Start with: docker compose --profile llm up -d ollama
-  # then: docker compose exec ollama ollama pull qwen2.5:7b-instruct
+  # Optional in-compose Ollama (F5). Prefer a host-installed model (gemma3:4b) via
+  # OLLAMA_BASE_URL=http://host.docker.internal:11434 on ml-engine.
+  # Start: docker compose --profile llm up -d ollama
   ollama:
     profiles: ["llm"]
     image: ollama/ollama:latest

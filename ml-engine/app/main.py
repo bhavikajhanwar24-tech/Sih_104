@@ -100,6 +100,21 @@ async def lifespan(_app: FastAPI):
     except Exception:
         logger.exception("intent_warmup_failed — lexicon/semantic intent unavailable")
 
+    # F5 LLM gateway — load Ollama model (keep_alive) so first compile is not cold.
+    try:
+        from app.llm_gateway.gateway import gateway as llm_gateway
+
+        w = await llm_gateway.warmup()
+        logger.info(
+            "llm_warmup status=%s model=%s latency_ms=%s error=%s",
+            w.get("status"),
+            llm_gateway._ollama_model,
+            w.get("latencyMs"),
+            w.get("error"),
+        )
+    except Exception:
+        logger.exception("llm_warmup_failed — gateway will retry on first call")
+
     if settings.emit_enabled:
         _emitter_task = asyncio.create_task(emitter.run(), name="feature-emitter")
         logger.info("lifespan_start emit_enabled=true url=%s", emitter.url)

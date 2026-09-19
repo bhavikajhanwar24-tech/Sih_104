@@ -14,8 +14,10 @@ export function SettingsPage() {
   const { push } = useToast();
   const [settings, setSettings] = useState(null);
   const [health, setHealth] = useState(null);
+  const [selftest, setSelftest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   const canWrite = hasPermission('settings:write');
 
@@ -26,7 +28,11 @@ export function SettingsPage() {
         apiJson('/api/v2/settings'),
         apiJson('/api/v2/settings/llm-health', { skipErrorToast: true }).catch(() => ({
           ok: false,
-          provider: 'unreachable',
+          gateway: 'down',
+          activeProvider: 'mock',
+          degraded: true,
+          ollama: { reachable: false, modelPresent: false, error: 'request_failed' },
+          openaiCompat: { enabled: false, reachable: null },
         })),
       ]);
       setSettings(s);
@@ -63,14 +69,54 @@ export function SettingsPage() {
     }
   }
 
-  const provider = health?.provider || (health?.ok === false ? 'unreachable' : '—');
-  const model = health?.model || health?.ollamaModel || '—';
-  const latency =
-    health?.p50LatencyMs != null
-      ? `p50 ${Math.round(health.p50LatencyMs)} ms`
-      : health?.reachable === false
-        ? 'unreachable'
-        : 'no samples yet';
+  async function runSelftest() {
+    if (!canWrite) return;
+    setTesting(true);
+    setSelftest(null);
+    try {
+      const result = await apiJson('/api/v2/settings/llm-selftest', {
+        method: 'POST',
+        skipErrorToast: true,
+      });
+      setSelftest(result);
+      if (result.schemaValid) {
+        push(`Self-test OK · ${result.model} · ${Math.round(result.latencyMs || 0)} ms`);
+      } else {
+        push(result.error || 'Self-test failed schema validation');
+      }
+      await load();
+    } catch (err) {
+      setSelftest({ schemaValid: false, error: err.message || 'selftest failed' });
+      push(err.message || 'Self-test failed');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const activeProvider = health?.activeProvider || health?.provider || '—';
+  const gatewayStatus = health?.gateway || (health?.ok === false ? 'down' : '—');
+  const degraded = Boolean(health?.degraded);
+  const ollama = health?.ollama || {};
+  const openaiCompat = health?.openaiCompat || {};
+  const warmup = health?.warmup || {};
+  const model =
+    activeProvider === 'ollama'
+      ? health?.ollamaModel || health?.model || '—'
+      : activeProvider === 'openai_compat'
+        ? health?.model || '—'
+        : 'mock';
+  const latencyParts = [];
+  if (health?.p50LatencyMs != null) latencyParts.push(`p50 ${Math.round(health.p50LatencyMs)} ms`);
+  if (health?.p95LatencyMs != null) latencyParts.push(`p95 ${Math.round(health.p95LatencyMs)} ms`);
+  if (health?.tokensPerSecondP50 != null) {
+    latencyParts.push(`~${Math.round(health.tokensPerSecondP50)} tok/s`);
+  }
+  const latency = latencyParts.length > 0 ? latencyParts.join(' · ') : 'no samples yet';
+
+  let ollamaWarning = 'Using MOCK provider (Ollama unreachable)';
+  if (degraded && ollama.reachable && !ollama.modelPresent) {
+    ollamaWarning = 'Using MOCK provider (Ollama model not pulled)';
+  }
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
@@ -116,25 +162,82 @@ export function SettingsPage() {
             <div className="rounded border border-sv-border bg-sv-elevated/40 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-sv-fg">LLM gateway health</p>
-                <Button className="px-2 py-1 text-xs" variant="ghost" onClick={load}>
-                  Refresh
-                </Button>
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <dt className="text-sv-muted">Provider</dt>
-                <dd className="flex items-center gap-2 text-sv-fg">
-                  {provider}
-                  {provider === 'mock' ? <Badge tone="warn">demo mock</Badge> : null}
-                  {health?.ok === false ? <Badge tone="danger">down</Badge> : null}
-                  {health?.ok && provider !== 'mock' && provider !== 'unreachable' ? (
-                    <Badge tone="success">up</Badge>
+                <div className="flex gap-2">
+                  {canWrite ? (
+                    <Button
+                      className="px-2 py-1 text-xs"
+                      variant="ghost"
+                      disabled={testing}
+                      onClick={runSelftest}
+                    >
+                      {testing ? 'Testing…' : 'Run test'}
+                    </Button>
                   ) : null}
+                  <Button className="px-2 py-1 text-xs" variant="ghost" onClick={load}>
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+              {degraded ? (
+                <p role="alert" className="mt-3 text-xs text-risk-watch">
+                  {ollamaWarning}
+                </p>
+              ) : null}
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <dt className="text-sv-muted">Gateway</dt>
+                <dd className="flex items-center gap-2 text-sv-fg">
+                  {gatewayStatus}
+                  {gatewayStatus === 'up' ? <Badge tone="success">up</Badge> : null}
+                  {gatewayStatus === 'down' ? <Badge tone="danger">down</Badge> : null}
+                </dd>
+                <dt className="text-sv-muted">Active provider</dt>
+                <dd className="flex items-center gap-2 text-sv-fg">
+                  {activeProvider}
+                  {activeProvider === 'mock' ? <Badge tone="warn">demo mock</Badge> : null}
+                  {activeProvider === 'ollama' ? <Badge tone="success">ollama</Badge> : null}
+                  {activeProvider === 'openai_compat' ? <Badge tone="success">openai</Badge> : null}
+                </dd>
+                <dt className="text-sv-muted">Ollama</dt>
+                <dd className="text-sv-fg">
+                  {ollama.reachable
+                    ? ollama.modelPresent
+                      ? 'reachable · model present'
+                      : 'reachable · model missing'
+                    : `unreachable${ollama.error ? ` (${ollama.error})` : ''}`}
+                </dd>
+                <dt className="text-sv-muted">OpenAI-compat</dt>
+                <dd className="text-sv-fg">
+                  {!openaiCompat.enabled
+                    ? 'disabled'
+                    : openaiCompat.reachable
+                      ? 'enabled · reachable'
+                      : 'enabled · unreachable'}
                 </dd>
                 <dt className="text-sv-muted">Model</dt>
                 <dd className="text-sv-fg">{model}</dd>
+                <dt className="text-sv-muted">Warm-up</dt>
+                <dd className="text-sv-fg">
+                  {warmup.status || '—'}
+                  {warmup.latencyMs != null ? ` · ${Math.round(warmup.latencyMs)} ms` : ''}
+                  {warmup.error ? ` (${warmup.error})` : ''}
+                </dd>
                 <dt className="text-sv-muted">Latency</dt>
                 <dd className="text-sv-fg">{latency}</dd>
               </dl>
+              {selftest ? (
+                <div className="mt-3 rounded border border-sv-border bg-sv-bg/40 px-3 py-2 text-xs">
+                  <p className="font-medium text-sv-fg">Self-test result</p>
+                  <p className="mt-1 text-sv-muted">
+                    {selftest.provider}/{selftest.model} ·{' '}
+                    {selftest.schemaValid ? 'schema valid' : 'schema invalid'} ·{' '}
+                    {selftest.latencyMs != null ? `${Math.round(selftest.latencyMs)} ms` : '—'}
+                    {selftest.tokensPerSecond != null
+                      ? ` · ${Math.round(selftest.tokensPerSecond)} tok/s`
+                      : ''}
+                    {selftest.error ? ` · ${selftest.error}` : ''}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </>
         )}

@@ -139,7 +139,8 @@ sentinelvoice:
     base-url: ${LLM_GATEWAY_URL:http://127.0.0.1:8000}
     service-token: ${ML_SERVICE_TOKEN:}
     connect-timeout-ms: 2000
-    read-timeout-ms: 65000
+    # policy_compile budget is 90s; leave headroom for gateway + repair retry
+    read-timeout-ms: 120000
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -31,15 +31,14 @@ def _require_token(x_ml_service_token: str | None) -> None:
 @router.get("/health")
 async def health(x_ml_service_token: str | None = Header(default=None, alias="X-ML-Service-Token")):
     _require_token(x_ml_service_token)
-    body = gateway.health()
-    # Live probe of preferred provider without logging secrets
-    from app.llm_gateway.providers import probe_ollama
+    return await gateway.health_detailed()
 
-    ollama_ok = await probe_ollama(gateway._ollama_url, gateway._ollama_model)
-    body["provider"] = "ollama" if ollama_ok and not gateway._force_mock else "mock"
-    body["model"] = gateway._ollama_model if ollama_ok else "mock"
-    body["reachable"] = True
-    return body
+
+@router.post("/selftest")
+async def selftest(x_ml_service_token: str | None = Header(default=None, alias="X-ML-Service-Token")):
+    """Tiny schema-constrained round-trip — used by Settings 'Run test'."""
+    _require_token(x_ml_service_token)
+    return await gateway.selftest()
 
 
 @router.post("/run")
@@ -48,7 +47,7 @@ async def run(
     x_ml_service_token: str | None = Header(default=None, alias="X-ML-Service-Token"),
 ):
     _require_token(x_ml_service_token)
-    if body.task not in ("policy_compile", "runtime_intent"):
+    if body.task not in ("policy_compile", "runtime_intent", "selftest"):
         raise HTTPException(status_code=400, detail="unknown_task")
     payload = body.payload or {}
     system = str(payload.get("system") or "")

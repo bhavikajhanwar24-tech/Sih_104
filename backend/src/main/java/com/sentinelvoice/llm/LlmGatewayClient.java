@@ -59,6 +59,20 @@ public class LlmGatewayClient {
         return body;
     }
 
+    @CircuitBreaker(name = "llmGateway", fallbackMethod = "selftestFallback")
+    public Map<String, Object> selftest() {
+        HttpHeaders headers = authHeaders();
+        ResponseEntity<Map> resp = restTemplate.exchange(
+                properties.baseUrl() + "/llm/v1/selftest",
+                org.springframework.http.HttpMethod.POST,
+                new HttpEntity<>(headers),
+                Map.class
+        );
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = resp.getBody() == null ? Map.of() : resp.getBody();
+        return body;
+    }
+
     @CircuitBreaker(name = "llmGateway", fallbackMethod = "runFallback")
     public Map<String, Object> run(String task, UUID tenantId, Map<String, Object> payload) {
         long start = System.nanoTime();
@@ -96,11 +110,36 @@ public class LlmGatewayClient {
 
     @SuppressWarnings("unused")
     private Map<String, Object> healthFallback(Throwable t) {
-        return Map.of(
-                "ok", false,
-                "provider", "unreachable",
-                "error", t.getMessage() == null ? "circuit_open" : t.getMessage()
-        );
+        Map<String, Object> ollama = new LinkedHashMap<>();
+        ollama.put("reachable", false);
+        ollama.put("modelPresent", false);
+        ollama.put("error", t.getMessage() == null ? "gateway_unreachable" : t.getMessage());
+        Map<String, Object> openai = new LinkedHashMap<>();
+        openai.put("enabled", false);
+        openai.put("reachable", null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", false);
+        out.put("gateway", "down");
+        out.put("ollama", ollama);
+        out.put("openaiCompat", openai);
+        out.put("activeProvider", "mock");
+        out.put("degraded", true);
+        out.put("provider", "mock");
+        out.put("model", "mock");
+        out.put("error", t.getMessage() == null ? "circuit_open" : t.getMessage());
+        return out;
+    }
+
+    @SuppressWarnings("unused")
+    private Map<String, Object> selftestFallback(Throwable t) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("provider", "unreachable");
+        out.put("model", "mock");
+        out.put("latencyMs", 0);
+        out.put("schemaValid", false);
+        out.put("tokensPerSecond", null);
+        out.put("error", t.getMessage() == null ? "circuit_open" : t.getMessage());
+        return out;
     }
 
     @SuppressWarnings("unused")
