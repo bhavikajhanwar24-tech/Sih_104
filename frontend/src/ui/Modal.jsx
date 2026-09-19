@@ -5,7 +5,7 @@ import { Button } from '@/ui/Button.jsx';
 /**
  * @param {Object} props
  */
-export function Modal({ open, title, children, onClose, footer }) {
+export function Modal({ open, title, children, onClose, footer, wide = false }) {
   const panelRef = useRef(/** @type {HTMLDivElement | null} */ (null));
 
   useEffect(() => {
@@ -39,7 +39,9 @@ export function Modal({ open, title, children, onClose, footer }) {
       />
       <div
         ref={panelRef}
-        className="relative z-10 w-full max-w-lg rounded-lg border border-sv-border bg-sv-panel shadow-xl"
+        className={`relative z-10 w-full rounded-lg border border-sv-border bg-sv-panel shadow-xl ${
+          wide ? 'max-w-3xl' : 'max-w-lg'
+        }`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-sv-border px-5 py-4">
           <h2 id="sv-modal-title" className="font-display text-lg font-semibold text-sv-fg">
@@ -64,4 +66,5 @@ Modal.propTypes = {
   children: PropTypes.node,
   onClose: PropTypes.func,
   footer: PropTypes.node,
+  wide: PropTypes.bool,
 };

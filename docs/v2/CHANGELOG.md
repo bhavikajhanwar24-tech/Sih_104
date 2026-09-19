@@ -19,6 +19,8 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | v1 four-view AppShell / DEMO_USERS Basic login removed | F2 — react-router shell + permissions[] menus |
 | 2026-09-19 | FORCE RLS on tenant tables; client `tenantId` query removed from audit verify | F3 — isolation |
 | 2026-09-19 | v1 TrunkClassifier + DirectoryService stubs replaced by F4 DirectoryMatch resolve | F4 — tenant directory |
+| 2026-09-19 | LLM calls only via Inference-plane `llm_gateway` (never in 500ms path); MockProvider labelled `provider:mock` | F5 — provider-agnostic gateway |
+| 2026-09-19 | PDF extraction uses layout strip (headers/footers/tables) + per-clause chunks; injection flags store phrase+char range | F5 chunking quality |
 
 ## New dependencies
 
@@ -33,6 +35,9 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | (none new) | — | F3 uses existing PG RLS + Spring WS |
 | 2026-09-19 | `libphonenumber` 8.13.50 | Decision | E.164 normalisation for directory phones |
 | 2026-09-19 | `commons-csv` 1.11.0 + `poi-ooxml` 5.2.5 | Decision | Directory CSV/XLSX import |
+| 2026-09-19 | `tika-core` + `tika-parsers-standard-package` + `pdfbox` | Decision | Policy doc sniff + extract (F5) |
+| 2026-09-19 | `resilience4j-spring-boot3` + circuitbreaker + `spring-boot-starter-aop` | Decision | LLM gateway client CB (F5) |
+| 2026-09-19 | `jsonschema` (already listed in ml pyproject) | Inference | Gateway output validation (F5) |
 
 ## Feature log
 
@@ -43,3 +48,4 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | F2 | Tenant register, JWT cookies, RBAC, /me, TenantContext, React shell + Users |
 | 2026-09-19 | F3 | RLS + SECURITY DEFINER; tenant STOMP topics; ML service token; Audit page |
 | 2026-09-19 | F4 | Tenant directory CRUD/import/resolve/relationships; `/app/directory` UI |
+| 2026-09-19 | F5 | Policy document ingest/extract/chunks; LLM gateway (Ollama/OpenAI-compat/mock); Policies + Settings AI UI |

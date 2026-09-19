@@ -132,5 +132,24 @@ services:
       retries: 5
       start_period: 20s
 
+  # Optional local LLM (F5). Start with: docker compose --profile llm up -d ollama
+  # then: docker compose exec ollama ollama pull qwen2.5:7b-instruct
+  ollama:
+    profiles: ["llm"]
+    image: ollama/ollama:latest
+    container_name: sentinelvoice-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - sv_ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
 volumes:
   sv_pgdata:
+  sv_ollama:

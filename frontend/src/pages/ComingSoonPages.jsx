@@ -24,18 +24,6 @@ export function LiveCallsPage() {
   );
 }
 
-export function PoliciesPage() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Policies"
-        feature="F7"
-        description="Policy upload, compile, and publish-request workflow ships in F7."
-      />
-    </div>
-  );
-}
-
 export function ResponsePlansPage() {
   return (
     <div className="p-6">
@@ -48,14 +36,3 @@ export function ResponsePlansPage() {
   );
 }
 
-export function SettingsPage() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Settings"
-        feature="F9"
-        description="Tenant settings (retention, LLM fail policy, consent notice) will be editable here."
-      />
-    </div>
-  );
-}

@@ -11,17 +11,22 @@ import { DirectoryPage } from '@/pages/DirectoryPage.jsx';
 import {
   DashboardPage,
   LiveCallsPage,
-  PoliciesPage,
   ResponsePlansPage,
-  SettingsPage,
 } from '@/pages/ComingSoonPages.jsx';
+import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
+import { SettingsPage } from '@/pages/SettingsPage.jsx';
 
 /**
  * V2 application root — router + cookie auth. Replaces v1 four-view AppShell switcher.
  */
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <ToastProvider>
         <AuthProvider>
           <Routes>

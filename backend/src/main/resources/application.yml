@@ -27,6 +27,10 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 16MB
+      max-request-size: 18MB
 
 server:
   port: 8081
@@ -130,6 +134,12 @@ sentinelvoice:
   ml-service:
     # Shared secret for ml-engine → Java /ws/features (F3)
     service-token: ${ML_SERVICE_TOKEN:}
+  llm-gateway:
+    # F5 — Inference-plane FastAPI router (not the 500ms feature-frame loop)
+    base-url: ${LLM_GATEWAY_URL:http://127.0.0.1:8000}
+    service-token: ${ML_SERVICE_TOKEN:}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 65000
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500
@@ -228,3 +238,13 @@ sentinelvoice:
 sv:
   security:
     enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      llmGateway:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 20s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: true

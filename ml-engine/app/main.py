@@ -18,6 +18,7 @@ from app.modules.adversarial import apply as apply_perturbation
 from app.routes.enrol import router as enrol_router
 from app.routes.redteam import router as redteam_router
 from app.routes.challenge import router as challenge_router
+from app.llm_gateway.router import router as llm_gateway_router
 from app.scheduler import SessionScheduler
 from app.session import registry
 from app.slow_path import SlowPathRunner
@@ -121,6 +122,7 @@ app = FastAPI(title="SentinelVoice Inference Plane", version=__version__, lifesp
 app.include_router(enrol_router)
 app.include_router(redteam_router)
 app.include_router(challenge_router)
+app.include_router(llm_gateway_router)
 
 
 @app.get("/health")
