@@ -14,6 +14,7 @@ import {
   ResponsePlansPage,
 } from '@/pages/ComingSoonPages.jsx';
 import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
+import { PolicyReviewPage } from '@/pages/PolicyReviewPage.jsx';
 import { SettingsPage } from '@/pages/SettingsPage.jsx';
 
 /**
@@ -39,6 +40,7 @@ export default function App() {
                 <Route path="calls" element={<LiveCallsPage />} />
                 <Route path="directory" element={<DirectoryPage />} />
                 <Route path="policies" element={<PoliciesPage />} />
+                <Route path="policies/review" element={<PolicyReviewPage />} />
                 <Route path="response" element={<ResponsePlansPage />} />
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="settings" element={<SettingsPage />} />

@@ -23,6 +23,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | PDF extraction uses layout strip (headers/footers/tables) + per-clause chunks; injection flags store phrase+char range | F5 chunking quality |
 | 2026-09-19 | LLM health exposes ollama/openaiCompat/activeProvider/degraded (no false reachable) | F5 Settings agreement |
 | 2026-09-20 | Default Ollama model gemma3:4b; structured format schema; selftest; concurrency 1 | F5 small-model reliability |
+| 2026-09-20 | v1 TransactionPolicy YAML/`TransactionScoring` removed; policy is tenant data (DSL + ACTIVE sets) | F6 — LLM proposes, humans approve |
 
 ## New dependencies
 
@@ -51,3 +52,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | F3 | RLS + SECURITY DEFINER; tenant STOMP topics; ML service token; Audit page |
 | 2026-09-19 | F4 | Tenant directory CRUD/import/resolve/relationships; `/app/directory` UI |
 | 2026-09-19 | F5 | Policy document ingest/extract/chunks; LLM gateway (Ollama/OpenAI-compat/mock); Policies + Settings AI UI |
+| 2026-09-20 | F6 | PolicyRule DSL + fact catalogue; async compile; versioned sets; review/approve UI; remove v1 TransactionPolicy |
+| 2026-09-20 | F6 | Chunk diagnostics + COMPLETED_NO_RULES; quote normalisation; 90s retry; empty review + re-run failed |
+| 2026-09-20 | F6 | Catalogue-enum schema; Indian number grounding; level caps; plain-English; cancel/delete/max-docs |
+| 2026-09-20 | F6 | Verification pass: edit quote grounding; no silent mock; Keywords tab; verify_f6.sql |

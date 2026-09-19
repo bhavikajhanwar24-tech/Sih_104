@@ -129,6 +129,12 @@ class LlmGateway:
             return OpenAICompatibleProvider(self._openai_url, self._openai_key, self._openai_model)
         if await probe_ollama(self._ollama_url, self._ollama_model):
             return self._ollama_provider()
+        # Never silently mock policy_compile — demos must set LLM_FORCE_MOCK=true explicitly
+        if task == "policy_compile":
+            raise RuntimeError(
+                "NO_LLM_PROVIDER: Ollama unreachable for policy_compile "
+                "(set LLM_FORCE_MOCK=true for offline mock demos)"
+            )
         return MockProvider()
 
     async def complete_json(
@@ -181,15 +187,16 @@ class LlmGateway:
         timeout_ms: int,
         max_tokens: int,
     ) -> dict[str, Any]:
-        provider = await self.select_provider(task=task, allow_external_llm=allow_external_llm)
-        if isinstance(provider, MockProvider):
-            provider = MockProvider(json_schema)
-        full_system = SYSTEM_BASE + "\n\n" + (system or "")
-        # Schema is enforced via Ollama `format`; keep user prompt short for 4B models.
-        user_block = user
-
         start = time.perf_counter()
+        provider: LlmProvider | None = None
         try:
+            provider = await self.select_provider(task=task, allow_external_llm=allow_external_llm)
+            if isinstance(provider, MockProvider):
+                provider = MockProvider(json_schema)
+            full_system = SYSTEM_BASE + "\n\n" + (system or "")
+            # Schema is enforced via Ollama `format`; keep user prompt short for 4B models.
+            user_block = user
+
             text, usage = await provider.complete(
                 system=full_system,
                 user=user_block,
@@ -276,25 +283,40 @@ class LlmGateway:
             return {
                 "ok": False,
                 "error": "TIMEOUT",
-                "provider": provider.name,
-                "model": getattr(provider, "model", provider.name),
+                "provider": getattr(provider, "name", "none"),
+                "model": getattr(provider, "model", "none") if provider else "none",
                 "latencyMs": latency,
             }
         except Exception as ex:
             latency = (time.perf_counter() - start) * 1000.0
             self._latencies_ms.append(latency)
+            err = str(ex)
+            if "NO_LLM_PROVIDER" in err:
+                logger.info(
+                    "llm_run task=%s provider=none ok=false error=NO_LLM_PROVIDER latency_ms=%.1f",
+                    task,
+                    latency,
+                )
+                return {
+                    "ok": False,
+                    "error": "NO_LLM_PROVIDER",
+                    "detail": err,
+                    "provider": "none",
+                    "model": "none",
+                    "latencyMs": latency,
+                }
             logger.info(
                 "llm_run task=%s provider=%s ok=false error=%s latency_ms=%.1f",
                 task,
-                provider.name,
+                getattr(provider, "name", "none"),
                 type(ex).__name__,
                 latency,
             )
             return {
                 "ok": False,
                 "error": type(ex).__name__,
-                "provider": provider.name,
-                "model": getattr(provider, "model", provider.name),
+                "provider": getattr(provider, "name", "none"),
+                "model": getattr(provider, "model", "none") if provider else "none",
                 "latencyMs": latency,
             }
 

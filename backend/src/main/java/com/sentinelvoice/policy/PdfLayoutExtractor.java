@@ -3,10 +3,15 @@ package com.sentinelvoice.policy;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,6 +31,8 @@ import java.util.regex.Pattern;
  * header/footer bands and columnar table rows so those lines can be removed from prose.
  */
 final class PdfLayoutExtractor {
+
+    private static final Logger log = LoggerFactory.getLogger(PdfLayoutExtractor.class);
 
     private static final int MAX_PAGES = 200;
     private static final float TOP_BAND = 0.08f;
@@ -65,14 +72,114 @@ final class PdfLayoutExtractor {
                 models.add(buildPage(doc, p));
             }
 
-            Set<String> repeating = findRepeatingKeys(models);
-            return assemble(models, repeating);
+            String rawText = joinRawText(models);
+            int rawChars = rawText.length();
+            int imageCount = countImages(doc);
+            log.info(
+                    "policy_pdf_extract rawChars={} pageCount={} imageCount={}",
+                    rawChars,
+                    pages,
+                    imageCount
+            );
+
+            assertNotScanned(rawChars, pages, imageCount);
+
+            // Repeated header/footer stripping only for multi-page docs (>= 3).
+            boolean stripChrome = pages >= 3;
+            Set<String> repeating = stripChrome ? findRepeatingKeys(models) : Set.of();
+            AssembleOutcome assembled = assemble(models, repeating, stripChrome);
+
+            String cleaned = PolicyTextChunker.stripControlChars(assembled.text()).trim();
+            String rawClean = PolicyTextChunker.stripControlChars(rawText).trim();
+            int rawLen = rawClean.length();
+            int cleanedLen = cleaned.length();
+            if (rawLen > 0 && cleanedLen < rawLen * 0.4) {
+                log.warn(
+                        "policy_pdf_strip_reverted rawChars={} cleanedChars={} removedPct={}",
+                        rawLen,
+                        cleanedLen,
+                        Math.round(100.0 * (1.0 - (cleanedLen / (double) rawLen)))
+                );
+                cleaned = rawClean;
+                // Tables from the stripped pass are still usable; prose came from raw.
+            }
+
+            if (cleaned.isBlank()) {
+                throw new PolicyDocumentException(
+                        "EMPTY_TEXT",
+                        "Document contained no extractable text"
+                );
+            }
+            return new Result(cleaned, pages, assembled.tables());
         } catch (InvalidPasswordException ex) {
             throw new PolicyDocumentException(
                     "ENCRYPTED_PDF",
                     "Encrypted PDFs are not supported — remove the password and re-upload"
             );
         }
+    }
+
+    /**
+     * Scanned decision uses RAW text before any header/footer stripping.
+     * Scanned only when short-text criteria hold AND the PDF contains images.
+     * A one-page document is never marked scanned solely because its text is short.
+     */
+    private static void assertNotScanned(int rawChars, int pages, int imageCount) {
+        boolean shortTotal = rawChars < 50;
+        boolean shortMultiPage = pages >= 2 && (rawChars / (double) pages) < 20.0;
+        boolean shortEnough = shortTotal || shortMultiPage;
+        if (!shortEnough || imageCount <= 0) {
+            return;
+        }
+        // One-page + short text without the multi-page average rule: still require images
+        // (already true here). Explicitly documented: never mark 1-page scanned for short
+        // text alone — that path returns early when imageCount == 0 above.
+        throw new PolicyDocumentException(
+                "SCANNED_PDF",
+                "scanned/image PDF — OCR not enabled"
+        );
+    }
+
+    private static String joinRawText(List<PageModel> models) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < models.size(); i++) {
+            if (i > 0) {
+                sb.append('\f');
+            }
+            PageModel page = models.get(i);
+            for (int li = 0; li < page.readingLines.size(); li++) {
+                if (li > 0) {
+                    sb.append('\n');
+                }
+                sb.append(page.readingLines.get(li));
+            }
+        }
+        return sb.toString();
+    }
+
+    private static int countImages(PDDocument doc) throws IOException {
+        int total = 0;
+        for (PDPage page : doc.getPages()) {
+            total += countImagesInResources(page.getResources(), new HashSet<>());
+        }
+        return total;
+    }
+
+    private static int countImagesInResources(PDResources resources, Set<PDResources> seen)
+            throws IOException {
+        if (resources == null || !seen.add(resources)) {
+            return 0;
+        }
+        int n = 0;
+        for (var name : resources.getXObjectNames()) {
+            PDXObject xo = resources.getXObject(name);
+            if (xo instanceof PDImageXObject) {
+                n++;
+            } else if (xo instanceof PDFormXObject form) {
+                n += countImagesInResources(form.getResources(), seen);
+            }
+        }
+        return n;
     }
 
     private static PageModel buildPage(PDDocument doc, int pageNo) throws IOException {
@@ -102,8 +209,12 @@ final class PdfLayoutExtractor {
         return new PageModel(pageNo, pageHeight, readingLines, posLines);
     }
 
+    /**
+     * Keys that appear on ≥50% of pages. Only called when page count ≥ 3.
+     * A line that appears on a single page is never treated as repeating.
+     */
     private static Set<String> findRepeatingKeys(List<PageModel> pages) {
-        if (pages.isEmpty()) {
+        if (pages.size() < 3) {
             return Set.of();
         }
         Map<String, Set<Integer>> pagesByKey = new HashMap<>();
@@ -117,7 +228,7 @@ final class PdfLayoutExtractor {
                 pagesByKey.computeIfAbsent(key, k -> new HashSet<>()).add(page.pageNo);
             }
         }
-        int threshold = Math.max(1, (int) Math.ceil(pages.size() * 0.5));
+        int threshold = Math.max(2, (int) Math.ceil(pages.size() * 0.5));
         Set<String> repeating = new HashSet<>();
         for (Map.Entry<String, Set<Integer>> e : pagesByKey.entrySet()) {
             if (e.getValue().size() >= threshold) {
@@ -127,7 +238,9 @@ final class PdfLayoutExtractor {
         return repeating;
     }
 
-    private static Result assemble(List<PageModel> pages, Set<String> repeating) {
+    private static AssembleOutcome assemble(
+            List<PageModel> pages, Set<String> repeating, boolean stripChrome
+    ) {
         StringBuilder prose = new StringBuilder();
         List<TableBlock> tables = new ArrayList<>();
         String lastHeading = "";
@@ -138,9 +251,11 @@ final class PdfLayoutExtractor {
             }
             PageModel page = pages.get(pi);
             Set<String> dropExact = new HashSet<>();
-            for (PosLine pl : page.posLines) {
-                if (pl.yNorm >= 1.0f - TOP_BAND || pl.yNorm <= BOTTOM_BAND) {
-                    dropExact.add(pl.text.strip());
+            if (stripChrome) {
+                for (PosLine pl : page.posLines) {
+                    if (pl.yNorm >= 1.0f - TOP_BAND || pl.yNorm <= BOTTOM_BAND) {
+                        dropExact.add(pl.text.strip());
+                    }
                 }
             }
 
@@ -169,11 +284,14 @@ final class PdfLayoutExtractor {
             boolean[] emitted = new boolean[tableGroups.size()];
             for (String line : page.readingLines) {
                 String stripped = line.strip();
-                if (stripped.isEmpty() || PAGE_LABEL.matcher(stripped).matches()) {
+                if (stripped.isEmpty()) {
+                    continue;
+                }
+                if (stripChrome && PAGE_LABEL.matcher(stripped).matches()) {
                     continue;
                 }
                 String key = normalizeKey(stripped);
-                if (repeating.contains(key) || dropExact.contains(stripped)) {
+                if (stripChrome && (repeating.contains(key) || dropExact.contains(stripped))) {
                     continue;
                 }
 
@@ -188,7 +306,6 @@ final class PdfLayoutExtractor {
                         ));
                         emitted[matchedGroup] = true;
                     } else if (matchedGroup < 0) {
-                        // Heuristic table row in reading order without position match — emit once.
                         for (int g = 0; g < tableGroups.size(); g++) {
                             if (!emitted[g] && groupMatchesLine(tableGroups.get(g), stripped)) {
                                 tables.add(new TableBlock(
@@ -226,14 +343,7 @@ final class PdfLayoutExtractor {
             }
         }
 
-        String text = PolicyTextChunker.stripControlChars(prose.toString()).trim();
-        if (text.isBlank() || text.replace('\f', ' ').isBlank()) {
-            throw new PolicyDocumentException(
-                    "SCANNED_PDF",
-                    "scanned/image PDF — OCR not enabled"
-            );
-        }
-        return new Result(text, pages.size(), tables);
+        return new AssembleOutcome(prose.toString(), tables);
     }
 
     private static int indexOfMatchingGroup(List<List<String>> groups, String stripped, String key) {
@@ -263,7 +373,6 @@ final class PdfLayoutExtractor {
         if (normalizeKey(first).equals(key)) {
             return true;
         }
-        // Gap-aware reading line may use double spaces instead of " | "
         String asGaps = first.replace(" | ", "  ");
         return stripped.equals(asGaps) || normalizeKey(asGaps).equals(key);
     }
@@ -290,6 +399,9 @@ final class PdfLayoutExtractor {
 
     private static String truncate(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    private record AssembleOutcome(String text, List<TableBlock> tables) {
     }
 
     private record PosLine(int pageNo, float yNorm, String text, List<String> cells) {

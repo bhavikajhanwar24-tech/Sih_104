@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiFetch, apiJson, ensureCsrf } from '@/services/api.js';
@@ -76,6 +76,7 @@ export function DirectoryPage() {
 
 function EmployeesTab({ canWrite, push }) {
   const [q, setQ] = useState('');
+  const [qDebounced, setQDebounced] = useState('');
   const [status, setStatus] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -90,14 +91,23 @@ function EmployeesTab({ canWrite, push }) {
     jobTitle: '',
   });
   const [departments, setDepartments] = useState([]);
+  const skipFirstSearchEffect = useRef(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => setQDebounced(q), 300);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
+  const load = useCallback(async (opts = {}) => {
+    const showSpinner = opts.showSpinner !== false;
+    const query = opts.q !== undefined ? opts.q : qDebounced;
+    const statusFilter = opts.status !== undefined ? opts.status : status;
+    if (showSpinner) setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ page: '0', size: '50' });
-      if (q) params.set('q', q);
-      if (status) params.set('status', status);
+      if (query) params.set('q', query);
+      if (statusFilter) params.set('status', statusFilter);
       const data = await apiJson(`/api/v2/directory/employees?${params}`);
       setItems(data.items || []);
       const deps = await apiJson('/api/v2/directory/departments');
@@ -106,13 +116,26 @@ function EmployeesTab({ canWrite, push }) {
       setError(err.message || 'Failed to load employees');
       push(err.message || 'Failed to load employees');
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
-  }, [q, status, push]);
+  }, [qDebounced, status, push]);
 
+  // Status / first paint — may show skeleton.
   useEffect(() => {
-    load();
-  }, [load]);
+    load({ showSpinner: true, q: qDebounced, status });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- status-driven only
+  }, [status]);
+
+  // Debounced search — silent so the input keeps focus while typing.
+  useEffect(() => {
+    if (skipFirstSearchEffect.current) {
+      skipFirstSearchEffect.current = false;
+      return undefined;
+    }
+    load({ showSpinner: false, q: qDebounced, status });
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- search debounce only
+  }, [qDebounced]);
 
   const columns = useMemo(
     () => [
@@ -171,7 +194,7 @@ function EmployeesTab({ canWrite, push }) {
             </option>
           ))}
         </Select>
-        <Button variant="ghost" onClick={load}>
+        <Button variant="ghost" onClick={() => load({ showSpinner: true })}>
           Refresh
         </Button>
         {canWrite ? (

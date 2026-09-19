@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "rules"],
+  "properties": {
+    "schemaVersion": { "const": "2" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ruleId", "title", "source", "appliesTo", "when", "then", "severity"],
+        "properties": {
+          "ruleId": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "source": {
+            "type": "object",
+            "required": ["quote"],
+            "properties": {
+              "clauseRef": { "type": "string" },
+              "quote": { "type": "string", "maxLength": 200 }
+            }
+          },
+          "appliesTo": { "type": "object" },
+          "when": { "type": "object" },
+          "then": { "type": "object" },
+          "severity": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          },
+          "keywords": { "type": "array" },
+          "policyFact": { "type": "string" }
+        }
+      }
+    }
+  }
+}

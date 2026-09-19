@@ -141,6 +141,8 @@ sentinelvoice:
     connect-timeout-ms: 2000
     # policy_compile budget is 90s; leave headroom for gateway + repair retry
     read-timeout-ms: 120000
+  policy-compile:
+    max-documents-per-compile: 5
   challenge:
     human-latency-ms: 1800
     suspicious-latency-ms: 3500
@@ -197,21 +199,6 @@ sentinelvoice:
       matching-campaign-boost: 0.35
       indicator-match-boost: 0.15
       multi-channel-boost: 0.10
-    transaction:
-      # Policy breach is deterministic ΓÇö near 1.0, not a soft suspicion.
-      policy-violation-score: 0.98
-      weight-channel-denied: 0.25
-      weight-beneficiary-novel: 0.20
-      weight-velocity: 0.15
-      # Multiplicative urgency├ùamount term (see TransactionPolicyService).
-      weight-urgency-amount-product: 0.40
-      high-value-threshold-inr: 100000
-      large-amount-threshold-inr: 5000000
-      velocity-high-value-limit: 3
-      known-beneficiary-hints:
-        - "vendor account ending 8821"
-        - "payroll suspense 1001"
-        - "rbi settlement pool"
   actuation:
     # noop | webrtc | asterisk — lab default noop; use asterisk for live SIP hold/whisper.
     adapter: asterisk

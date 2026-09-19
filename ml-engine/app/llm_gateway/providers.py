@@ -45,6 +45,70 @@ class MockProvider(LlmProvider):
         json_schema: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         schema = json_schema or self._schema
+        # F6 offline demo: plausible policy_compile rule set
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        if isinstance(props, dict) and "rules" in props:
+            payload = {
+                "schemaVersion": "2",
+                "rules": [
+                    {
+                        "ruleId": "R-wire-unknown-beneficiary",
+                        "title": "High-value wire to unknown beneficiary",
+                        "description": "Require step-up when wiring large amounts to unknown payees.",
+                        "source": {
+                            "clauseRef": "5.2",
+                            "quote": "must not process wire transfers above INR 1000000 to unknown beneficiaries",
+                        },
+                        "appliesTo": {
+                            "actionTypes": ["WIRE_TRANSFER"],
+                            "callerRoles": ["*"],
+                        },
+                        "when": {
+                            "all": [
+                                {"fact": "ask.type", "op": "EQ", "value": "WIRE_TRANSFER"},
+                                {"fact": "ask.amountInr", "op": "GT", "value": 1000000},
+                                {"fact": "ask.beneficiaryKnown", "op": "EQ", "value": False},
+                            ]
+                        },
+                        "then": {
+                            "minLevel": 3,
+                            "scoreBoost": 0.4,
+                            "reasonCode": "POLICY_WIRE_UNKNOWN_BENEFICIARY",
+                            "advice": "Escalate — unknown beneficiary above INR 10L",
+                        },
+                        "severity": "HIGH",
+                        "keywords": [
+                            {"term": "wire transfer", "lang": "en", "category": "PAYMENT", "weight": 1.0},
+                            {"term": "unknown beneficiary", "lang": "en", "category": "PAYMENT", "weight": 0.9},
+                        ],
+                        "policyFact": "Wires above INR 10,00,000 to unknown beneficiaries need Level 3 verification.",
+                    },
+                    {
+                        "ruleId": "R-no-otp-over-phone",
+                        "title": "No OTP or PIN over the phone",
+                        "description": "Credential sharing on voice is prohibited.",
+                        "source": {
+                            "clauseRef": "6.1",
+                            "quote": "Requests for OTP or PIN over the phone are prohibited",
+                        },
+                        "appliesTo": {"actionTypes": ["*"], "callerRoles": ["*"]},
+                        "when": {"fact": "ask.sharesCredential", "op": "EQ", "value": True},
+                        "then": {
+                            "minLevel": 3,
+                            "scoreBoost": 0.6,
+                            "reasonCode": "POLICY_CREDENTIAL_SOLICITATION",
+                            "advice": "Hold call — credential solicitation",
+                        },
+                        "severity": "CRITICAL",
+                        "keywords": [
+                            {"term": "OTP", "lang": "en", "category": "CREDENTIAL", "weight": 1.0},
+                            {"term": "PIN", "lang": "en", "category": "CREDENTIAL", "weight": 1.0},
+                        ],
+                        "policyFact": "Never share OTP/PIN on a voice call.",
+                    },
+                ],
+            }
+            return json.dumps(payload), {"prompt_tokens": 0, "completion_tokens": 0}
         payload = _minimal_from_schema(schema)
         return json.dumps(payload), {"prompt_tokens": 0, "completion_tokens": 0}
 

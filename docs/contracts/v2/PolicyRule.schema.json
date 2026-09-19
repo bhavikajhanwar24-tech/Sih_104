@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/PolicyRule.schema.json",
+  "title": "PolicyRule",
+  "description": "F6 tenant policy rule DSL — closed condition grammar, catalogue facts only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "tenantId",
+    "ruleId",
+    "title",
+    "source",
+    "appliesTo",
+    "when",
+    "then",
+    "severity",
+    "status",
+    "origin"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "common.defs.json#/$defs/SchemaVersion" },
+    "tenantId": { "$ref": "common.defs.json#/$defs/TenantId" },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^R-[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Stable within a policy set"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentId", "chunkIds", "quote"],
+      "properties": {
+        "documentId": { "type": "string", "format": "uuid" },
+        "chunkIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "clauseRef": { "type": "string", "maxLength": 64 },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Verbatim excerpt from the cited chunk"
+        },
+        "sourceDeleted": { "type": "boolean" }
+      }
+    },
+    "appliesTo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionTypes"],
+      "properties": {
+        "actionTypes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "callerRoles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "departments": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "when": { "$ref": "#/$defs/Condition" },
+    "then": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minLevel", "scoreBoost", "reasonCode"],
+      "properties": {
+        "minLevel": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "scoreBoost": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^POLICY_[A-Z0-9_]+$"
+        },
+        "advice": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PROPOSED", "ACCEPTED", "EDITED", "REJECTED"]
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["LLM", "LLM_MOCK", "MANUAL"]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "NEEDS_REVIEW",
+              "VALUE_NOT_IN_SOURCE",
+              "REJECTED_VALUE_NOT_IN_SOURCE",
+              "HALLUCINATED_QUOTE",
+              "UNKNOWN_FACT",
+              "INJECTION_FLAG",
+              "LEVEL_ADJUSTED",
+              "INVALID_VALUE",
+              "MISSING_CLAUSE_REF",
+              "NON_DISCRIMINATING",
+              "UNGBOUNDED_CLAUSE",
+              "EMPTY_WHEN",
+              "INVALID_LEVEL"
+            ]
+          },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["all"],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Condition" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["any"],
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Condition" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["not"],
+          "properties": {
+            "not": { "$ref": "#/$defs/Condition" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fact", "op"],
+          "properties": {
+            "fact": { "type": "string", "minLength": 1 },
+            "op": {
+              "type": "string",
+              "enum": [
+                "EQ",
+                "NE",
+                "GT",
+                "GTE",
+                "LT",
+                "LTE",
+                "IN",
+                "NOT_IN",
+                "CONTAINS",
+                "EXISTS"
+              ]
+            },
+            "value": true
+          }
+        }
+      ]
+    }
+  }
+}

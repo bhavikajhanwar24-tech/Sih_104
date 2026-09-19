@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "2",
+  "facts": [
+    { "path": "caller.claimedRole", "type": "string", "description": "Role the caller claims verbally" },
+    { "path": "caller.matchedRole", "type": "string", "description": "Directory-matched role if any" },
+    {
+      "path": "caller.matchType",
+      "type": "string",
+      "enum": ["EXACT", "FUZZY", "NONE", "PARTIAL"],
+      "description": "Directory match type"
+    },
+    {
+      "path": "caller.status",
+      "type": "string",
+      "enum": ["ACTIVE", "INACTIVE", "SUSPENDED", "TERMINATED", "UNKNOWN"],
+      "description": "Directory employment status"
+    },
+    {
+      "path": "caller.numberProvenance",
+      "type": "string",
+      "enum": ["DIRECTORY", "CLAIMED", "UNKNOWN", "SPOOFED"],
+      "description": "How the calling number was attributed"
+    },
+    { "path": "caller.authorityLimitInr", "type": "number", "description": "Verbal authority limit INR for the action type" },
+    { "path": "caller.isHighAuthority", "type": "boolean", "description": "Caller is in a high-authority role" },
+    { "path": "callee.role", "type": "string", "description": "Role of the agent/callee side" },
+    { "path": "relationship.isFirstContact", "type": "boolean", "description": "No prior contact between parties" },
+    { "path": "relationship.daysSinceLastContact", "type": "number", "description": "Days since last verified contact" },
+    {
+      "path": "ask.type",
+      "type": "string",
+      "enum": [
+        "WIRE_TRANSFER",
+        "PASSWORD_RESET",
+        "ACCOUNT_LOOKUP",
+        "BENEFICIARY_CHANGE",
+        "OTP_SHARE",
+        "PIN_SHARE",
+        "CALLBACK",
+        "INFORMATION",
+        "OTHER"
+      ],
+      "description": "Ask / action type"
+    },
+    { "path": "ask.amountInr", "type": "number", "description": "Requested amount in INR" },
+    { "path": "ask.beneficiaryKnown", "type": "boolean", "description": "Beneficiary appears in known list" },
+    { "path": "ask.beneficiaryVerified", "type": "boolean", "description": "Beneficiary passed verification" },
+    {
+      "path": "ask.channelRequestedForConfirmation",
+      "type": "string",
+      "enum": ["VOICE", "SMS", "EMAIL", "APP", "IN_PERSON", "OTHER"],
+      "description": "Channel requested for confirmation"
+    },
+    { "path": "ask.secrecyRequested", "type": "boolean", "description": "Caller asked for secrecy / do-not-tell" },
+    { "path": "ask.urgencyLevel", "type": "number", "description": "Urgency score 0..1 or discrete level" },
+    { "path": "ask.authorityClaimed", "type": "boolean", "description": "Caller claimed superior authority" },
+    { "path": "ask.sharesCredential", "type": "boolean", "description": "OTP/PIN/password being solicited or shared" },
+    { "path": "time.hourLocal", "type": "number", "description": "Local hour 0..23" },
+    { "path": "time.isBusinessHours", "type": "boolean", "description": "Within configured business hours" },
+    { "path": "voice.syntheticScore", "type": "number", "description": "Synthetic voice score 0..1" },
+    { "path": "voice.speakerMismatch", "type": "boolean", "description": "Speaker embedding mismatch vs enrolled" },
+    { "path": "session.durationSec", "type": "number", "description": "Call duration in seconds" }
+  ]
+}

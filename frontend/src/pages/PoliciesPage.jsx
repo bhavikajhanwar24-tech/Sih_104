@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiFetch, apiJson } from '@/services/api.js';
@@ -9,6 +9,10 @@ import { useToast } from '@/ui/Toast.jsx';
 const DOC_TABS = [
   { id: 'documents', label: 'Documents' },
   { id: 'archived', label: 'Archived' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'keywords', label: 'Keywords' },
+  { id: 'versions', label: 'Versions' },
+  { id: 'approvals', label: 'Approvals' },
 ];
 
 const STATUS_TONE = {
@@ -42,12 +46,13 @@ function formatDate(iso) {
 }
 
 /**
- * F5 — Policy document upload / extract / archive / permanent delete.
+ * F5 documents + F6 rules / versions / approvals.
  */
 export function PoliciesPage() {
   const { hasPermission } = useAuth();
   const { push } = useToast();
-  const [tab, setTab] = useState('documents');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'documents';
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -57,30 +62,62 @@ export function PoliciesPage() {
   const [chunksLoading, setChunksLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [sets, setSets] = useState([]);
+  const [compilations, setCompilations] = useState([]);
+  const [compileBusy, setCompileBusy] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState([]);
+  const [maxDocs, setMaxDocs] = useState(5);
   const fileRef = useRef(null);
   const pollRef = useRef(null);
 
   const canWrite = hasPermission('policies:write');
+  const canApprove = hasPermission('policies:approve');
   const canDownload = hasPermission('policies:write') || hasPermission('audit:read');
   const archivedTab = tab === 'archived';
+  const docsTab = tab === 'documents' || tab === 'archived';
+
+  const setTab = (id) => {
+    setSearchParams(id === 'documents' ? {} : { tab: id });
+  };
 
   const load = useCallback(async () => {
     try {
-      const q = archivedTab ? 'archived=true' : 'includeArchived=false';
-      const data = await apiJson(`/api/v2/policies/documents?${q}`);
-      setItems(data.items || []);
+      if (docsTab) {
+        const q = archivedTab ? 'archived=true' : 'includeArchived=false';
+        const data = await apiJson(`/api/v2/policies/documents?${q}`);
+        setItems(data.items || []);
+      }
+      if (docsTab && !archivedTab) {
+        const limits = await apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true }).catch(
+          () => ({ maxDocumentsPerCompile: 5 }),
+        );
+        if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
+      }
+      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords') {
+        const [s, c, limits] = await Promise.all([
+          apiJson('/api/v2/policy/sets', { skipErrorToast: true }).catch(() => ({ items: [] })),
+          apiJson('/api/v2/policy/compilations', { skipErrorToast: true }).catch(() => ({ items: [] })),
+          apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true }).catch(() => ({
+            maxDocumentsPerCompile: 5,
+          })),
+        ]);
+        setSets(s.items || []);
+        setCompilations(c.items || []);
+        if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
+      }
     } catch (err) {
-      push(err.message || 'Failed to load documents');
+      push(err.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [push, archivedTab]);
+  }, [push, archivedTab, docsTab, tab]);
 
   useEffect(() => {
     if (!hasPermission('policies:read')) return undefined;
     setLoading(true);
     load();
     pollRef.current = setInterval(() => {
+      // Silent refresh — never flip loading or remount tab inputs mid-typing.
       load();
     }, 4000);
     return () => {
@@ -209,6 +246,73 @@ export function PoliciesPage() {
     }
   }
 
+  async function startCompile(mode) {
+    if (!canWrite || selectedDocs.length === 0) return;
+    setCompileBusy(true);
+    try {
+      const result = await apiJson('/api/v2/policy/compilations', {
+        method: 'POST',
+        body: JSON.stringify({ documentIds: selectedDocs, mode }),
+      });
+      push(`Compilation ${result.id || ''} started`);
+      setTab('rules');
+      await load();
+    } catch (err) {
+      push(err.message || 'Compile failed');
+    } finally {
+      setCompileBusy(false);
+    }
+  }
+
+  async function resumeCompile(id) {
+    if (!canWrite) return;
+    try {
+      await apiJson(`/api/v2/policy/compilations/${id}/resume`, { method: 'POST' });
+      push('Compilation resumed');
+      await load();
+    } catch (err) {
+      push(err.message || 'Resume failed');
+    }
+  }
+
+  async function rerunFailedCompile(id) {
+    if (!canWrite) return;
+    try {
+      await apiJson(`/api/v2/policy/compilations/${id}/rerun-failed`, { method: 'POST' });
+      push('Re-running failed chunks');
+      await load();
+    } catch (err) {
+      push(err.message || 'Re-run failed');
+    }
+  }
+
+  async function cancelCompile(id) {
+    if (!canWrite) return;
+    try {
+      await apiJson(`/api/v2/policy/compilations/${id}/cancel`, { method: 'POST' });
+      push('Compilation cancelled');
+      await load();
+    } catch (err) {
+      push(err.message || 'Cancel failed');
+    }
+  }
+
+  async function deleteDraft(id) {
+    if (!canWrite) return;
+    try {
+      await apiJson(`/api/v2/policy/sets/${id}`, { method: 'DELETE' });
+      push('Draft deleted');
+      await load();
+    } catch (err) {
+      push(err.message || 'Delete failed');
+    }
+  }
+
+  const readyDocs = useMemo(
+    () => items.filter((d) => d.status === 'EXTRACTED'),
+    [items],
+  );
+
   const columns = useMemo(
     () => [
       {
@@ -233,11 +337,18 @@ export function PoliciesPage() {
         key: 'status',
         header: 'Status',
         render: (row) => (
-          <span className="inline-flex flex-wrap items-center gap-1">
-            <Badge tone={STATUS_TONE[row.status] || 'neutral'}>
-              {STATUS_LABEL[row.status] || row.status}
-            </Badge>
-            {row.hasInjectionFlags ? <Badge tone="warn">injection</Badge> : null}
+          <span className="inline-flex flex-col gap-1">
+            <span className="inline-flex flex-wrap items-center gap-1">
+              <Badge tone={STATUS_TONE[row.status] || 'neutral'}>
+                {STATUS_LABEL[row.status] || row.status}
+              </Badge>
+              {row.hasInjectionFlags ? <Badge tone="warn">injection</Badge> : null}
+            </span>
+            {row.status === 'FAILED' && row.extractionError ? (
+              <span className="max-w-xs text-xs text-risk-critical" title={row.extractionError}>
+                {row.extractionError}
+              </span>
+            ) : null}
           </span>
         ),
       },
@@ -255,7 +366,7 @@ export function PoliciesPage() {
         key: 'actions',
         header: 'Actions',
         render: (row) => (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex max-w-[28rem] flex-wrap gap-1">
             <Button className="px-2 py-1 text-xs" variant="ghost" onClick={() => openChunks(row)}>
               View text
             </Button>
@@ -281,7 +392,7 @@ export function PoliciesPage() {
                   }
                 }}
               >
-                {row.status === 'EXTRACTED' ? 'Re-extract' : 'Retry extract'}
+                {row.status === 'EXTRACTED' || row.status === 'FAILED' ? 'Re-extract' : 'Retry extract'}
               </Button>
             )}
             {!archivedTab && canWrite && (
@@ -312,84 +423,174 @@ export function PoliciesPage() {
     [canWrite, canDownload, archivedTab],
   );
 
-  const flagged = !archivedTab ? items.filter((d) => d.hasInjectionFlags) : [];
+  const flagged = !archivedTab && docsTab ? items.filter((d) => d.hasInjectionFlags) : [];
+  const pendingSets = sets.filter((s) => s.status === 'PENDING_APPROVAL');
+  const draftSets = sets.filter((s) => s.status === 'DRAFT');
+  const shownCompiles = compilations
+    .filter((c) =>
+      ['QUEUED', 'RUNNING', 'FAILED', 'COMPLETED_NO_RULES', 'COMPLETED'].includes(c.status),
+    )
+    .slice(0, 12);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-full flex-col gap-4 overflow-x-hidden p-6">
       <div>
         <h1 className="text-xl font-semibold text-sv-fg">Policies</h1>
         <p className="mt-1 text-sm text-sv-muted">
-          Upload tenant policy documents for extraction and later compile (F6). Use the Archived
-          tab to restore or permanently delete.
+          Documents, LLM-assisted rule compile, human review, and versioned approval.
         </p>
       </div>
 
       <Tabs tabs={DOC_TABS} value={tab} onChange={setTab} />
 
-      {flagged.length > 0 && (
-        <div
-          role="alert"
-          className="rounded border border-risk-watch/40 bg-risk-watch/10 px-4 py-3 text-sm text-sv-fg"
-        >
-          <strong className="font-medium">Prompt-injection phrases flagged</strong>
-          {' — '}
-          {flagged.length === 1
-            ? '1 document contains'
-            : `${flagged.length} documents contain`}{' '}
-          phrases that look like prompt-injection. Chunks will be treated as untrusted data in F6;
-          content was not deleted.
-        </div>
-      )}
+      {docsTab ? (
+        <>
+          {flagged.length > 0 && (
+            <div
+              role="alert"
+              className="rounded border border-risk-watch/40 bg-risk-watch/10 px-4 py-3 text-sm text-sv-fg"
+            >
+              <strong className="font-medium">Prompt-injection phrases flagged</strong>
+              {' — '}
+              {flagged.length === 1
+                ? '1 document contains'
+                : `${flagged.length} documents contain`}{' '}
+              phrases that look like prompt-injection. Chunks will be treated as untrusted data;
+              content was not deleted.
+            </div>
+          )}
 
-      {canWrite && !archivedTab && (
-        <div
-          className={`rounded border border-dashed px-6 py-10 text-center transition ${
-            dragOver ? 'border-sv-accent bg-sv-accent/5' : 'border-sv-border bg-sv-elevated/40'
-          }`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragOver(false);
-            const f = e.dataTransfer.files?.[0];
-            if (f) uploadFile(f);
-          }}
-        >
-          <p className="text-sm text-sv-fg">Drag and drop PDF, DOCX, TXT, or MD (max 15 MB)</p>
-          <p className="mt-1 text-xs text-sv-muted">
-            Type is verified by content sniffing, not extension alone.
-          </p>
-          <div className="mt-4">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,.docx,.txt,.md,application/pdf,text/plain,text/markdown"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadFile(f);
-                e.target.value = '';
+          {canWrite && !archivedTab && (
+            <div
+              className={`rounded border border-dashed px-6 py-10 text-center transition ${
+                dragOver ? 'border-sv-accent bg-sv-accent/5' : 'border-sv-border bg-sv-elevated/40'
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
               }}
-            />
-            <Button disabled={uploading} onClick={() => fileRef.current?.click()}>
-              {uploading ? 'Uploading…' : 'Choose file'}
-            </Button>
-          </div>
-        </div>
-      )}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) uploadFile(f);
+              }}
+            >
+              <p className="text-sm text-sv-fg">Drag and drop PDF, DOCX, TXT, or MD (max 15 MB)</p>
+              <p className="mt-1 text-xs text-sv-muted">
+                Type is verified by content sniffing, not extension alone.
+              </p>
+              <div className="mt-4">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md,application/pdf,text/plain,text/markdown"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadFile(f);
+                    e.target.value = '';
+                  }}
+                />
+                <Button disabled={uploading} onClick={() => fileRef.current?.click()}>
+                  {uploading ? 'Uploading…' : 'Choose file'}
+                </Button>
+              </div>
+            </div>
+          )}
 
-      {loading ? (
-        <p className="text-sm text-sv-muted">Loading documents…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-sv-muted">
-          {archivedTab ? 'No archived documents.' : 'No policy documents yet.'}
-        </p>
-      ) : (
-        <Table columns={columns} rows={items} />
-      )}
+          {canWrite && !archivedTab && readyDocs.length > 0 ? (
+            <div className="rounded border border-sv-border bg-sv-elevated/40 p-4">
+              <p className="text-sm font-medium text-sv-fg">Compile rules</p>
+              <p className="mt-1 text-xs text-sv-muted">
+                Select up to {maxDocs} extracted documents, then run FULL or INCREMENTAL compile
+                (TENANT_ADMIN).
+              </p>
+              <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">
+                {readyDocs.map((d) => (
+                  <li key={d.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.includes(d.id)}
+                      disabled={
+                        !selectedDocs.includes(d.id) && selectedDocs.length >= maxDocs
+                      }
+                      onChange={(e) => {
+                        setSelectedDocs((prev) => {
+                          if (e.target.checked) {
+                            if (prev.length >= maxDocs) return prev;
+                            return [...prev, d.id];
+                          }
+                          return prev.filter((id) => id !== d.id);
+                        });
+                      }}
+                    />
+                    <span>{d.title}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  disabled={compileBusy || selectedDocs.length === 0}
+                  onClick={() => startCompile('FULL')}
+                >
+                  {compileBusy ? 'Starting…' : 'Compile (FULL)'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={compileBusy || selectedDocs.length === 0}
+                  onClick={() => startCompile('INCREMENTAL')}
+                >
+                  Incremental
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {loading ? (
+            <p className="text-sm text-sv-muted">Loading documents…</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-sv-muted">
+              {archivedTab ? 'No archived documents.' : 'No policy documents yet.'}
+            </p>
+          ) : (
+            <Table columns={columns} rows={items} />
+          )}
+        </>
+      ) : null}
+
+      {tab === 'rules' ? (
+        <RulesTab
+          loading={loading}
+          draftSets={draftSets}
+          sets={sets}
+          compilations={shownCompiles}
+          canWrite={canWrite}
+          onResume={resumeCompile}
+          onRerunFailed={rerunFailedCompile}
+          onCancel={cancelCompile}
+          onDeleteDraft={deleteDraft}
+          onRefresh={load}
+        />
+      ) : null}
+
+      {tab === 'keywords' ? (
+        <KeywordsTab loading={loading} sets={sets} canWrite={canWrite} onRefresh={load} />
+      ) : null}
+
+      {tab === 'versions' ? (
+        <VersionsTab loading={loading} sets={sets} canWrite={canWrite} onRefresh={load} />
+      ) : null}
+
+      {tab === 'approvals' ? (
+        <ApprovalsTab
+          loading={loading}
+          pending={pendingSets}
+          canApprove={canApprove}
+          onRefresh={load}
+        />
+      ) : null}
 
       <ChunkViewerModal
         open={Boolean(viewer)}
@@ -414,6 +615,607 @@ export function PoliciesPage() {
     </div>
   );
 }
+
+function compileStatusTone(status) {
+  if (status === 'FAILED') return 'danger';
+  if (status === 'COMPLETED_NO_RULES') return 'warn';
+  if (status === 'COMPLETED') return 'success';
+  return 'accent';
+}
+
+function diagnosticSummary(c) {
+  return (
+    c?.diagnostics?.summary ||
+    c?.progress?.summary ||
+    null
+  );
+}
+
+function progressCounts(progress) {
+  if (!progress || typeof progress !== 'object') return null;
+  return {
+    chunks: progress.chunksProcessed ?? progress.chunksDone ?? '—',
+    proposed: progress.rulesProposed ?? '—',
+    hallucinated:
+      progress.rulesHallucinated ??
+      progress.rulesRejectedHallucinated ??
+      progress.rejectedHallucinated ??
+      '—',
+    total: progress.chunksTotal ?? '—',
+  };
+}
+
+function RulesTab({
+  loading,
+  draftSets,
+  sets,
+  compilations,
+  canWrite,
+  onResume,
+  onRerunFailed,
+  onCancel,
+  onDeleteDraft,
+  onRefresh,
+}) {
+  const { push } = useToast();
+  if (loading && draftSets.length === 0 && sets.length === 0 && compilations.length === 0) {
+    return <p className="text-sm text-sv-muted">Loading…</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {compilations.length > 0 ? (
+        <div className="rounded border border-sv-border p-4">
+          <p className="text-sm font-medium text-sv-fg">Compilation progress</p>
+          <ul className="mt-2 space-y-3 text-sm">
+            {compilations.map((c) => {
+              const p = progressCounts(c.progress);
+              const summary = diagnosticSummary(c);
+              const hasFailed =
+                c.diagnostics?.hasFailedChunks ||
+                c.status === 'FAILED' ||
+                c.status === 'COMPLETED_NO_RULES';
+              return (
+                <li key={c.id} className="space-y-1 rounded border border-sv-border/60 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      <Badge tone={compileStatusTone(c.status)}>{c.status}</Badge>{' '}
+                      {c.mode} · chunks {p?.chunks}/{p?.total} · proposed {p?.proposed} ·
+                      hallucinated {p?.hallucinated}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {canWrite && (c.status === 'QUEUED' || c.status === 'RUNNING') ? (
+                        <Button
+                          className="px-2 py-1 text-xs"
+                          variant="ghost"
+                          onClick={() => onCancel(c.id)}
+                        >
+                          Cancel
+                        </Button>
+                      ) : null}
+                      {canWrite && c.status === 'FAILED' ? (
+                        <Button className="px-2 py-1 text-xs" onClick={() => onResume(c.id)}>
+                          Resume
+                        </Button>
+                      ) : null}
+                      {canWrite && hasFailed ? (
+                        <Button
+                          className="px-2 py-1 text-xs"
+                          variant="ghost"
+                          onClick={() => onRerunFailed(c.id)}
+                        >
+                          Re-run failed
+                        </Button>
+                      ) : null}
+                      {c.policySetId ? (
+                        <Link
+                          className="text-xs text-sv-accent underline"
+                          to={`/app/policies/review?set=${c.policySetId}`}
+                        >
+                          Open draft
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+                  {summary ? (
+                    <p className="text-xs text-sv-muted">{summary}</p>
+                  ) : null}
+                  {c.status === 'COMPLETED_NO_RULES' && c.error ? (
+                    <p className="text-xs text-risk-watch">{c.error}</p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-sv-fg">Draft policy sets</p>
+        {draftSets.length === 0 ? (
+          <p className="text-sm text-sv-muted">
+            No drafts. Compile from the Documents tab, or open an existing set below.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {draftSets.map((s) => (
+              <li
+                key={s.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-sv-border px-3 py-2"
+              >
+                <span className="text-sm">
+                  {s.name || 'Policy set'} · v{s.version}{' '}
+                  <Badge tone="accent">{s.status}</Badge>
+                </span>
+                <div className="flex gap-2">
+                  <Link to={`/app/policies/review?set=${s.id}`}>
+                    <Button className="px-2 py-1 text-xs">Review workspace</Button>
+                  </Link>
+                  {canWrite ? (
+                    <Button
+                      className="px-2 py-1 text-xs"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await apiJson(`/api/v2/policy/sets/${s.id}/submit`, { method: 'POST' });
+                          push('Submitted for approval');
+                          onRefresh();
+                        } catch (err) {
+                          push(err.message || 'Submit failed');
+                        }
+                      }}
+                    >
+                      Submit
+                    </Button>
+                  ) : null}
+                  {canWrite ? (
+                    <Button
+                      className="px-2 py-1 text-xs"
+                      variant="danger"
+                      onClick={() => onDeleteDraft(s.id)}
+                    >
+                      Delete draft
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-sv-fg">All sets</p>
+        {sets.length === 0 ? (
+          <p className="text-sm text-sv-muted">No policy sets yet.</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {sets.map((s) => (
+              <li key={s.id} className="flex justify-between gap-2">
+                <span>
+                  v{s.version} · {s.status}
+                  {s.contentSha256 ? (
+                    <span className="ml-2 font-mono text-xs text-sv-muted">
+                      {String(s.contentSha256).slice(0, 12)}…
+                    </span>
+                  ) : null}
+                </span>
+                <Link className="text-sv-accent underline" to={`/app/policies/review?set=${s.id}`}>
+                  Open
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+RulesTab.propTypes = {
+  loading: PropTypes.bool,
+  draftSets: PropTypes.array,
+  sets: PropTypes.array,
+  compilations: PropTypes.array,
+  canWrite: PropTypes.bool,
+  onResume: PropTypes.func,
+  onRerunFailed: PropTypes.func,
+  onCancel: PropTypes.func,
+  onDeleteDraft: PropTypes.func,
+  onRefresh: PropTypes.func,
+};
+
+const KEYWORD_CATEGORIES = ['URGENCY', 'SECRECY', 'AUTHORITY', 'PAYMENT', 'CREDENTIAL', 'CUSTOM'];
+
+function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
+  const { push } = useToast();
+  const [setId, setSetId] = useState('');
+  const [keywords, setKeywords] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [term, setTerm] = useState('');
+  const [category, setCategory] = useState('CUSTOM');
+
+  useEffect(() => {
+    if (!sets.length) return;
+    const preferred =
+      sets.find((s) => s.status === 'ACTIVE') ||
+      sets.find((s) => s.status === 'DRAFT') ||
+      sets[0];
+    setSetId((prev) => prev || preferred.id);
+  }, [sets]);
+
+  useEffect(() => {
+    if (!setId) {
+      setKeywords([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await apiJson(`/api/v2/policy/sets/${setId}`, { skipErrorToast: true });
+        if (!cancelled) setKeywords(s.keywords || []);
+      } catch {
+        if (!cancelled) setKeywords([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setId]);
+
+  // Keep form mounted once we have sets — parent poll must not blank the term input.
+  if (loading && sets.length === 0) return <p className="text-sm text-sv-muted">Loading…</p>;
+  if (sets.length === 0) {
+    return <p className="text-sm text-sv-muted">No policy sets yet — compile a document first.</p>;
+  }
+
+  const byCategory = KEYWORD_CATEGORIES.map((cat) => ({
+    category: cat,
+    items: keywords.filter((k) => k.category === cat),
+  })).filter((g) => g.items.length > 0 || canWrite);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-sm text-sv-muted">Policy set</label>
+        <select
+          className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sm"
+          value={setId}
+          onChange={(e) => setSetId(e.target.value)}
+        >
+          {sets.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name || 'Set'} · v{s.version} ({s.status})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {byCategory.map((g) => (
+        <div key={g.category} className="rounded border border-sv-border p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sv-muted">{g.category}</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {g.items.length === 0 ? (
+              <li className="text-xs text-sv-muted">No terms</li>
+            ) : (
+              g.items.map((k) => (
+                <li key={k.id} className="flex justify-between gap-2">
+                  <span>
+                    {k.term}{' '}
+                    <span className="text-xs text-sv-muted">({k.lang || 'en'})</span>
+                  </span>
+                  {canWrite ? (
+                    <button
+                      type="button"
+                      className="text-xs text-risk-critical"
+                      onClick={async () => {
+                        try {
+                          await apiJson(`/api/v2/policy/keywords/${k.id}`, { method: 'DELETE' });
+                          setKeywords((prev) => prev.filter((x) => x.id !== k.id));
+                          onRefresh();
+                        } catch (err) {
+                          push(err.message || 'Delete failed');
+                        }
+                      }}
+                    >
+                      remove
+                    </button>
+                  ) : null}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ))}
+
+      {canWrite ? (
+        <div className="flex flex-wrap gap-2 rounded border border-dashed border-sv-border p-3">
+          <input
+            className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sm"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="New term"
+          />
+          <select
+            className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sm"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {KEYWORD_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <Button
+            className="px-2 py-1 text-xs"
+            disabled={busy || !term.trim() || !setId}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await apiJson(`/api/v2/policy/sets/${setId}/keywords`, {
+                  method: 'POST',
+                  body: JSON.stringify({ term: term.trim(), category, lang: 'en' }),
+                });
+                setTerm('');
+                const s = await apiJson(`/api/v2/policy/sets/${setId}`);
+                setKeywords(s.keywords || []);
+                onRefresh();
+              } catch (err) {
+                push(err.message || 'Add failed');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Add keyword
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+KeywordsTab.propTypes = {
+  loading: PropTypes.bool,
+  sets: PropTypes.array,
+  canWrite: PropTypes.bool,
+  onRefresh: PropTypes.func,
+};
+
+function VersionsTab({ loading, sets, canWrite, onRefresh }) {
+  const { push } = useToast();
+  const [left, setLeft] = useState('');
+  const [right, setRight] = useState('');
+  const [diff, setDiff] = useState(null);
+
+  useEffect(() => {
+    if (sets.length >= 2) {
+      setLeft(sets[1]?.id || '');
+      setRight(sets[0]?.id || '');
+    } else if (sets.length === 1) {
+      setRight(sets[0].id);
+    }
+  }, [sets]);
+
+  async function runDiff() {
+    if (!left || !right) return;
+    try {
+      const d = await apiJson(`/api/v2/policy/sets/${left}/diff/${right}`);
+      setDiff(d);
+    } catch (err) {
+      push(err.message || 'Diff failed');
+    }
+  }
+
+  if (loading && sets.length === 0) return <p className="text-sm text-sv-muted">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <Table
+        columns={[
+          { key: 'version', header: 'Version', render: (r) => `v${r.version}` },
+          {
+            key: 'status',
+            header: 'Status',
+            render: (r) => <Badge tone="neutral">{r.status}</Badge>,
+          },
+          {
+            key: 'sha',
+            header: 'content_sha256',
+            render: (r) => (
+              <span className="font-mono text-xs">{r.contentSha256 || '—'}</span>
+            ),
+          },
+          {
+            key: 'actions',
+            header: '',
+            render: (r) => (
+              <div className="flex gap-2">
+                <Link to={`/app/policies/review?set=${r.id}`}>
+                  <Button className="px-2 py-1 text-xs" variant="ghost">
+                    Open
+                  </Button>
+                </Link>
+                {canWrite && r.status === 'SUPERSEDED' ? (
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await apiJson(`/api/v2/policy/sets/${r.id}/submit`, { method: 'POST' });
+                        push('Rollback submitted for approval');
+                        onRefresh();
+                      } catch (err) {
+                        push(err.message || 'Submit failed');
+                      }
+                    }}
+                  >
+                    Re-activate…
+                  </Button>
+                ) : null}
+              </div>
+            ),
+          },
+        ]}
+        rows={sets}
+      />
+
+      <div className="rounded border border-sv-border p-4">
+        <p className="text-sm font-medium text-sv-fg">Diff two versions</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <select
+            className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sm"
+            value={left}
+            onChange={(e) => setLeft(e.target.value)}
+          >
+            <option value="">Left…</option>
+            {sets.map((s) => (
+              <option key={s.id} value={s.id}>
+                v{s.version} ({s.status})
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sm"
+            value={right}
+            onChange={(e) => setRight(e.target.value)}
+          >
+            <option value="">Right…</option>
+            {sets.map((s) => (
+              <option key={s.id} value={s.id}>
+                v{s.version} ({s.status})
+              </option>
+            ))}
+          </select>
+          <Button className="px-2 py-1 text-xs" onClick={runDiff}>
+            Compare
+          </Button>
+        </div>
+        {diff ? (
+          <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
+            <div>
+              <p className="font-medium text-sv-fg">Added</p>
+              <ul className="mt-1 list-disc pl-4">
+                {(diff.added || []).map((r) => (
+                  <li key={r.ruleId || r.id}>{r.title || r.ruleId}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-sv-fg">Removed</p>
+              <ul className="mt-1 list-disc pl-4">
+                {(diff.removed || []).map((r) => (
+                  <li key={r.ruleId || r.id}>{r.title || r.ruleId}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-sv-fg">Changed</p>
+              <ul className="mt-1 list-disc pl-4">
+                {(diff.changed || []).map((r) => (
+                  <li key={(r.after || r.before || r).ruleId || r.id}>
+                    {(r.after || r.before || r).title || (r.after || r.before || r).ruleId}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+VersionsTab.propTypes = {
+  loading: PropTypes.bool,
+  sets: PropTypes.array,
+  canWrite: PropTypes.bool,
+  onRefresh: PropTypes.func,
+};
+
+function ApprovalsTab({ loading, pending, canApprove, onRefresh }) {
+  const { push } = useToast();
+  const [comment, setComment] = useState({});
+  if (loading && (!pending || pending.length === 0)) {
+    return <p className="text-sm text-sv-muted">Loading…</p>;
+  }
+  if (!canApprove) {
+    return (
+      <p className="text-sm text-sv-muted">
+        Approvals inbox requires the POLICY_APPROVER role (policies:approve).
+      </p>
+    );
+  }
+  if (pending.length === 0) {
+    return <p className="text-sm text-sv-muted">No sets pending approval.</p>;
+  }
+  return (
+    <ul className="space-y-3">
+      {pending.map((s) => (
+        <li key={s.id} className="rounded border border-sv-border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-medium">
+              {s.name || 'Policy set'} · v{s.version}
+            </span>
+            <Link className="text-xs text-sv-accent underline" to={`/app/policies/review?set=${s.id}`}>
+              Review rules
+            </Link>
+          </div>
+          <Input
+            className="mt-2"
+            label="Comment (required to reject)"
+            value={comment[s.id] || ''}
+            onChange={(e) => setComment((prev) => ({ ...prev, [s.id]: e.target.value }))}
+          />
+          <div className="mt-2 flex gap-2">
+            <Button
+              className="px-2 py-1 text-xs"
+              onClick={async () => {
+                try {
+                  await apiJson(`/api/v2/policy/sets/${s.id}/approve`, {
+                    method: 'POST',
+                    body: JSON.stringify({ comment: comment[s.id] || '' }),
+                  });
+                  push('Approved — set is ACTIVE');
+                  onRefresh();
+                } catch (err) {
+                  push(err.message || 'Approve failed');
+                }
+              }}
+            >
+              Approve
+            </Button>
+            <Button
+              className="px-2 py-1 text-xs"
+              variant="danger"
+              onClick={async () => {
+                try {
+                  await apiJson(`/api/v2/policy/sets/${s.id}/reject`, {
+                    method: 'POST',
+                    body: JSON.stringify({ comment: comment[s.id] || '' }),
+                  });
+                  push('Rejected');
+                  onRefresh();
+                } catch (err) {
+                  push(err.message || 'Reject failed');
+                }
+              }}
+            >
+              Reject
+            </Button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+ApprovalsTab.propTypes = {
+  loading: PropTypes.bool,
+  pending: PropTypes.array,
+  canApprove: PropTypes.bool,
+  onRefresh: PropTypes.func,
+};
 
 function PermanentDeleteModal({ state, busy, onClose, onConfirmText, onConfirm, onSetBlocking }) {
   useEffect(() => {

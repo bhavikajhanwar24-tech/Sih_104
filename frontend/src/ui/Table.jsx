@@ -8,8 +8,8 @@ import PropTypes from 'prop-types';
  */
 export function Table({ columns, rows, rowKey }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-sv-border">
-      <table className="min-w-full divide-y divide-sv-border text-left text-sm">
+    <div className="w-full max-w-full overflow-x-auto rounded-lg border border-sv-border">
+      <table className="w-full divide-y divide-sv-border text-left text-sm">
         <thead className="bg-sv-elevated">
           <tr>
             {columns.map((col) => (
@@ -34,7 +34,7 @@ export function Table({ columns, rows, rowKey }) {
             rows.map((row, i) => (
               <tr key={rowKey ? rowKey(row) : row.id || i} className="hover:bg-sv-elevated/60">
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sv-fg">
+                  <td key={col.key} className="px-4 py-3 align-top text-sv-fg">
                     {col.render ? col.render(row) : row[col.key]}
                   </td>
                 ))}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinelvoice.local/contracts/v2/PolicyCompileResult.schema.json",
+  "title": "PolicyCompileResult",
+  "description": "LLM gateway output for task policy_compile — zero or more proposed rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "rules"],
+  "properties": {
+    "schemaVersion": { "$ref": "common.defs.json#/$defs/SchemaVersion" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "title", "source", "appliesTo", "when", "then", "severity"],
+        "properties": {
+          "ruleId": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "source": {
+            "type": "object",
+            "required": ["quote"],
+            "properties": {
+              "clauseRef": { "type": "string" },
+              "quote": { "type": "string", "maxLength": 200 }
+            }
+          },
+          "appliesTo": { "type": "object" },
+          "when": { "type": "object" },
+          "then": { "type": "object" },
+          "severity": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "term": { "type": "string" },
+                "lang": { "type": "string" },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "URGENCY",
+                    "SECRECY",
+                    "AUTHORITY",
+                    "PAYMENT",
+                    "CREDENTIAL",
+                    "CUSTOM"
+                  ]
+                },
+                "weight": { "type": "number" }
+              }
+            }
+          },
+          "policyFact": { "type": "string", "maxLength": 500 }
+        }
+      }
+    }
+  }
+}

@@ -146,11 +146,11 @@ public record SentinelProperties(
     }
 
     /**
-     * Contextual evidence-family scoring (P8.3 relationship graph + transaction policy + cross-channel).
+     * Contextual evidence-family scoring (relationship graph + cross-channel).
+     * Transaction/policy family scoring is data-driven (ACTIVE policy sets) as of F6/F7.
      */
     public record ContextScoring(
             @NotNull @Valid RelationshipScoring relationship,
-            @NotNull @Valid TransactionScoring transaction,
             @NotNull @Valid CrossChannelScoring crossChannel
     ) {
     }
@@ -184,19 +184,6 @@ public record SentinelProperties(
             @DecimalMin("0.0") @DecimalMax("1.0") double matchingCampaignBoost,
             @DecimalMin("0.0") @DecimalMax("1.0") double indicatorMatchBoost,
             @DecimalMin("0.0") @DecimalMax("1.0") double multiChannelBoost
-    ) {
-    }
-
-    public record TransactionScoring(
-            @DecimalMin("0.0") @DecimalMax("1.0") double policyViolationScore,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightChannelDenied,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightBeneficiaryNovel,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightVelocity,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightUrgencyAmountProduct,
-            @DecimalMin("0.0") double highValueThresholdInr,
-            @DecimalMin("1.0") double largeAmountThresholdInr,
-            @Min(1) int velocityHighValueLimit,
-            @NotNull List<String> knownBeneficiaryHints
     ) {
     }
 
