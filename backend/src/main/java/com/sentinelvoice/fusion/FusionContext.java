@@ -4,7 +4,7 @@ import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.model.FeatureFrame;
 
 /**
- * Inputs to {@link FusionEngineService} beyond the FeatureFrame itself.
+ * Inputs assembled for fusion explainability / ReasonGenerator beyond the FeatureFrame itself.
  * Transaction / relationship scores and identity flags come from Decision Plane services.
  */
 public record FusionContext(

@@ -52,7 +52,8 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [cid=%X{cid:-}] [%15.15t] %-40.40logger{39} : %m%n"
 
-# Values from Context (fusion weights / EMA / family thresholds) and intervention hysteresis.
+# Risk weights / thresholds / intervention dwell live in PostgreSQL fusion_configs (F8).
+# Auth / ML / session / audit / identity / actuation / compliance remain infra YAML.
 sentinelvoice:
   auth:
     # Fail-fast if missing / short — set JWT_SECRET in env (see .env.example).
@@ -62,71 +63,6 @@ sentinelvoice:
     cookie-secure: ${COOKIE_SECURE:false}
     cookie-domain: ${COOKIE_DOMAIN:}
     cors-origins: ${SENTINELVOICE_CORS_ORIGINS:http://127.0.0.1:5173,http://localhost:5173}
-  fusion:
-    weights:
-      wideband:
-        voice: 0.24
-        channel: 0.08
-        prosody: 0.13
-        linguistic: 0.25
-        transaction: 0.18
-        relationship: 0.12
-      narrowband:
-        voice: 0.15
-        channel: 0.10
-        prosody: 0.12
-        linguistic: 0.29
-        transaction: 0.20
-        relationship: 0.14
-    lambda-up: 0.55
-    lambda-down: 0.88
-    family-thresholds:
-      voice: 0.60
-      channel: 0.55
-      prosody: 0.60
-      linguistic: 0.65
-      transaction: 0.60
-      relationship: 0.60
-    linguistic-staleness-tau-ms: 3000
-    min-speech-ms-for-scoring: 3000
-    emergency:
-      # Context ┬º9.4 ΓÇö emergency bypass thresholds
-      cosine-mismatch-threshold: 0.50
-      secrecy-threshold: 0.85
-      authority-threshold: 0.85
-      transaction-score-threshold: 0.80
-  intervention:
-    l1-to-l2:
-      up-threshold: 0.35
-      down-threshold: 0.28
-      dwell-ms: 1000
-    l2-to-l1:
-      up-threshold: 0.35
-      down-threshold: 0.28
-      dwell-ms: 5000
-    l2-to-l3:
-      up-threshold: 0.55
-      down-threshold: 0.46
-      dwell-ms: 1000
-    l3-to-l2:
-      up-threshold: 0.55
-      down-threshold: 0.46
-      dwell-ms: 8000
-    l3-to-l4:
-      # Design target 0.75; lab WAV placeholders + seeds settle ~0.74 — allow L4 at 0.73.
-      up-threshold: 0.73
-      down-threshold: 0.66
-      dwell-ms: 1000
-    l4-to-l3:
-      up-threshold: 0.75
-      down-threshold: 0.66
-      dwell-ms: 15000
-    l4-to-l5:
-      up-threshold: 0.90
-      down-threshold: 0.90
-      dwell-ms: 0
-    # How long a manual override pins the level (automatic transitions suppressed)
-    override-pin-duration-ms: 120000
   ml:
     base-url: http://localhost:8000
     websocket-url: ws://localhost:8000/ingest

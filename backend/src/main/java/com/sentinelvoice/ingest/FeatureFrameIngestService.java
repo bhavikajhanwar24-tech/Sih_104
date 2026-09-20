@@ -14,15 +14,16 @@ import com.sentinelvoice.directory.DirectoryMatch;
 import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.fusion.EvidenceFamily;
 import com.sentinelvoice.fusion.FusionContext;
-import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.fusion.ReasonCode;
 import com.sentinelvoice.fusion.ReasonGenerator;
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
+import com.sentinelvoice.fusion.engine.FusionRuntimeService;
+import com.sentinelvoice.fusion.engine.FusionTickInputs;
+import com.sentinelvoice.fusion.engine.RiskAssessment;
 import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
-import com.sentinelvoice.intervention.InterventionLadderService;
-import com.sentinelvoice.intervention.InterventionStateMachine;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.InterventionLevel;
@@ -53,10 +54,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Per-frame Decision Plane pipeline (P5.4):
- * validate → update session → fuse → FSM → reasons → async audit → TelemetryFrame → STOMP.
- *
- * <p>Audit is queued ({@link AuditWriteDispatcher}) so ledger I/O never blocks the broadcast.
+ * Per-frame Decision Plane pipeline (P5.4 / F8):
+ * validate → update session → fuse → reasons → async audit → TelemetryFrame → STOMP.
  */
 @Service
 public class FeatureFrameIngestService {
@@ -66,8 +65,7 @@ public class FeatureFrameIngestService {
 
     private final CallSessionManager callSessionManager;
     private final SentinelProperties properties;
-    private final FusionEngineService fusionEngineService;
-    private final InterventionLadderService interventionLadderService;
+    private final FusionRuntimeService fusionRuntimeService;
     private final ReasonGenerator reasonGenerator;
     private final IdentityResolutionService identityResolutionService;
     private final RelationshipGraphService relationshipGraphService;
@@ -90,8 +88,7 @@ public class FeatureFrameIngestService {
     public FeatureFrameIngestService(
             CallSessionManager callSessionManager,
             SentinelProperties properties,
-            FusionEngineService fusionEngineService,
-            InterventionLadderService interventionLadderService,
+            FusionRuntimeService fusionRuntimeService,
             ReasonGenerator reasonGenerator,
             IdentityResolutionService identityResolutionService,
             RelationshipGraphService relationshipGraphService,
@@ -110,8 +107,7 @@ public class FeatureFrameIngestService {
     ) {
         this.callSessionManager = callSessionManager;
         this.properties = properties;
-        this.fusionEngineService = fusionEngineService;
-        this.interventionLadderService = interventionLadderService;
+        this.fusionRuntimeService = fusionRuntimeService;
         this.reasonGenerator = reasonGenerator;
         this.identityResolutionService = identityResolutionService;
         this.relationshipGraphService = relationshipGraphService;
@@ -158,7 +154,6 @@ public class FeatureFrameIngestService {
             return;
         }
         CallSession session = existing.get();
-        // Never trust tenantId from ML — bind from Java session registry only.
         TenantContext.runAs(session.getTenantId(), () -> {
             ingestUnderTenant(session, frame);
             return null;
@@ -259,34 +254,70 @@ public class FeatureFrameIngestService {
                 true,
                 identity
         );
-        FusionResult fusion = fusionEngineService.evaluate(session.getSessionId(), fusionContext);
 
-        List<String> corroborating = fusion.corroboration().familiesAboveThreshold().stream()
-                .map(EvidenceFamily::configKey)
-                .toList();
         boolean challengeEmergency = challengeService.lastFailure(session.getSessionId())
                 .filter(f -> nowMs - f.atEpochMs() < 60_000L)
                 .isPresent();
-        InterventionDecision decision = interventionLadderService.evaluate(
-                session.getSessionId(),
-                new InterventionStateMachine.EvaluationInput(
-                        fusion.smoothed(),
-                        fusion.corroboration().satisfied(),
-                        corroborating,
-                        fusion.emergencyReason() != null || challengeEmergency,
-                        false,
-                        nowMs,
-                        policyEval.minLevel()
-                )
+
+        double cosineMismatch = 0.0;
+        if (working.speaker() != null
+                && working.speaker().available()
+                && working.speaker().cosineSimilarity() != null) {
+            cosineMismatch = Math.max(0.0, 1.0 - working.speaker().cosineSimilarity());
+        }
+        double secrecy = working.linguistic() != null && working.linguistic().secrecy() != null
+                ? working.linguistic().secrecy() : 0.0;
+        double authority = working.linguistic() != null && working.linguistic().authorityInvocation() != null
+                ? working.linguistic().authorityInvocation() : 0.0;
+
+        FusionConfigDocument config = fusionRuntimeService.resolveConfig(session);
+        Integer fusionVersion = fusionRuntimeService.resolveFusionVersion(session);
+        Integer policyVersion = session.getPolicyVersion() != null
+                ? session.getPolicyVersion()
+                : policyEval.policyVersion();
+
+        FusionTickInputs inputs = FusionRuntimeService.buildInputs(
+                working,
+                transactionScore,
+                transactionAvailable,
+                relationshipScore,
+                true,
+                policyEval,
+                cosineMismatch,
+                secrecy,
+                authority,
+                challengeEmergency,
+                nowMs
         );
+
+        FusionRuntimeService.EvaluationResult eval = fusionRuntimeService.evaluate(
+                session, config, inputs, fusionVersion, policyVersion
+        );
+        FusionResult fusion = eval.fusionResult();
+        InterventionDecision decision = eval.decision();
+        RiskAssessment assessment = eval.assessment();
 
         List<ReasonGenerator.GeneratedReason> reasons = reasonGenerator.generate(
                 fusionContext,
                 fusion.families(),
-                challengeAssessments(session.getSessionId(), relationship, identity, crossChannel)
+                challengeAssessments(session.getSessionId(), relationship, identity, crossChannel),
+                config
         );
+        // Prepend engine reasons (policy floor / emergency) so TelemetryFrame surfaces them
+        if (!assessment.reasons().isEmpty()) {
+            List<ReasonGenerator.GeneratedReason> merged = new ArrayList<>();
+            for (RiskAssessment.Reason r : assessment.reasons()) {
+                merged.add(new ReasonGenerator.GeneratedReason(
+                        ReasonCode.POLICY_VIOLATION,
+                        r.text(),
+                        EvidenceFamily.TRANSACTION,
+                        1.0
+                ));
+            }
+            merged.addAll(reasons);
+            reasons = merged.stream().limit(5).toList();
+        }
 
-        // Cumulative evidence for forensic dossier (every firing, not just latest topReasons).
         List<CallSession.FiredReason> fired = new ArrayList<>(reasons.size());
         for (ReasonGenerator.GeneratedReason r : reasons) {
             if (r == null || r.code() == null) {
@@ -325,7 +356,10 @@ public class FeatureFrameIngestService {
         auditPayload.put("policyState", policyEval.state());
         auditPayload.put("policyMinLevel", policyEval.minLevel());
         auditPayload.put("policyScore", policyEval.policyScore());
-        auditPayload.put("policyVersion", policyEval.policyVersion());
+        auditPayload.put("policyVersion", policyVersion);
+        auditPayload.put("fusionConfigVersion", fusionVersion);
+        auditPayload.put("ruleFloorApplied", assessment.ruleFloorApplied());
+        auditPayload.put("emergencyFired", assessment.emergencyFired());
         auditPayload.put("firedRuleCount", policyEval.firedRules().size());
         auditPayload.put("undeterminedRuleCount", policyEval.undeterminedRules().size());
         auditWriteDispatcher.submit(
@@ -397,14 +431,11 @@ public class FeatureFrameIngestService {
         long windowEnd = frame.windowEndMs();
         if (windowEnd > EPOCH_MS_THRESHOLD) {
             long age = now - windowEnd;
-            // Clock leaps / sleep on the lab laptop: rebase instead of killing the gauge.
             if (age < 0 || age > properties.ml().frameStalenessMs()) {
                 return 0L;
             }
             return age;
         }
-        // Call-relative windows track media time, not session-create time.
-        // Analyst UI often starts the mic several seconds after Start session.
         Long mediaOrigin = session.getMediaOriginEpochMs();
         if (mediaOrigin == null) {
             mediaOrigin = now - windowEnd;
@@ -415,7 +446,6 @@ public class FeatureFrameIngestService {
             session.setMediaOriginEpochMs(now - windowEnd);
             return 0L;
         }
-        // ASR / CPU backlog or Windows clock leap: rebase origin so the feed keeps flowing.
         if (age > properties.ml().frameStalenessMs()) {
             log.info(
                     "feature_frame_rebase sessionId={} seq={} ageMs={} — continuing (lab clock/backlog recovery)",

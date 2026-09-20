@@ -1,6 +1,6 @@
 package com.sentinelvoice.fusion;
 
-import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
 import com.sentinelvoice.model.Ask;
 import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.LinguisticFamily;
@@ -17,6 +17,7 @@ import java.util.Map;
 /**
  * Builds TelemetryFrame.topReasons from a FeatureFrame plus Decision-plane context assessments
  * (Context §8.2). Messages are quantified plain English; NO_BREATH is gated in this class.
+ * Thresholds for secrecy/authority/voiceprint come from the tenant {@link FusionConfigDocument}.
  */
 @Component
 public class ReasonGenerator {
@@ -38,10 +39,7 @@ public class ReasonGenerator {
     private static final int TOP_N = 5;
     private static final double MATCH_COSINE_FLOOR = 0.70;
 
-    private final SentinelProperties.Emergency emergency;
-
-    public ReasonGenerator(SentinelProperties properties) {
-        this.emergency = properties.fusion().emergency();
+    public ReasonGenerator() {
     }
 
     /**
@@ -100,7 +98,7 @@ public class ReasonGenerator {
     }
 
     public List<GeneratedReason> generate(FusionContext context) {
-        return generate(context, Map.of(), Assessments.empty());
+        return generate(context, Map.of(), Assessments.empty(), null);
     }
 
     public List<GeneratedReason> generate(
@@ -108,14 +106,24 @@ public class ReasonGenerator {
             Map<EvidenceFamily, FamilyScore> familyScores,
             Assessments assessments
     ) {
+        return generate(context, familyScores, assessments, null);
+    }
+
+    public List<GeneratedReason> generate(
+            FusionContext context,
+            Map<EvidenceFamily, FamilyScore> familyScores,
+            Assessments assessments,
+            FusionConfigDocument config
+    ) {
         FeatureFrame frame = context.frame();
         List<Candidate> candidates = new ArrayList<>();
+        Thresholds thresholds = Thresholds.from(config);
 
         evaluateIdentity(context, assessments, candidates);
-        evaluateVoice(frame, candidates);
+        evaluateVoice(frame, candidates, thresholds);
         evaluateChannel(frame, candidates);
         evaluateProsody(frame, candidates);
-        evaluateLinguistic(context, candidates);
+        evaluateLinguistic(context, candidates, thresholds);
         evaluateTransactionPolicy(context, candidates);
         evaluateRelationship(assessments, candidates);
         evaluateChallenge(assessments, candidates);
@@ -169,7 +177,7 @@ public class ReasonGenerator {
         }
     }
 
-    private void evaluateVoice(FeatureFrame frame, List<Candidate> out) {
+    private void evaluateVoice(FeatureFrame frame, List<Candidate> out, Thresholds thresholds) {
         FeatureFrame.VoiceFamily voice = frame.voice();
         if (voice != null && voice.available() && voice.spoofProbability() != null
                 && voice.spoofProbability() >= SPOOF_SYNTHETIC_MIN) {
@@ -188,12 +196,12 @@ public class ReasonGenerator {
                 && speaker.enrolledProfileId() != null
                 && !speaker.enrolledProfileId().isBlank()
                 && speaker.cosineSimilarity() != null
-                && speaker.cosineSimilarity() < emergency.cosineMismatchThreshold()) {
+                && speaker.cosineSimilarity() < thresholds.cosineMatchFloor()) {
             out.add(new Candidate(
                     ReasonCode.VOICEPRINT_FAIL,
                     ReasonCode.VOICEPRINT_FAIL.format(
                             fmt(speaker.cosineSimilarity()),
-                            fmt(MATCH_COSINE_FLOOR)
+                            fmt(thresholds.cosineMatchFloor())
                     ),
                     1.0 - speaker.cosineSimilarity()
             ));
@@ -271,17 +279,17 @@ public class ReasonGenerator {
         }
     }
 
-    private void evaluateLinguistic(FusionContext context, List<Candidate> out) {
+    private void evaluateLinguistic(FusionContext context, List<Candidate> out, Thresholds thresholds) {
         LinguisticFamily linguistic = context.frame().linguistic();
         if (linguistic == null || !linguistic.available()) {
             return;
         }
-        if (linguistic.secrecy() != null && linguistic.secrecy() > emergency.secrecyThreshold()) {
+        if (linguistic.secrecy() != null && linguistic.secrecy() > thresholds.secrecy()) {
             out.add(new Candidate(
                     ReasonCode.SECRECY_DEMAND,
                     ReasonCode.SECRECY_DEMAND.format(
                             fmt(linguistic.secrecy()),
-                            fmt(emergency.secrecyThreshold())
+                            fmt(thresholds.secrecy())
                     ),
                     linguistic.secrecy()
             ));
@@ -297,15 +305,26 @@ public class ReasonGenerator {
             ));
         }
         if (linguistic.authorityInvocation() != null
-                && linguistic.authorityInvocation() > emergency.authorityThreshold()) {
+                && linguistic.authorityInvocation() > thresholds.authority()) {
             out.add(new Candidate(
                     ReasonCode.AUTHORITY_INVOCATION,
                     ReasonCode.AUTHORITY_INVOCATION.format(
                             fmt(linguistic.authorityInvocation()),
-                            fmt(emergency.authorityThreshold())
+                            fmt(thresholds.authority())
                     ),
                     linguistic.authorityInvocation()
             ));
+        }
+    }
+
+    private record Thresholds(double cosineMatchFloor, double secrecy, double authority) {
+        static Thresholds from(FusionConfigDocument config) {
+            if (config == null || config.emergency().rules().isEmpty()) {
+                return new Thresholds(MATCH_COSINE_FLOOR, 0.85, 0.85);
+            }
+            FusionConfigDocument.EmergencyRule rule = config.emergency().rules().get(0);
+            double matchFloor = Math.max(0.0, 1.0 - rule.cosineMismatchMin());
+            return new Thresholds(matchFloor, rule.secrecyMin(), rule.authorityMin());
         }
     }
 

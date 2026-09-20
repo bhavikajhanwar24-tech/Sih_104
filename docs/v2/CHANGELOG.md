@@ -28,6 +28,8 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | Level floors (credential never-share/ask & unverified-accept →3; approval/verify →2) with LEVEL_ADJUSTED up | F6 level bounds |
 | 2026-09-20 | v1 ContextScoring / RelationshipScoring / CrossChannelScoring YAML deleted; TRANSACTION score from ACTIVE DSL rules | F7 runtime rule engine |
 | 2026-09-20 | Deployed central DB is Supabase (Session Pooler); local Docker Postgres kept for lab/offline | Shared multi-env system of record |
+| 2026-09-21 | v1 YAML `sentinelvoice.fusion` / `intervention` / `emergency` deleted; decisions use tenant `fusion_configs` + pure `FusionEngine` | F8 — per-tenant fusion config |
+| 2026-09-21 | Frontend Risk tuning page at `/app/settings/risk-tuning` (draft/approve/what-if) | F8 — fusion UI |
 
 ## New dependencies
 
@@ -65,3 +67,4 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | F7 | Runtime RuleEngine + FactAssembler; simulate/status APIs; Simulation UI; delete v1 ContextScoring |
 | 2026-09-20 | F6 | Empty-LLM fix: outcome statuses, truncated vs empty, subset schema, suspect retry, progress clamp, test-clause |
 | 2026-09-20 | Ops | Supabase central DB + `migrate-to-supabase.ps1` local dump/restore; docs/v2/SUPABASE.md |
+| 2026-09-21 | F8 | Per-tenant fusion_configs + pure FusionEngine; Risk tuning UI; YAML fusion/intervention removed |

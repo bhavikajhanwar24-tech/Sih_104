@@ -6,9 +6,10 @@ import com.sentinelvoice.challenge.model.ActiveChallenge;
 import com.sentinelvoice.challenge.model.ChallengeEvaluation;
 import com.sentinelvoice.challenge.model.ChallengeVerdict;
 import com.sentinelvoice.fusion.ReasonCode;
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
+import com.sentinelvoice.fusion.engine.FusionRuntimeService;
+import com.sentinelvoice.fusion.engine.FusionTickInputs;
 import com.sentinelvoice.intervention.InterventionDecision;
-import com.sentinelvoice.intervention.InterventionLadderService;
-import com.sentinelvoice.intervention.InterventionStateMachine;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.service.CallSessionManager;
@@ -61,7 +62,7 @@ public class ChallengeService {
     private final ChallengeProperties properties;
     private final AuditLedgerService auditLedgerService;
     private final CallSessionManager callSessionManager;
-    private final InterventionLadderService interventionLadderService;
+    private final FusionRuntimeService fusionRuntimeService;
     private final RestTemplate restTemplate;
     private final Clock clock;
     private final String mlBaseUrl;
@@ -72,7 +73,7 @@ public class ChallengeService {
             ChallengeProperties properties,
             AuditLedgerService auditLedgerService,
             CallSessionManager callSessionManager,
-            InterventionLadderService interventionLadderService,
+            FusionRuntimeService fusionRuntimeService,
             RestTemplate restTemplate,
             Clock clock,
             com.sentinelvoice.config.SentinelProperties sentinelProperties
@@ -82,7 +83,7 @@ public class ChallengeService {
         this.properties = properties;
         this.auditLedgerService = auditLedgerService;
         this.callSessionManager = callSessionManager;
-        this.interventionLadderService = interventionLadderService;
+        this.fusionRuntimeService = fusionRuntimeService;
         this.restTemplate = restTemplate;
         this.clock = clock;
         this.mlBaseUrl = trimSlash(sentinelProperties.ml().baseUrl());
@@ -341,24 +342,43 @@ public class ChallengeService {
                 case TIMEOUT -> ReasonCode.CHALLENGE_LATENCY_FAIL.name();
                 case PASS -> null;
             };
-            InterventionDecision decision = interventionLadderService.evaluate(
-                    sessionId,
-                    new InterventionStateMachine.EvaluationInput(
-                            0.95,
-                            true,
-                            List.of("voice"),
-                            true,
-                            false,
-                            clock.millis()
-                    )
+            CallSession session = callSessionManager.requireSession(sessionId);
+            FusionConfigDocument config = fusionRuntimeService.resolveConfig(session);
+            long now = clock.millis();
+            FusionTickInputs inputs = new FusionTickInputs(
+                    false,
+                    Math.max(session.getCumulativeSpeechMs(), 5_000L),
+                    true,
+                    now,
+                    FusionTickInputs.FamilyRaw.available(0.95),
+                    FusionTickInputs.FamilyRaw.unavailable(),
+                    FusionTickInputs.FamilyRaw.unavailable(),
+                    FusionTickInputs.FamilyRaw.unavailable(),
+                    FusionTickInputs.FamilyRaw.available(0.95),
+                    FusionTickInputs.FamilyRaw.unavailable(),
+                    0L,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0,
+                    List.of(),
+                    true
             );
+            FusionRuntimeService.EvaluationResult eval = fusionRuntimeService.evaluate(
+                    session,
+                    config,
+                    inputs,
+                    session.getFusionConfigVersion(),
+                    session.getPolicyVersion()
+            );
+            InterventionDecision decision = eval.decision();
             callSessionManager.recordTelemetry(
                     sessionId,
                     new com.sentinelvoice.model.TelemetryEntry(
-                            callSessionManager.requireSession(sessionId).allocateSeq(),
-                            clock.millis(),
-                            0.95,
-                            0.95,
+                            session.allocateSeq(),
+                            now,
+                            eval.assessment().instantaneous(),
+                            eval.assessment().score(),
                             decision.level() == null ? InterventionLevel.LEVEL_4_AUTO_HOLD : decision.level(),
                             Map.of("voice", 0.95, "challenge", 1.0)
                     )

@@ -7,16 +7,15 @@ import com.sentinelvoice.context.TransactionPolicyService;
 import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
 import com.sentinelvoice.context.model.TransactionAssessment;
-import com.sentinelvoice.fusion.FusionContext;
-import com.sentinelvoice.fusion.FusionEngineService;
-import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.directory.DirectoryService;
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
+import com.sentinelvoice.fusion.engine.FusionRuntimeService;
+import com.sentinelvoice.fusion.engine.FusionTickInputs;
 import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
-import com.sentinelvoice.intervention.InterventionStateMachine;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
@@ -50,7 +49,7 @@ import java.util.Map;
 public class CallSessionController {
 
     private final CallSessionManager callSessionManager;
-    private final FusionEngineService fusionEngineService;
+    private final FusionRuntimeService fusionRuntimeService;
     private final InterventionLadderService interventionLadderService;
     private final NaturalLanguageFraudService naturalLanguageFraudService;
     private final RelationshipGraphService relationshipGraphService;
@@ -63,7 +62,7 @@ public class CallSessionController {
 
     public CallSessionController(
             CallSessionManager callSessionManager,
-            FusionEngineService fusionEngineService,
+            FusionRuntimeService fusionRuntimeService,
             InterventionLadderService interventionLadderService,
             NaturalLanguageFraudService naturalLanguageFraudService,
             RelationshipGraphService relationshipGraphService,
@@ -75,7 +74,7 @@ public class CallSessionController {
             ActuationService actuationService
     ) {
         this.callSessionManager = callSessionManager;
-        this.fusionEngineService = fusionEngineService;
+        this.fusionRuntimeService = fusionRuntimeService;
         this.interventionLadderService = interventionLadderService;
         this.naturalLanguageFraudService = naturalLanguageFraudService;
         this.relationshipGraphService = relationshipGraphService;
@@ -93,10 +92,6 @@ public class CallSessionController {
         return ResponseEntity.ok(descriptor(session, "started"));
     }
 
-    /**
-     * List active Decision Plane sessions (newest first). Analyst uses this to attach
-     * to a SIP/AudioSocket session opened by the gateway bridge.
-     */
     @GetMapping
     public ResponseEntity<Map<String, Object>> listSessions() {
         List<Map<String, Object>> items = callSessionManager.listSessions().stream()
@@ -115,9 +110,6 @@ public class CallSessionController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /**
-     * REST fallback for the last published TelemetryFrame — debug aid when STOMP misbehaves.
-     */
     @GetMapping("/{sessionId}/telemetry/latest")
     public ResponseEntity<TelemetryFrame> latestTelemetry(@PathVariable String sessionId) {
         if (callSessionManager.getSession(sessionId).isEmpty()) {
@@ -134,6 +126,8 @@ public class CallSessionController {
             return ResponseEntity.notFound().build();
         }
         callSessionManager.closeSession(sessionId);
+        fusionRuntimeService.clearSession(sessionId);
+        interventionLadderService.clearSession(sessionId);
         telemetryBroadcaster.clear(sessionId);
         actuationService.clearSession(sessionId);
         Map<String, Object> body = new LinkedHashMap<>();
@@ -212,40 +206,37 @@ public class CallSessionController {
         }
         TransactionAssessment transaction = transactionPolicyService.assess(frame, claimed);
         double txnScore = Math.max(transactionDeviation, transaction.score());
-        FusionContext fusionContext = FusionContext.withIdentity(
+
+        FusionConfigDocument config = fusionRuntimeService.resolveConfig(session);
+        long now = Instant.now().toEpochMilli();
+        FusionTickInputs inputs = FusionRuntimeService.buildInputs(
                 frame,
                 txnScore,
                 true,
                 relationshipScore,
                 true,
-                identity
+                null,
+                0.0,
+                nlpSignal,
+                nlpSignal,
+                false,
+                now
         );
-        FusionResult fusion = fusionEngineService.evaluate(sessionId, fusionContext);
-        List<String> corroborating = fusion.corroboration().familiesAboveThreshold().stream()
-                .map(f -> f.configKey())
-                .toList();
-        InterventionDecision decision = interventionLadderService.evaluate(
-                sessionId,
-                new InterventionStateMachine.EvaluationInput(
-                        fusion.smoothed(),
-                        fusion.corroboration().satisfied(),
-                        corroborating,
-                        fusion.emergencyReason() != null,
-                        false,
-                        Instant.now().toEpochMilli()
-                )
+        FusionRuntimeService.EvaluationResult eval = fusionRuntimeService.evaluate(
+                session, config, inputs, session.getFusionConfigVersion(), session.getPolicyVersion()
         );
+        InterventionDecision decision = eval.decision();
         InterventionLevel level = decision.level();
 
         Map<String, Double> factorBreakdown = new LinkedHashMap<>();
-        fusion.families().forEach((family, score) ->
+        eval.fusionResult().families().forEach((family, score) ->
                 factorBreakdown.put(family.configKey(), score.available() ? score.score() : 0));
 
         TelemetryEntry entry = new TelemetryEntry(
                 frame.seq(),
-                Instant.now().toEpochMilli(),
-                fusion.instantaneous(),
-                fusion.smoothed(),
+                now,
+                eval.fusionResult().instantaneous(),
+                eval.fusionResult().smoothed(),
                 level,
                 factorBreakdown
         );
@@ -253,15 +244,15 @@ public class CallSessionController {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("sessionId", sessionId);
-        body.put("riskScore", fusion.smoothed());
-        body.put("instantaneousRisk", fusion.instantaneous());
+        body.put("riskScore", eval.fusionResult().smoothed());
+        body.put("instantaneousRisk", eval.fusionResult().instantaneous());
         body.put("interventionLevel", level.name());
         body.put("interventionChanged", decision.changed());
         body.put("dwellRemainingMs", decision.dwellRemainingMs());
         body.put("rationale", decision.rationale());
         body.put("factors", factorBreakdown);
-        body.put("state", fusion.state().name());
-        body.put("corroboration", fusion.corroboration().satisfied());
+        body.put("state", eval.fusionResult().state().name());
+        body.put("corroboration", eval.fusionResult().corroboration().satisfied());
         body.put("linguistic", linguistic);
         body.put("relationship", relationship);
         body.put("transaction", transaction);
@@ -279,6 +270,9 @@ public class CallSessionController {
         body.put("state", session.getState().name());
         body.put("smoothedRisk", session.getSmoothedRisk());
         body.put("interventionLevel", session.getCurrentLevel().name());
+        body.put("fusionConfigVersion", session.getFusionConfigVersion());
+        body.put("policyVersion", session.getPolicyVersion());
+        body.put("responsePlanVersion", session.getResponsePlanVersion());
         body.put("createdAt", session.getCreatedAt().toString());
         body.put("lastFrameAt", session.getLastFrameAt().toString());
         body.put("cumulativeSpeechMs", session.getCumulativeSpeechMs());

@@ -1,14 +1,13 @@
 package com.sentinelvoice.fusion;
 
-import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
 import com.sentinelvoice.model.ChannelProfile;
 
 import java.util.Locale;
-import java.util.Map;
 
 /**
- * Evidence families for Context §9.1–§9.3. Weights and corroboration thresholds are read from
- * {@link SentinelProperties} — never hardcoded here.
+ * Evidence families for fusion. Weights and corroboration thresholds come from
+ * {@link FusionConfigDocument} — never hardcoded.
  */
 public enum EvidenceFamily {
 
@@ -40,25 +39,12 @@ public enum EvidenceFamily {
         return configKey;
     }
 
-    public double weight(SentinelProperties.Fusion fusion, ChannelProfile profile) {
-        Map<String, Double> map = isNarrowband(profile)
-                ? fusion.weights().narrowband()
-                : fusion.weights().wideband();
-        Double value = map.get(configKey);
-        if (value == null) {
-            throw new IllegalStateException(
-                    "Missing fusion weight for family '" + configKey + "' in profile " + profile);
-        }
-        return value;
+    public double weight(FusionConfigDocument config, ChannelProfile profile) {
+        return config.weight(configKey, isNarrowband(profile));
     }
 
-    public double corroborationThreshold(SentinelProperties.Fusion fusion) {
-        Double value = fusion.familyThresholds().get(configKey);
-        if (value == null) {
-            throw new IllegalStateException(
-                    "Missing corroboration threshold for family '" + configKey + "'");
-        }
-        return value;
+    public double corroborationThreshold(FusionConfigDocument config) {
+        return config.familyThreshold(configKey);
     }
 
     public static EvidenceFamily fromConfigKey(String key) {

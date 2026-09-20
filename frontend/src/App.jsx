@@ -16,6 +16,7 @@ import {
 import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
 import { PolicyReviewPage } from '@/pages/PolicyReviewPage.jsx';
 import { SettingsPage } from '@/pages/SettingsPage.jsx';
+import { RiskTuningPage } from '@/pages/RiskTuningPage.jsx';
 
 /**
  * V2 application root — router + cookie auth. Replaces v1 four-view AppShell switcher.
@@ -44,6 +45,7 @@ export default function App() {
                 <Route path="response" element={<ResponsePlansPage />} />
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
                 <Route path="users" element={<UsersPage />} />
               </Route>
             </Route>

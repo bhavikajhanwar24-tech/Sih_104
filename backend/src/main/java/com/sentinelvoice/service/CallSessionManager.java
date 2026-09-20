@@ -3,9 +3,11 @@ package com.sentinelvoice.service;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.config.SentinelProperties;
+import com.sentinelvoice.fusion.config.ActiveFusionConfigCache;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
+import com.sentinelvoice.policy.engine.ActivePolicyCache;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.tenant.TenantSettingsEntity;
 import com.sentinelvoice.tenant.TenantSettingsRepository;
@@ -35,15 +37,21 @@ public class CallSessionManager {
     private final SentinelProperties properties;
     private final AuditLedgerService auditLedgerService;
     private final TenantSettingsRepository tenantSettingsRepository;
+    private final ActiveFusionConfigCache fusionConfigCache;
+    private final ActivePolicyCache policyCache;
 
     public CallSessionManager(
             SentinelProperties properties,
             AuditLedgerService auditLedgerService,
-            TenantSettingsRepository tenantSettingsRepository
+            TenantSettingsRepository tenantSettingsRepository,
+            ActiveFusionConfigCache fusionConfigCache,
+            ActivePolicyCache policyCache
     ) {
         this.properties = properties;
         this.auditLedgerService = auditLedgerService;
         this.tenantSettingsRepository = tenantSettingsRepository;
+        this.fusionConfigCache = fusionConfigCache;
+        this.policyCache = policyCache;
     }
 
     public CallSession createSession(SessionStartRequest request) {
@@ -70,8 +78,19 @@ public class CallSessionManager {
                     request.channelProfile(),
                     request.scenarioId()
             );
+
+            Optional<ActiveFusionConfigCache.CachedFusionConfig> fusion =
+                    fusionConfigCache.get(tenantId);
+            fusion.ifPresent(c -> {
+                session.setFusionConfigVersion(c.version());
+                session.setFusionConfigSnapshot(c.document());
+            });
+            policyCache.get(tenantId).ifPresent(p -> session.setPolicyVersion(p.version()));
+            session.setResponsePlanVersion(null);
+
             sessions.put(sessionId, session);
             try {
+                Map<String, Object> payload = openPayload(session);
                 auditLedgerService.append(
                         tenantId,
                         sessionId,
@@ -80,7 +99,21 @@ public class CallSessionManager {
                         TenantContext.require().userId() == null
                                 ? null
                                 : TenantContext.require().userId().toString(),
-                        openPayload(session)
+                        payload
+                );
+                auditLedgerService.append(
+                        tenantId,
+                        sessionId,
+                        AuditEventType.SESSION_CONFIG_SNAPSHOT,
+                        "SYSTEM",
+                        null,
+                        Map.of(
+                                "fusionConfigVersion", session.getFusionConfigVersion() == null
+                                        ? "" : session.getFusionConfigVersion(),
+                                "policyVersion", session.getPolicyVersion() == null
+                                        ? "" : session.getPolicyVersion(),
+                                "responsePlanVersion", ""
+                        )
                 );
             } catch (RuntimeException ex) {
                 sessions.remove(sessionId);
@@ -205,6 +238,9 @@ public class CallSessionManager {
         payload.put("channelProfile", session.getChannelProfile().name());
         payload.put("smoothedRisk", 0.0);
         payload.put("level", session.getCurrentLevel().name());
+        payload.put("fusionConfigVersion", session.getFusionConfigVersion());
+        payload.put("policyVersion", session.getPolicyVersion());
+        payload.put("responsePlanVersion", session.getResponsePlanVersion());
         if (session.getScenarioId() != null) {
             payload.put("scenarioId", session.getScenarioId());
         }

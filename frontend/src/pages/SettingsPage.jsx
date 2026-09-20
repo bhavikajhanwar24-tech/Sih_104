@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiJson } from '@/services/api.js';
 import { Badge, Button } from '@/ui';
@@ -124,6 +124,18 @@ export function SettingsPage() {
         <h1 className="text-xl font-semibold text-sv-fg">Settings</h1>
         <p className="mt-1 text-sm text-sv-muted">Tenant configuration for privacy and AI usage.</p>
       </div>
+
+      <Link
+        to="/app/settings/risk-tuning"
+        className="block rounded border border-sv-accent/40 bg-sv-accent/10 p-4 transition-colors hover:border-sv-accent hover:bg-sv-accent/15"
+      >
+        <p className="text-sm font-semibold text-sv-fg">Risk tuning</p>
+        <p className="mt-1 text-xs text-sv-muted">
+          Fusion weights, level hysteresis, corroboration, and what-if replay. Dual-control
+          drafts require POLICY_APPROVER before going live.
+        </p>
+        <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open risk tuning →</span>
+      </Link>
 
       <section className="space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-sv-muted">AI &amp; Privacy</h2>

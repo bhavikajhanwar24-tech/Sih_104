@@ -17,8 +17,8 @@ export function LiveCallsPage() {
     <div className="p-6">
       <EmptyState
         title="Live Calls"
-        feature="F6"
-        description="Analyst live-call console relocates here. The v1 Analyst Console remains available for remount once sessions are tenant-scoped."
+        feature="F13"
+        description="Analyst live-call console relocates here once sessions are tenant-scoped and the presentation plane is remounted."
       />
     </div>
   );
@@ -29,10 +29,9 @@ export function ResponsePlansPage() {
     <div className="p-6">
       <EmptyState
         title="Response Plans"
-        feature="F8"
-        description="Response-matrix drafts and approvals land in F8."
+        feature="F9"
+        description="Response-matrix drafts and dual-control approvals land in F9."
       />
     </div>
   );
 }
-

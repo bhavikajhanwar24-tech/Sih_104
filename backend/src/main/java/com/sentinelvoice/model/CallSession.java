@@ -1,5 +1,7 @@
 package com.sentinelvoice.model;
 
+import com.sentinelvoice.fusion.config.FusionConfigDocument;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,13 @@ public class CallSession {
      * Deduped by code+observedAt bucket; never contains audio or verbatim unredacted transcript.
      */
     private final List<FiredReason> firedReasons = new CopyOnWriteArrayList<>();
+
+    /** Snapshot of ACTIVE fusion config at session open (F8) — mid-call config changes do not apply. */
+    private volatile Integer fusionConfigVersion;
+    private volatile FusionConfigDocument fusionConfigSnapshot;
+    private volatile Integer policyVersion;
+    /** Reserved for F9 response plans. */
+    private volatile String responsePlanVersion;
 
     /** One evidence row retained on the Decision Plane (scores / enums / narratives only). */
     public record FiredReason(
@@ -230,5 +239,37 @@ public class CallSession {
 
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    public Integer getFusionConfigVersion() {
+        return fusionConfigVersion;
+    }
+
+    public void setFusionConfigVersion(Integer fusionConfigVersion) {
+        this.fusionConfigVersion = fusionConfigVersion;
+    }
+
+    public FusionConfigDocument getFusionConfigSnapshot() {
+        return fusionConfigSnapshot;
+    }
+
+    public void setFusionConfigSnapshot(FusionConfigDocument fusionConfigSnapshot) {
+        this.fusionConfigSnapshot = fusionConfigSnapshot;
+    }
+
+    public Integer getPolicyVersion() {
+        return policyVersion;
+    }
+
+    public void setPolicyVersion(Integer policyVersion) {
+        this.policyVersion = policyVersion;
+    }
+
+    public String getResponsePlanVersion() {
+        return responsePlanVersion;
+    }
+
+    public void setResponsePlanVersion(String responsePlanVersion) {
+        this.responsePlanVersion = responsePlanVersion;
     }
 }
