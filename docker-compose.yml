@@ -110,7 +110,8 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       LLM_GATEWAY_CONCURRENCY: ${LLM_GATEWAY_CONCURRENCY:-1}
       LLM_FORCE_MOCK: ${LLM_FORCE_MOCK:-false}
-      SENTINELVOICE_ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN}    volumes:
+      SENTINELVOICE_ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN}
+    volumes:
       - ./ml-engine/models:/app/models:ro
     ports:
       - "127.0.0.1:8000:8000"

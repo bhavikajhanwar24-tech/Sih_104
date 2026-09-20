@@ -1,4 +1,15 @@
+from pathlib import Path
+import os
+
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repo-root .env uses ML_SERVICE_TOKEN; Settings prefix expects SENTINELVOICE_ML_*.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_REPO_ROOT / ".env", override=False)
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+if not os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN") and os.environ.get("ML_SERVICE_TOKEN"):
+    os.environ["SENTINELVOICE_ML_SERVICE_TOKEN"] = os.environ["ML_SERVICE_TOKEN"]
 
 
 class Settings(BaseSettings):
@@ -63,3 +74,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Host .env uses ML_SERVICE_TOKEN; Settings prefix expects SENTINELVOICE_ML_SERVICE_TOKEN.
+if not settings.service_token:
+    alt = os.environ.get("ML_SERVICE_TOKEN") or os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN") or ""
+    if alt:
+        object.__setattr__(settings, "service_token", alt)

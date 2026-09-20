@@ -101,6 +101,37 @@ function Start-Detached([string]$Name, [string]$WorkDir, [string]$FilePath, [str
     return $p
 }
 
+# Load repo-root .env into this process so detached children inherit secrets.
+function Import-DotEnv {
+    $envFile = Join-Path $Root '.env'
+    if (-not (Test-Path $envFile)) {
+        Write-Sv "warn: no .env at $envFile - backend/ml may fail without JWT_SECRET / DB_*"
+        return
+    }
+    $n = 0
+    Get-Content $envFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -eq '' -or $line.StartsWith('#')) { return }
+        $eq = $line.IndexOf('=')
+        if ($eq -lt 1) { return }
+        $key = $line.Substring(0, $eq).Trim()
+        $val = $line.Substring($eq + 1).Trim()
+        if ($val.StartsWith('"') -and $val.EndsWith('"')) {
+            $val = $val.Substring(1, $val.Length - 2)
+        } elseif ($val.StartsWith("'") -and $val.EndsWith("'")) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        Set-Item -Path "Env:$key" -Value $val
+        $n++
+    }
+    # ml-engine Settings use env_prefix SENTINELVOICE_ML_ (service_token).
+    if ($env:ML_SERVICE_TOKEN -and -not $env:SENTINELVOICE_ML_SERVICE_TOKEN) {
+        $env:SENTINELVOICE_ML_SERVICE_TOKEN = $env:ML_SERVICE_TOKEN
+        Write-Sv 'aliased ML_SERVICE_TOKEN -> SENTINELVOICE_ML_SERVICE_TOKEN'
+    }
+    Write-Sv ('loaded .env (' + $n + ' keys)')
+}
+
 function Invoke-Help {
     Write-Host 'SentinelVoice targets (via make.cmd / scripts/sv.ps1):'
     Write-Host '  ensure-antispoof  train/copy Tier-1 voice checkpoint if missing'
@@ -139,6 +170,7 @@ function Invoke-Asterisk {
 }
 
 function Invoke-Ml {
+    Import-DotEnv
     $py = Resolve-Python
     $uvicorn = if (Test-Path $VenvUvicorn) { $VenvUvicorn } else { $null }
     Push-Location (Join-Path $Root 'ml-engine')
@@ -154,6 +186,7 @@ function Invoke-Ml {
 }
 
 function Invoke-Backend {
+    Import-DotEnv
     $mvn = Resolve-Maven
     Push-Location (Join-Path $Root 'backend')
     try {
@@ -164,6 +197,7 @@ function Invoke-Backend {
 }
 
 function Invoke-Frontend {
+    Import-DotEnv
     if (-not $Npm) { throw 'npm not found on PATH' }
     Push-Location (Join-Path $Root 'frontend')
     try {
@@ -174,6 +208,7 @@ function Invoke-Frontend {
 }
 
 function Invoke-Demo {
+    Import-DotEnv
     Write-Sv 'demo: preflight -> docker compose -> seed scenarios'
     & (Join-Path $Root 'scripts\preflight.ps1')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -199,6 +234,7 @@ function Invoke-Demo {
 }
 
 function Invoke-Dev {
+    Import-DotEnv
     Write-Sv 'dev: Media -> Inference -> Decision -> Presentation'
     Invoke-EnsureAntispoof
     Invoke-Asterisk
