@@ -40,6 +40,7 @@ public enum Role {
             case ANALYST -> Set.of(
                     "dashboard:read",
                     "calls:read", "calls:act",
+                    "policies:read",
                     "audit:read"
             );
             case AUDITOR -> Set.of(

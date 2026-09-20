@@ -28,7 +28,6 @@ public record SentinelProperties(
         @NotNull @Valid Session session,
         @NotNull @Valid Audit audit,
         @NotNull @Valid Identity identity,
-        @NotNull @Valid ContextScoring context,
         @NotNull @Valid Actuation actuation,
         @NotNull @Valid Compliance compliance
 ) {
@@ -142,48 +141,6 @@ public record SentinelProperties(
             @DecimalMin("0.0") @DecimalMax("1.0") double cosineMatchMin,
             @DecimalMin("0.0") @DecimalMax("1.0") double cosineMismatchMax,
             @DecimalMin("0.0") @DecimalMax("1.0") double spoofHighThreshold
-    ) {
-    }
-
-    /**
-     * Contextual evidence-family scoring (relationship graph + cross-channel).
-     * Transaction/policy family scoring is data-driven (ACTIVE policy sets) as of F6/F7.
-     */
-    public record ContextScoring(
-            @NotNull @Valid RelationshipScoring relationship,
-            @NotNull @Valid CrossChannelScoring crossChannel
-    ) {
-    }
-
-    /**
-     * Linear relationship score coefficients:
-     * {@code S_graph = w_fc*I_fc + w_hier*hierNorm + w_off*I_off + w_dur*I_dur}.
-     * Cross-channel is blended as an <em>additive sub-component</em> of RELATIONSHIP
-     * (not a 7th family — keeps the six frozen fusion weights intact):
-     * {@code S_relationship = clamp01(S_graph + weightCrossChannel * S_cross)}.
-     */
-    public record RelationshipScoring(
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightFirstContact,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightHierarchy,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightOffHours,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightDurationAnomaly,
-            @DecimalMin("0.0") @DecimalMax("1.0") double weightCrossChannel,
-            @Min(1) int hierarchyNormalizeLevels,
-            @Min(0) int businessHourStart,
-            @Min(1) int businessHourEnd,
-            @Min(1) int typicalHourDeviationHours,
-            @DecimalMin("1.0") double durationAnomalyRatio
-    ) {
-    }
-
-    /**
-     * Cross-channel precursor correlation window and score boosts (Context §7.3).
-     */
-    public record CrossChannelScoring(
-            @Min(1) int windowHours,
-            @DecimalMin("0.0") @DecimalMax("1.0") double matchingCampaignBoost,
-            @DecimalMin("0.0") @DecimalMax("1.0") double indicatorMatchBoost,
-            @DecimalMin("0.0") @DecimalMax("1.0") double multiChannelBoost
     ) {
     }
 

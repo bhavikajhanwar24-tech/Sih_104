@@ -204,15 +204,30 @@ class OllamaProvider(LlmProvider):
             resp.raise_for_status()
             data = resp.json()
         text = (data.get("message") or {}).get("content") or ""
+        done_reason = data.get("done_reason") or data.get("done") or ""
         eval_count = int(data.get("eval_count") or 0)
         eval_duration_ns = int(data.get("eval_duration") or 0)
+        prompt_eval = int(data.get("prompt_eval_count") or 0)
         usage: dict[str, Any] = {
-            "prompt_tokens": int(data.get("prompt_eval_count") or 0),
+            "prompt_tokens": prompt_eval,
             "completion_tokens": eval_count,
+            "eval_count": eval_count,
             "eval_duration_ns": eval_duration_ns,
+            "done_reason": str(done_reason),
+            "num_ctx": self.num_ctx,
         }
         if eval_count > 0 and eval_duration_ns > 0:
             usage["tokensPerSecond"] = eval_count / (eval_duration_ns / 1_000_000_000.0)
+        # Never log prompt or response text
+        logger.info(
+            "ollama_chat model=%s prompt_tokens=%s eval_count=%s num_ctx=%s done_reason=%s content_chars=%s",
+            self.model,
+            prompt_eval,
+            eval_count,
+            self.num_ctx,
+            done_reason,
+            len(text),
+        )
         return text, usage
 
 

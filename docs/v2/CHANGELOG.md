@@ -26,6 +26,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | v1 TransactionPolicy YAML/`TransactionScoring` removed; policy is tenant data (DSL + ACTIVE sets) | F6 — LLM proposes, humans approve |
 | 2026-09-20 | FactCatalogue directory enums bound to `DirectoryMatch`; REJECTED rules kept for Edit-to-fix; POSSIBLE_DUPLICATE flag; level clamp down-only | F6 follow-up quality |
 | 2026-09-20 | Level floors (credential never-share/ask & unverified-accept →3; approval/verify →2) with LEVEL_ADJUSTED up | F6 level bounds |
+| 2026-09-20 | v1 ContextScoring / RelationshipScoring / CrossChannelScoring YAML deleted; TRANSACTION score from ACTIVE DSL rules | F7 runtime rule engine |
 
 ## New dependencies
 
@@ -43,6 +44,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-19 | `tika-core` + `tika-parsers-standard-package` + `pdfbox` | Decision | Policy doc sniff + extract (F5) |
 | 2026-09-19 | `resilience4j-spring-boot3` + circuitbreaker + `spring-boot-starter-aop` | Decision | LLM gateway client CB (F5) |
 | 2026-09-19 | `jsonschema` (already listed in ml pyproject) | Inference | Gateway output validation (F5) |
+| 2026-09-20 | `caffeine` (Boot-managed) | Decision | Per-tenant ACTIVE policy compile cache (F7) |
 
 ## Feature log
 
@@ -59,3 +61,5 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | F6 | Catalogue-enum schema; Indian number grounding; level caps; plain-English; cancel/delete/max-docs |
 | 2026-09-20 | F6 | Verification pass: edit quote grounding; no silent mock; Keywords tab; verify_f6.sql |
 | 2026-09-20 | F6 | Quality follow-up: VALUE_NOT_IN_SOURCE; no invented clauseRef; max-docs=1; must-never level cap; F6.md checklist + Quick Policy re-compile |
+| 2026-09-20 | F7 | Runtime RuleEngine + FactAssembler; simulate/status APIs; Simulation UI; delete v1 ContextScoring |
+| 2026-09-20 | F6 | Empty-LLM fix: outcome statuses, truncated vs empty, subset schema, suspect retry, progress clamp, test-clause |

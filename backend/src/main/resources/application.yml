@@ -181,25 +181,13 @@ sentinelvoice:
     status-revert-ms: 60000
     cosine-mismatch-max: 0.50
     spoof-high-threshold: 0.60
-  context:
-    relationship:
-      # S_graph = w_fc*I_fc + w_hier*min(1, dist/norm) + w_off*I_off + w_dur*I_dur
-      # S_relationship = clamp01(S_graph + weightCrossChannel * S_cross)  — not a 7th family
-      weight-first-contact: 0.60
-      weight-hierarchy: 0.35
-      weight-off-hours: 0.05
-      weight-duration-anomaly: 0.05
-      weight-cross-channel: 0.40
-      hierarchy-normalize-levels: 6
-      business-hour-start: 9
-      business-hour-end: 18
-      typical-hour-deviation-hours: 4
-      duration-anomaly-ratio: 2.0
-    cross-channel:
-      window-hours: 48
-      matching-campaign-boost: 0.35
-      indicator-match-boost: 0.15
-      multi-channel-boost: 0.10
+  policy-engine:
+    score-mode: MAX
+    score-cap: 1.0
+    cache-ttl-seconds: 300
+    business-hour-start: 9
+    business-hour-end: 18
+    cross-channel-window-hours: 48
   actuation:
     # noop | webrtc | asterisk — lab default noop; use asterisk for live SIP hold/whisper.
     adapter: asterisk

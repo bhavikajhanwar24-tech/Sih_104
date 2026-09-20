@@ -254,81 +254,80 @@ public final class FactCatalogue {
     }
 
     /**
-     * Build a JSON Schema for {@code policy_compile} LLM output with {@code fact} as an enum
-     * of catalogue paths and typed leaf values.
+     * Flat JSON Schema for small models (gemma 4B). Avoids deep oneOf/anyOf/$ref and
+     * {@code additionalProperties:false} which Ollama often fails with empty content.
+     * Fact path enums are limited to {@code subset} (clause-relevant catalogue only).
+     * Full rule shape is validated/normalised in Java after parse.
      */
     public static Map<String, Object> buildCompileResultSchema() {
-        List<String> factEnum = FACTS.stream().map(FactDef::path).toList();
-        Map<String, Object> leafValue = new LinkedHashMap<>();
-        // Broad value; Java validator enforces per-fact type/enum after parse
-        leafValue.put("description", "Must match the catalogue type/enum for the chosen fact");
+        return buildCompileResultSchema(FACTS);
+    }
+
+    public static Map<String, Object> buildCompileResultSchema(List<FactDef> subset) {
+        List<FactDef> facts = (subset == null || subset.isEmpty()) ? FACTS : subset;
+        List<String> factEnum = facts.stream().map(FactDef::path).toList();
 
         Map<String, Object> leaf = new LinkedHashMap<>();
         leaf.put("type", "object");
-        leaf.put("additionalProperties", false);
-        leaf.put("required", List.of("fact", "op"));
-        Map<String, Object> leafProps = new LinkedHashMap<>();
-        leafProps.put("fact", Map.of("type", "string", "enum", factEnum));
-        leafProps.put("op", Map.of(
-                "type", "string",
-                "enum", List.of("EQ", "NE", "GT", "GTE", "LT", "LTE", "IN", "NOT_IN", "CONTAINS", "EXISTS")
+        leaf.put("properties", Map.of(
+                "fact", Map.of("type", "string", "enum", factEnum),
+                "op", Map.of(
+                        "type", "string",
+                        "enum", List.of("EQ", "NE", "GT", "GTE", "LT", "LTE", "IN", "NOT_IN", "CONTAINS", "EXISTS")
+                ),
+                "value", Map.of("description", "Scalar matching the fact type/enum")
         ));
-        leafProps.put("value", leafValue);
-        leaf.put("properties", leafProps);
 
-        Map<String, Object> condition = new LinkedHashMap<>();
-        // Avoid deep $ref recursion for small models — allow object with all/any/not/fact
-        condition.put("type", "object");
+        // Shallow condition: object only — no recursive $ref / oneOf (4B-hostile)
+        Map<String, Object> when = new LinkedHashMap<>();
+        when.put("type", "object");
+        when.put("description", "Condition tree: {all:[...]}, {any:[...]}, {not:{...}}, or a leaf {fact,op,value}");
 
-        Map<String, Object> thenObj = Map.of(
-                "type", "object",
-                "required", List.of("minLevel", "scoreBoost", "reasonCode"),
-                "properties", Map.of(
-                        "minLevel", Map.of("type", "integer", "minimum", 1, "maximum", 4),
-                        "scoreBoost", Map.of("type", "number"),
-                        "reasonCode", Map.of("type", "string"),
-                        "advice", Map.of("type", "string")
-                )
-        );
+        Map<String, Object> thenObj = new LinkedHashMap<>();
+        thenObj.put("type", "object");
+        thenObj.put("properties", Map.of(
+                "minLevel", Map.of("type", "integer"),
+                "scoreBoost", Map.of("type", "number"),
+                "reasonCode", Map.of("type", "string"),
+                "advice", Map.of("type", "string")
+        ));
 
-        Map<String, Object> source = Map.of(
-                "type", "object",
-                "required", List.of("quote", "clauseRef"),
-                "properties", Map.of(
-                        "clauseRef", Map.of("type", "string", "minLength", 1),
-                        "quote", Map.of("type", "string", "minLength", 1, "maxLength", 200)
-                )
-        );
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("type", "object");
+        source.put("properties", Map.of(
+                "clauseRef", Map.of("type", "string"),
+                "quote", Map.of("type", "string")
+        ));
 
         Map<String, Object> rule = new LinkedHashMap<>();
         rule.put("type", "object");
-        rule.put("required", List.of("ruleId", "title", "source", "appliesTo", "when", "then", "severity"));
         Map<String, Object> ruleProps = new LinkedHashMap<>();
         ruleProps.put("ruleId", Map.of("type", "string"));
         ruleProps.put("title", Map.of("type", "string"));
         ruleProps.put("description", Map.of("type", "string"));
         ruleProps.put("source", source);
         ruleProps.put("appliesTo", Map.of("type", "object"));
-        ruleProps.put("when", condition);
+        ruleProps.put("when", when);
         ruleProps.put("then", thenObj);
-        ruleProps.put("severity", Map.of("type", "string", "enum", List.of("LOW", "MEDIUM", "HIGH", "CRITICAL")));
+        ruleProps.put("severity", Map.of(
+                "type", "string",
+                "enum", List.of("LOW", "MEDIUM", "HIGH", "CRITICAL")
+        ));
         ruleProps.put("keywords", Map.of("type", "array"));
         ruleProps.put("policyFact", Map.of("type", "string"));
         rule.put("properties", ruleProps);
-
-        // Document leaf shape for models that inspect $defs
-        Map<String, Object> defs = new LinkedHashMap<>();
-        defs.put("ConditionLeaf", leaf);
+        // Document leaf for models that inspect $defs — not referenced recursively
+        rule.put("$comment", "ConditionLeaf shape: fact+op+value; fact enum limited to catalogue subset");
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("type", "object");
-        root.put("additionalProperties", false);
-        root.put("required", List.of("schemaVersion", "rules"));
-        root.put("$defs", defs);
+        // Do NOT set additionalProperties:false — gemma/ollama often emit empty content with it
+        root.put("required", List.of("rules"));
         Map<String, Object> props = new LinkedHashMap<>();
-        props.put("schemaVersion", Map.of("const", "2"));
+        props.put("schemaVersion", Map.of("type", "string"));
         props.put("rules", Map.of("type", "array", "items", rule));
         root.put("properties", props);
+        root.put("$defs", Map.of("ConditionLeaf", leaf));
         return root;
     }
 }

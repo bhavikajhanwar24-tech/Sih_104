@@ -99,10 +99,15 @@ public class PolicyCompileRepository {
                 """, tenantId, compilationId, documentId, chunkId, status, skipReason);
     }
 
+    /**
+     * Chunks waiting for (re)processing. Only {@code PENDING} — callers that want to
+     * resume failures must reset those jobs to PENDING first (see {@link #resetFailedChunksForRerun}
+     * / {@link #resetAllFailedJobs}).
+     */
     public List<Map<String, Object>> listPendingChunks(UUID compilationId) {
         return jdbc.query("""
                 SELECT * FROM policy_compilation_chunks
-                WHERE compilation_id = ? AND status IN ('PENDING','FAILED')
+                WHERE compilation_id = ? AND status = 'PENDING'
                 ORDER BY id
                 """, (rs, i) -> mapChunk(rs), compilationId);
     }
@@ -133,19 +138,55 @@ public class PolicyCompileRepository {
             int latencyMs,
             int rulesProposed
     ) {
+        upsertChunkResult(tenantId, compilationId, documentId, chunkId,
+                status, reason, latencyMs, rulesProposed, Map.of());
+    }
+
+    public void upsertChunkResult(
+            UUID tenantId,
+            UUID compilationId,
+            UUID documentId,
+            UUID chunkId,
+            String status,
+            String reason,
+            int latencyMs,
+            int rulesProposed,
+            Map<String, Object> meta
+    ) {
         jdbc.update("""
                 INSERT INTO policy_compile_chunk_results
-                  (tenant_id, compilation_id, document_id, chunk_id, status, reason, latency_ms, rules_proposed)
-                VALUES (?,?,?,?,?,?,?,?)
+                  (tenant_id, compilation_id, document_id, chunk_id, status, reason,
+                   latency_ms, rules_proposed, meta)
+                VALUES (?,?,?,?,?,?,?,?,?::jsonb)
                 ON CONFLICT (compilation_id, chunk_id) DO UPDATE SET
                   status = EXCLUDED.status,
                   reason = EXCLUDED.reason,
                   latency_ms = EXCLUDED.latency_ms,
                   rules_proposed = EXCLUDED.rules_proposed,
+                  meta = EXCLUDED.meta,
                   updated_at = now()
                 """,
-                tenantId, compilationId, documentId, chunkId, status, reason, latencyMs, rulesProposed
+                tenantId, compilationId, documentId, chunkId, status, reason, latencyMs, rulesProposed,
+                toJson(meta == null ? Map.of() : meta)
         );
+    }
+
+    public int countChunkJobs(UUID compilationId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM policy_compilation_chunks WHERE compilation_id = ?",
+                Integer.class,
+                compilationId
+        );
+        return n == null ? 0 : n;
+    }
+
+    public int countFinishedChunkJobs(UUID compilationId) {
+        Integer n = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM policy_compilation_chunks
+                WHERE compilation_id = ?
+                  AND status NOT IN ('PENDING', 'RUNNING')
+                """, Integer.class, compilationId);
+        return n == null ? 0 : n;
     }
 
     public List<Map<String, Object>> listChunkResults(UUID compilationId) {
@@ -166,19 +207,48 @@ public class PolicyCompileRepository {
         return rows.stream().findFirst();
     }
 
-    public void resetFailedChunksForRerun(UUID compilationId) {
-        jdbc.update("""
+    /**
+     * Re-queue only chunks that timed out, failed schema checks, returned empty
+     * (including truncated / suspect / unavailable), or were rejected by validation.
+     * Does <em>not</em> touch {@code LLM_OK_WITH_RULES}, {@code LLM_OK}, {@code LLM_OK_EMPTY},
+     * or {@code SKIPPED_PREFILTER}.
+     */
+    public int resetFailedChunksForRerun(UUID compilationId) {
+        int n = jdbc.update("""
                 UPDATE policy_compilation_chunks
                 SET status = 'PENDING', error = NULL, updated_at = now()
                 WHERE compilation_id = ?
                   AND chunk_id IN (
                     SELECT chunk_id FROM policy_compile_chunk_results
                     WHERE compilation_id = ?
-                      AND status IN ('LLM_TIMEOUT','LLM_SCHEMA_ERROR','LLM_EMPTY','REJECTED_VALIDATION')
+                      AND status IN (
+                        'LLM_TIMEOUT',
+                        'LLM_TRUNCATED',
+                        'LLM_SCHEMA_ERROR',
+                        'LLM_EMPTY',
+                        'LLM_EMPTY_SUSPECT',
+                        'LLM_UNAVAILABLE',
+                        'REJECTED_VALIDATION'
+                      )
                   )
                 """, compilationId, compilationId);
-        // Also reset jobs that FAILED without a result row
-        jdbc.update("""
+        // FAILED jobs that never got a result row (crash mid-chunk)
+        n += jdbc.update("""
+                UPDATE policy_compilation_chunks c
+                SET status = 'PENDING', error = NULL, updated_at = now()
+                WHERE c.compilation_id = ?
+                  AND c.status = 'FAILED'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM policy_compile_chunk_results r
+                    WHERE r.compilation_id = c.compilation_id AND r.chunk_id = c.chunk_id
+                  )
+                """, compilationId);
+        return n;
+    }
+
+    /** Resume path: re-queue every FAILED job (broader than {@link #resetFailedChunksForRerun}). */
+    public int resetAllFailedJobs(UUID compilationId) {
+        return jdbc.update("""
                 UPDATE policy_compilation_chunks
                 SET status = 'PENDING', error = NULL, updated_at = now()
                 WHERE compilation_id = ? AND status = 'FAILED'
@@ -204,6 +274,13 @@ public class PolicyCompileRepository {
         m.put("reason", rs.getString("reason"));
         m.put("latencyMs", rs.getInt("latency_ms"));
         m.put("rulesProposed", rs.getInt("rules_proposed"));
+        try {
+            String metaRaw = rs.getString("meta");
+            m.put("meta", metaRaw == null || metaRaw.isBlank() ? Map.of() : mapper.readValue(metaRaw, new TypeReference<>() {
+            }));
+        } catch (Exception e) {
+            m.put("meta", Map.of());
+        }
         return m;
     }
 

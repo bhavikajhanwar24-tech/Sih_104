@@ -25,7 +25,7 @@ logger = logging.getLogger("sentinelvoice.ml.llm_gateway")
 
 TASK_LIMITS = {
     # 90s per policy chunk for small local models on CPU/GPU
-    "policy_compile": {"timeout_ms": 90_000, "max_tokens": 1024, "priority": 1},
+    "policy_compile": {"timeout_ms": 90_000, "max_tokens": 2048, "priority": 1},
     "runtime_intent": {"timeout_ms": 2500, "max_tokens": 256, "priority": 0},
     "selftest": {"timeout_ms": 60_000, "max_tokens": 64, "priority": 0},
 }
@@ -205,6 +205,68 @@ class LlmGateway:
                 timeout_ms=timeout_ms,
                 json_schema=json_schema,
             )
+            done_reason = str((usage or {}).get("done_reason") or "")
+            num_ctx = int((usage or {}).get("num_ctx") or getattr(provider, "num_ctx", 0) or 0)
+            prompt_tokens = int((usage or {}).get("prompt_tokens") or 0)
+            if num_ctx > 0 and prompt_tokens > int(0.4 * num_ctx):
+                logger.warning(
+                    "llm_prompt_over_budget task=%s prompt_tokens=%s num_ctx=%s budget_pct=40",
+                    task,
+                    prompt_tokens,
+                    num_ctx,
+                )
+
+            # Truncation / blank must never be reported as a successful empty rules list
+            content_blank = not (text or "").strip()
+            if content_blank and done_reason.lower() in ("length", "max_tokens"):
+                latency = (time.perf_counter() - start) * 1000.0
+                self._record_metrics(latency, usage or {})
+                logger.info(
+                    "llm_run task=%s provider=%s ok=false error=TRUNCATED done_reason=%s "
+                    "prompt_tokens=%s eval_count=%s num_ctx=%s latency_ms=%.1f",
+                    task,
+                    provider.name,
+                    done_reason,
+                    prompt_tokens,
+                    (usage or {}).get("eval_count"),
+                    num_ctx,
+                    latency,
+                )
+                return {
+                    "ok": False,
+                    "error": "TRUNCATED",
+                    "doneReason": done_reason,
+                    "provider": provider.name,
+                    "model": getattr(provider, "model", provider.name),
+                    "latencyMs": latency,
+                    "usage": usage,
+                    "numCtx": num_ctx,
+                }
+            if content_blank and done_reason.lower() not in ("", "stop", "null", "none"):
+                latency = (time.perf_counter() - start) * 1000.0
+                self._record_metrics(latency, usage or {})
+                logger.info(
+                    "llm_run task=%s provider=%s ok=false error=EMPTY_CONTENT done_reason=%s "
+                    "prompt_tokens=%s eval_count=%s num_ctx=%s latency_ms=%.1f",
+                    task,
+                    provider.name,
+                    done_reason,
+                    prompt_tokens,
+                    (usage or {}).get("eval_count"),
+                    num_ctx,
+                    latency,
+                )
+                return {
+                    "ok": False,
+                    "error": "EMPTY_CONTENT",
+                    "doneReason": done_reason,
+                    "provider": provider.name,
+                    "model": getattr(provider, "model", provider.name),
+                    "latencyMs": latency,
+                    "usage": usage,
+                    "numCtx": num_ctx,
+                }
+
             parsed = self._parse_and_validate(text, json_schema)
             if parsed is None:
                 repair_user = (
@@ -221,30 +283,47 @@ class LlmGateway:
                     timeout_ms=timeout_ms,
                     json_schema=json_schema,
                 )
+                done_reason = str((usage or {}).get("done_reason") or done_reason)
+                prompt_tokens = int((usage or {}).get("prompt_tokens") or prompt_tokens)
+                num_ctx = int((usage or {}).get("num_ctx") or num_ctx)
                 parsed = self._parse_and_validate(text, json_schema)
             latency = (time.perf_counter() - start) * 1000.0
-            self._record_metrics(latency, usage)
+            self._record_metrics(latency, usage or {})
             if parsed is None:
+                # Prefer TRUNCATED over SCHEMA when Ollama hit the length cap
+                err = "TRUNCATED" if str(done_reason).lower() in ("length", "max_tokens") else "SCHEMA_VIOLATION"
                 logger.info(
-                    "llm_run task=%s provider=%s ok=false error=SCHEMA_VIOLATION latency_ms=%.1f",
+                    "llm_run task=%s provider=%s ok=false error=%s done_reason=%s "
+                    "prompt_tokens=%s eval_count=%s num_ctx=%s latency_ms=%.1f",
                     task,
                     provider.name,
+                    err,
+                    done_reason,
+                    prompt_tokens,
+                    (usage or {}).get("eval_count"),
+                    num_ctx,
                     latency,
                 )
                 return {
                     "ok": False,
-                    "error": "SCHEMA_VIOLATION",
+                    "error": err,
+                    "doneReason": done_reason,
                     "provider": provider.name,
                     "model": getattr(provider, "model", provider.name),
                     "latencyMs": latency,
                     "usage": usage,
+                    "numCtx": num_ctx,
                 }
             logger.info(
-                "llm_run task=%s provider=%s ok=true latency_ms=%.1f tokens=%s",
+                "llm_run task=%s provider=%s ok=true done_reason=%s prompt_tokens=%s "
+                "eval_count=%s num_ctx=%s latency_ms=%.1f",
                 task,
                 provider.name,
+                done_reason,
+                prompt_tokens,
+                (usage or {}).get("eval_count"),
+                num_ctx,
                 latency,
-                usage,
             )
             return {
                 "ok": True,
@@ -253,7 +332,9 @@ class LlmGateway:
                 "result": parsed,
                 "latencyMs": latency,
                 "usage": usage,
-                "tokensPerSecond": usage.get("tokensPerSecond"),
+                "tokensPerSecond": (usage or {}).get("tokensPerSecond"),
+                "doneReason": done_reason,
+                "numCtx": num_ctx,
             }
         except (httpx.TimeoutException, asyncio.TimeoutError) as ex:
             latency = (time.perf_counter() - start) * 1000.0

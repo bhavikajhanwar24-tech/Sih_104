@@ -49,6 +49,31 @@ public class PolicySetRepository {
         return (max == null ? 0 : max) + 1;
     }
 
+    public Optional<Map<String, Object>> findActiveSet(UUID tenantId) {
+        List<Map<String, Object>> rows = jdbc.query(
+                "SELECT * FROM policy_sets WHERE tenant_id = ? AND status = 'ACTIVE' LIMIT 1",
+                (rs, i) -> mapSet(rs),
+                tenantId
+        );
+        return rows.stream().findFirst();
+    }
+
+    /**
+     * ACCEPTED/EDITED rules only — PROPOSED and REJECTED are never evaluated at runtime.
+     * Hallucination / value-not-in-source rejects stay excluded (same gate as approval).
+     */
+    public List<Map<String, Object>> listRuntimeRules(UUID tenantId, UUID setId) {
+        return jdbc.query("""
+                SELECT * FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ?
+                  AND status IN ('ACCEPTED', 'EDITED')
+                  AND NOT (warnings @> '[{"code":"HALLUCINATED_QUOTE"}]'::jsonb)
+                  AND NOT (warnings @> '[{"code":"VALUE_NOT_IN_SOURCE"}]'::jsonb)
+                  AND NOT (warnings @> '[{"code":"REJECTED_VALUE_NOT_IN_SOURCE"}]'::jsonb)
+                ORDER BY rule_id NULLS LAST, created_at
+                """, (rs, i) -> mapRule(rs), tenantId, setId);
+    }
+
     public Optional<Map<String, Object>> findSet(UUID tenantId, UUID id) {
         List<Map<String, Object>> rows = jdbc.query(
                 "SELECT * FROM policy_sets WHERE tenant_id = ? AND id = ?",

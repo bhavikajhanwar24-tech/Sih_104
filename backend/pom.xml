@@ -57,6 +57,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         <!-- LGPL OpenPDF — avoid iText 7 AGPL for commercialisation / judge scrutiny -->
         <dependency>
             <groupId>com.github.librepdf</groupId>

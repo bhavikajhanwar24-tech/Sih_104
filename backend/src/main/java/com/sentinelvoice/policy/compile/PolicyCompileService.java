@@ -168,6 +168,9 @@ public class PolicyCompileService {
                 .toList();
     }
 
+    /**
+     * Resume a stopped/failed compilation: re-queue every FAILED job, then continue.
+     */
     public Map<String, Object> resume(UUID tenantId, UUID userId, UUID id) {
         Map<String, Object> c = compileRepository.findCompilation(tenantId, id)
                 .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Compilation not found"));
@@ -175,6 +178,7 @@ public class PolicyCompileService {
         if ("RUNNING".equals(status)) {
             throw new PolicyCompileException("BUSY", "Compilation already running");
         }
+        compileRepository.resetAllFailedJobs(id);
         cancelFlags.put(id, new AtomicBoolean(false));
         compileRepository.updateStatus(id, "QUEUED", null);
         policyExtractionExecutor.execute(() -> runCompilation(tenantId, id));
@@ -186,10 +190,10 @@ public class PolicyCompileService {
     }
 
     /**
-     * Re-process only chunks that timed out, schema-failed, returned empty, or failed validation
-     * (and any FAILED jobs). Keeps already-OK results and existing rules.
+     * Re-process only chunks that timed out, failed schema checks, returned empty,
+     * or were rejected by validation. Keeps OK / valid-empty / prefilter-skipped chunks
+     * and existing rules.
      */
-
     public Map<String, Object> cancel(UUID tenantId, UUID userId, UUID id) {
         Map<String, Object> c = compileRepository.findCompilation(tenantId, id)
                 .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Compilation not found"));
@@ -212,13 +216,19 @@ public class PolicyCompileService {
         if ("RUNNING".equals(String.valueOf(c.get("status")))) {
             throw new PolicyCompileException("BUSY", "Compilation already running");
         }
-        compileRepository.resetFailedChunksForRerun(id);
+        int reset = compileRepository.resetFailedChunksForRerun(id);
+        if (reset == 0) {
+            throw new PolicyCompileException(
+                    "NO_FAILED_CHUNKS",
+                    "No chunks to re-run (timeout / schema / empty / validation only)"
+            );
+        }
         cancelFlags.put(id, new AtomicBoolean(false));
         compileRepository.updateStatus(id, "QUEUED", null);
         policyExtractionExecutor.execute(() -> runCompilation(tenantId, id));
         auditLedgerService.append(
                 tenantId, null, AuditEventType.POLICY_COMPILE_RESUMED, "USER", userId.toString(),
-                Map.of("compilationId", id.toString(), "rerunFailed", true)
+                Map.of("compilationId", id.toString(), "rerunFailed", true, "chunksReset", reset)
         );
         return get(tenantId, id);
     }
@@ -249,10 +259,14 @@ public class PolicyCompileService {
                                 ? (Map<String, Object>) pm
                                 : Map.of()
                 );
-                int done = ((Number) progress.getOrDefault("chunksDone", 0)).intValue();
                 int failed = ((Number) progress.getOrDefault("chunksFailed", 0)).intValue();
                 int proposed = ((Number) progress.getOrDefault("rulesProposed", 0)).intValue();
                 int hallucinated = ((Number) progress.getOrDefault("rulesRejectedHallucinated", 0)).intValue();
+                int totalJobs = Math.max(
+                        compileRepository.countChunkJobs(compilationId),
+                        ((Number) progress.getOrDefault("chunksTotal", 0)).intValue()
+                );
+                progress.put("chunksTotal", totalJobs);
 
                 AtomicBoolean cancelled = cancelFlags.computeIfAbsent(compilationId, k -> new AtomicBoolean(false));
                 List<Map<String, Object>> pending = compileRepository.listPendingChunks(compilationId);
@@ -277,78 +291,91 @@ public class PolicyCompileService {
                             compileRepository.updateChunk(compilationId, chunkId, "FAILED", 0, 0, "chunk_missing");
                             compileRepository.upsertChunkResult(
                                     tenantId, compilationId, documentId, chunkId,
-                                    "LLM_EMPTY", "chunk_missing", ms, 0
+                                    "LLM_UNAVAILABLE", "chunk_missing", ms, 0
                             );
                             failed++;
+                            syncProgress(progress, compilationId, failed, proposed, hallucinated);
+                            compileRepository.updateProgress(compilationId, progress);
                             continue;
                         }
                         boolean injection = chunk.getInjectionFlags() != null && !chunk.getInjectionFlags().isEmpty();
                         LlmChunkOutcome llm = callLlmWithRetry(tenantId, chunk, allowExternal);
                         int ms = (int) ((System.nanoTime() - t0) / 1_000_000L);
+                        Map<String, Object> meta = llm.meta() == null ? Map.of() : llm.meta();
 
-                        if (!"LLM_OK".equals(llm.status())) {
+                        if (!isSuccessWithRules(llm.status()) && !isValidEmpty(llm.status())) {
+                            boolean jobFailed = !isValidEmpty(llm.status());
+                            String jobStatus = isValidEmpty(llm.status()) ? "DONE" : "FAILED";
+                            if ("LLM_EMPTY_SUSPECT".equals(llm.status()) || isValidEmpty(llm.status())) {
+                                jobStatus = "DONE";
+                                jobFailed = false;
+                            }
                             compileRepository.updateChunk(
-                                    compilationId, chunkId, "FAILED", 0, 0, llm.reason()
+                                    compilationId, chunkId, jobStatus, 0, 0, llm.reason()
                             );
                             compileRepository.upsertChunkResult(
                                     tenantId, compilationId, documentId, chunkId,
-                                    llm.status(), llm.reason(), ms, 0
+                                    llm.status(), llm.reason(), ms, 0, meta
                             );
-                            failed++;
-                            progress.put("chunksDone", ++done);
-                            progress.put("chunksFailed", failed);
-                            progress.put("rulesProposed", proposed);
-                            progress.put("rulesRejectedHallucinated", hallucinated);
-                            mergeDiagnosticCounts(progress, compileRepository.listChunkResults(compilationId));
+                            if (jobFailed) {
+                                failed++;
+                            }
+                            syncProgress(progress, compilationId, failed, proposed, hallucinated);
+                            compileRepository.updateProgress(compilationId, progress);
+                            continue;
+                        }
+
+                        if (isValidEmpty(llm.status())) {
+                            compileRepository.updateChunk(compilationId, chunkId, "DONE", 0, 0, "empty");
+                            compileRepository.upsertChunkResult(
+                                    tenantId, compilationId, documentId, chunkId,
+                                    "LLM_OK_EMPTY", llm.reason() == null ? "valid empty rules list" : llm.reason(),
+                                    ms, 0, meta
+                            );
+                            syncProgress(progress, compilationId, failed, proposed, hallucinated);
                             compileRepository.updateProgress(compilationId, progress);
                             continue;
                         }
 
                         List<Map<String, Object>> rules = llm.rules();
-                        if (rules.isEmpty()) {
-                            compileRepository.updateChunk(compilationId, chunkId, "DONE", 0, 0, "empty");
-                            compileRepository.upsertChunkResult(
-                                    tenantId, compilationId, documentId, chunkId,
-                                    "LLM_EMPTY", "LLM returned zero rules", ms, 0
-                            );
-                            done++;
-                        } else {
-                            int localProposed = 0;
-                            int localRejected = 0;
-                            for (Map<String, Object> raw : rules) {
-                                Map<String, Object> enriched = enrich(raw, documentId, chunkId, chunk.getText());
-                                RuleValidator.Result validated =
-                                        RuleValidator.validate(enriched, chunk.getText(), injection);
-                                if (validated.autoReject()) {
-                                    localRejected++;
-                                    if (isHallucinationReject(validated.warnings())) {
-                                        hallucinated++;
-                                    }
-                                    compileRepository.insertRule(tenantId, setId, validated.rule());
-                                    continue;
+                        int localProposed = 0;
+                        int localRejected = 0;
+                        for (Map<String, Object> raw : rules) {
+                            Map<String, Object> enriched = enrich(raw, documentId, chunkId, chunk.getText());
+                            RuleValidator.Result validated =
+                                    RuleValidator.validate(enriched, chunk.getText(), injection);
+                            if (validated.autoReject()) {
+                                localRejected++;
+                                if (isHallucinationReject(validated.warnings())) {
+                                    hallucinated++;
                                 }
                                 compileRepository.insertRule(tenantId, setId, validated.rule());
-                                localProposed++;
-                                proposed++;
-                                persistKeywordsAndFacts(tenantId, setId, validated.rule(), raw);
+                                continue;
                             }
-                            String resultStatus = localProposed > 0
-                                    ? "LLM_OK"
-                                    : (localRejected > 0 ? "REJECTED_VALIDATION" : "LLM_EMPTY");
-                            String reason = localProposed > 0
-                                    ? null
-                                    : (localRejected > 0
-                                            ? "all proposed rules failed quote/source validation"
-                                            : "no rules retained");
-                            compileRepository.updateChunk(
-                                    compilationId, chunkId, "DONE", localProposed, localRejected, reason
-                            );
-                            compileRepository.upsertChunkResult(
-                                    tenantId, compilationId, documentId, chunkId,
-                                    resultStatus, reason, ms, localProposed
-                            );
-                            done++;
+                            compileRepository.insertRule(tenantId, setId, validated.rule());
+                            localProposed++;
+                            proposed++;
+                            persistKeywordsAndFacts(tenantId, setId, validated.rule(), raw);
                         }
+                        String resultStatus = localProposed > 0
+                                ? "LLM_OK_WITH_RULES"
+                                : (localRejected > 0 ? "REJECTED_VALIDATION" : "LLM_OK_EMPTY");
+                        // Keep legacy alias for older UI
+                        if ("LLM_OK_WITH_RULES".equals(resultStatus)) {
+                            // also acceptable as LLM_OK in older counters — we map both in merge
+                        }
+                        String reason = localProposed > 0
+                                ? null
+                                : (localRejected > 0
+                                        ? "all proposed rules failed quote/source validation"
+                                        : "no rules retained");
+                        compileRepository.updateChunk(
+                                compilationId, chunkId, "DONE", localProposed, localRejected, reason
+                        );
+                        compileRepository.upsertChunkResult(
+                                tenantId, compilationId, documentId, chunkId,
+                                resultStatus, reason, ms, localProposed, meta
+                        );
                     } catch (Exception ex) {
                         int ms = (int) ((System.nanoTime() - t0) / 1_000_000L);
                         log.warn("compile_chunk_failed compilationId={} chunkId={} cause={}",
@@ -362,13 +389,8 @@ public class PolicyCompileService {
                                 status, ex.getMessage(), ms, 0
                         );
                         failed++;
-                        done++;
                     }
-                    progress.put("chunksDone", done);
-                    progress.put("chunksFailed", failed);
-                    progress.put("rulesProposed", proposed);
-                    progress.put("rulesRejectedHallucinated", hallucinated);
-                    mergeDiagnosticCounts(progress, compileRepository.listChunkResults(compilationId));
+                    syncProgress(progress, compilationId, failed, proposed, hallucinated);
                     compileRepository.updateProgress(compilationId, progress);
                 }
 
@@ -449,17 +471,26 @@ public class PolicyCompileService {
         out.put("hasFailedChunks", results.stream().anyMatch(r -> {
             String st = String.valueOf(r.get("status"));
             return "LLM_TIMEOUT".equals(st)
+                    || "LLM_TRUNCATED".equals(st)
                     || "LLM_SCHEMA_ERROR".equals(st)
                     || "LLM_EMPTY".equals(st)
+                    || "LLM_EMPTY_SUSPECT".equals(st)
+                    || "LLM_UNAVAILABLE".equals(st)
                     || "REJECTED_VALIDATION".equals(st);
         }));
+        out.put("hasSuspectEmpty", results.stream()
+                .anyMatch(r -> "LLM_EMPTY_SUSPECT".equals(String.valueOf(r.get("status")))));
         return out;
     }
 
     private static Map<String, Object> countByStatus(List<Map<String, Object>> results) {
         Map<String, Object> counts = new LinkedHashMap<>();
         for (String s : List.of(
-                "SKIPPED_PREFILTER", "LLM_OK", "LLM_TIMEOUT", "LLM_SCHEMA_ERROR", "LLM_EMPTY", "REJECTED_VALIDATION"
+                "SKIPPED_PREFILTER",
+                "LLM_OK", "LLM_OK_WITH_RULES", "LLM_OK_EMPTY",
+                "LLM_TIMEOUT", "LLM_TRUNCATED", "LLM_SCHEMA_ERROR",
+                "LLM_UNAVAILABLE", "LLM_EMPTY", "LLM_EMPTY_SUSPECT",
+                "REJECTED_VALIDATION"
         )) {
             counts.put(s, 0);
         }
@@ -470,15 +501,49 @@ public class PolicyCompileService {
         return counts;
     }
 
+    private void syncProgress(
+            Map<String, Object> progress,
+            UUID compilationId,
+            int failed,
+            int proposed,
+            int hallucinated
+    ) {
+        int total = Math.max(
+                num(progress, "chunksTotal"),
+                compileRepository.countChunkJobs(compilationId)
+        );
+        int finished = compileRepository.countFinishedChunkJobs(compilationId);
+        List<Map<String, Object>> results = compileRepository.listChunkResults(compilationId);
+        int failedFromDb = 0;
+        for (Map<String, Object> r : results) {
+            String st = String.valueOf(r.get("status"));
+            if ("LLM_TIMEOUT".equals(st) || "LLM_TRUNCATED".equals(st) || "LLM_SCHEMA_ERROR".equals(st)
+                    || "LLM_EMPTY".equals(st) || "LLM_UNAVAILABLE".equals(st)
+                    || "REJECTED_VALIDATION".equals(st)) {
+                failedFromDb++;
+            }
+        }
+        progress.put("chunksTotal", total);
+        progress.put("chunksDone", Math.min(finished, total));
+        progress.put("chunksFailed", failedFromDb);
+        progress.put("rulesProposed", proposed);
+        progress.put("rulesRejectedHallucinated", hallucinated);
+        mergeDiagnosticCounts(progress, results);
+    }
+
     private static void mergeDiagnosticCounts(Map<String, Object> progress, List<Map<String, Object>> results) {
         Map<String, Object> counts = countByStatus(results);
         progress.put("skippedPrefilter", counts.get("SKIPPED_PREFILTER"));
-        progress.put("llmOk", counts.get("LLM_OK"));
+        int okWith = num(counts, "LLM_OK_WITH_RULES") + num(counts, "LLM_OK");
+        progress.put("llmOk", okWith);
+        progress.put("llmOkEmpty", counts.get("LLM_OK_EMPTY"));
         progress.put("timedOut", counts.get("LLM_TIMEOUT"));
+        progress.put("truncated", counts.get("LLM_TRUNCATED"));
         progress.put("schemaErrors", counts.get("LLM_SCHEMA_ERROR"));
+        progress.put("llmUnavailable", counts.get("LLM_UNAVAILABLE"));
         progress.put("llmEmpty", counts.get("LLM_EMPTY"));
+        progress.put("llmEmptySuspect", counts.get("LLM_EMPTY_SUSPECT"));
         progress.put("rejectedValidation", counts.get("REJECTED_VALIDATION"));
-        progress.put("chunksTotal", results.size());
         progress.put("summary", formatSummary(progress));
     }
 
@@ -486,8 +551,12 @@ public class PolicyCompileService {
         int total = num(progress, "chunksTotal");
         int skipped = num(progress, "skippedPrefilter");
         int timedOut = num(progress, "timedOut");
+        int truncated = num(progress, "truncated");
         int schema = num(progress, "schemaErrors");
         int empty = num(progress, "llmEmpty");
+        int emptySuspect = num(progress, "llmEmptySuspect");
+        int okEmpty = num(progress, "llmOkEmpty");
+        int unavailable = num(progress, "llmUnavailable");
         int rejected = num(progress, "rejectedValidation");
         int ok = num(progress, "llmOk");
         List<String> parts = new ArrayList<>();
@@ -497,11 +566,23 @@ public class PolicyCompileService {
         if (timedOut > 0) {
             parts.add(timedOut + " timed out");
         }
+        if (truncated > 0) {
+            parts.add(truncated + " truncated");
+        }
         if (schema > 0) {
             parts.add(schema + " schema errors");
         }
+        if (unavailable > 0) {
+            parts.add(unavailable + " LLM unavailable");
+        }
         if (empty > 0) {
             parts.add(empty + " empty LLM replies");
+        }
+        if (emptySuspect > 0) {
+            parts.add(emptySuspect + " suspicious empties");
+        }
+        if (okEmpty > 0) {
+            parts.add(okEmpty + " valid empty answers");
         }
         if (rejected > 0) {
             parts.add(rejected + " rejected by validation");
@@ -525,76 +606,179 @@ public class PolicyCompileService {
         progress.put("chunksTotal", total);
         progress.put("chunksCandidate", candidates);
         progress.put("chunksSkipped", skipped);
-        progress.put("chunksDone", 0);
+        progress.put("chunksDone", skipped);
         progress.put("chunksFailed", 0);
         progress.put("rulesProposed", 0);
         progress.put("rulesRejectedHallucinated", 0);
         progress.put("skippedPrefilter", skipped);
         progress.put("llmOk", 0);
+        progress.put("llmOkEmpty", 0);
         progress.put("timedOut", 0);
+        progress.put("truncated", 0);
         progress.put("schemaErrors", 0);
+        progress.put("llmUnavailable", 0);
         progress.put("llmEmpty", 0);
+        progress.put("llmEmptySuspect", 0);
         progress.put("rejectedValidation", 0);
         progress.put("summary", total + " chunks queued (" + skipped + " pre-filter skips)");
         return progress;
     }
 
-    private record LlmChunkOutcome(String status, String reason, List<Map<String, Object>> rules) {
+    private record LlmChunkOutcome(
+            String status,
+            String reason,
+            List<Map<String, Object>> rules,
+            Map<String, Object> meta
+    ) {
+        LlmChunkOutcome(String status, String reason, List<Map<String, Object>> rules) {
+            this(status, reason, rules, Map.of());
+        }
+    }
+
+    private static boolean isSuccessWithRules(String status) {
+        return "LLM_OK".equals(status) || "LLM_OK_WITH_RULES".equals(status);
+    }
+
+    private static boolean isValidEmpty(String status) {
+        return "LLM_OK_EMPTY".equals(status);
+    }
+
+    private static final java.util.regex.Pattern OBLIGATION_CUES = java.util.regex.Pattern.compile(
+            "(?i)\\b(must(?:\\s+not)?|never|shall|requires?|prohibited|above\\s+inr|not\\s+permitted)\\b"
+    );
+
+    private static boolean hasStrongObligationCues(String text) {
+        return text != null && OBLIGATION_CUES.matcher(text).find();
     }
 
     private LlmChunkOutcome callLlmWithRetry(
             UUID tenantId, PolicyDocumentChunkEntity chunk, boolean allowExternal
     ) {
-        LlmChunkOutcome first = callLlmOnce(tenantId, chunk, allowExternal);
-        if ("LLM_OK".equals(first.status()) || "LLM_EMPTY".equals(first.status())) {
+        LlmChunkOutcome first = callLlmOnce(tenantId, chunk, allowExternal, false);
+        if (isSuccessWithRules(first.status()) || isValidEmpty(first.status())) {
+            if (isValidEmpty(first.status()) && hasStrongObligationCues(chunk.getText())) {
+                log.info("policy_compile_suspect_empty_retry chunkId={}", chunk.getId());
+                LlmChunkOutcome retry = callLlmOnce(tenantId, chunk, allowExternal, true);
+                if (isSuccessWithRules(retry.status())) {
+                    return retry;
+                }
+                if (isValidEmpty(retry.status()) || "LLM_EMPTY".equals(retry.status())) {
+                    Map<String, Object> meta = new LinkedHashMap<>(
+                            retry.meta() == null ? Map.of() : retry.meta()
+                    );
+                    meta.put("suspectRetry", true);
+                    return new LlmChunkOutcome(
+                            "LLM_EMPTY_SUSPECT",
+                            "obligation cues present but model returned empty rules twice",
+                            List.of(),
+                            meta
+                    );
+                }
+                return retry;
+            }
             return first;
         }
-        if ("LLM_TIMEOUT".equals(first.status()) || "LLM_SCHEMA_ERROR".equals(first.status())) {
+        if ("LLM_TIMEOUT".equals(first.status())
+                || "LLM_SCHEMA_ERROR".equals(first.status())
+                || "LLM_TRUNCATED".equals(first.status())) {
             log.info("policy_compile_retry chunkId={} priorStatus={}", chunk.getId(), first.status());
-            return callLlmOnce(tenantId, chunk, allowExternal);
+            return callLlmOnce(tenantId, chunk, allowExternal, false);
         }
         return first;
     }
 
     @SuppressWarnings("unchecked")
     private LlmChunkOutcome callLlmOnce(
-            UUID tenantId, PolicyDocumentChunkEntity chunk, boolean allowExternal
+            UUID tenantId,
+            PolicyDocumentChunkEntity chunk,
+            boolean allowExternal,
+            boolean shortPrompt
     ) {
-        Map<String, Object> schema = FactCatalogue.buildCompileResultSchema();
+        var subset = FactCatalogue.subsetForClause(chunk.getText());
+        Map<String, Object> schema = FactCatalogue.buildCompileResultSchema(subset);
+        String userPrompt = shortPrompt ? buildShortUserPrompt(chunk, subset) : buildUserPrompt(chunk, subset);
+        String systemPrompt = shortPrompt ? buildShortSystemPrompt() : buildSystemPrompt();
+
+        int estimatedTokens = estimateTokens(systemPrompt + "\n" + userPrompt + "\n" + chunk.getText());
+        int numCtxBudget = 8192;
+        if (estimatedTokens > (int) (0.4 * numCtxBudget)) {
+            log.warn(
+                    "policy_compile_prompt_over_budget chunkId={} estimatedTokens={} numCtx={} budgetPct=40",
+                    chunk.getId(), estimatedTokens, numCtxBudget
+            );
+        }
+
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("system", buildSystemPrompt());
-        payload.put("user", buildUserPrompt(chunk));
+        payload.put("system", systemPrompt);
+        payload.put("user", userPrompt);
         payload.put("jsonSchema", schema);
         payload.put("untrustedData", chunk.getText());
         payload.put("allowExternalLlm", allowExternal);
 
         try {
             Map<String, Object> out = llmGatewayClient.run("policy_compile", tenantId, payload);
+            Map<String, Object> meta = extractLlmMeta(out, estimatedTokens);
+            log.info(
+                    "policy_compile_chunk chunkId={} ok={} error={} promptTokens={} evalCount={} "
+                            + "numCtx={} doneReason={} latencyMs={}",
+                    chunk.getId(),
+                    out.get("ok"),
+                    out.get("error"),
+                    meta.get("promptTokens"),
+                    meta.get("evalCount"),
+                    meta.get("numCtx"),
+                    meta.get("doneReason"),
+                    meta.get("latencyMs")
+            );
+
             String error = out.get("error") == null ? "" : String.valueOf(out.get("error"));
+            String errorUp = error.toUpperCase(Locale.ROOT);
             if (!Boolean.TRUE.equals(out.get("ok")) && out.get("result") == null) {
-                if (isTimeoutError(error) || isTimeoutThrowable(error)) {
-                    return new LlmChunkOutcome("LLM_TIMEOUT", error, List.of());
+                if (isTimeoutError(error) || errorUp.contains("TIMEOUT")) {
+                    return new LlmChunkOutcome("LLM_TIMEOUT", error, List.of(), meta);
                 }
-                if (error.toUpperCase(Locale.ROOT).contains("SCHEMA")) {
-                    return new LlmChunkOutcome("LLM_SCHEMA_ERROR", error, List.of());
+                if (errorUp.contains("TRUNCATED")
+                        || "length".equalsIgnoreCase(String.valueOf(meta.get("doneReason")))) {
+                    return new LlmChunkOutcome(
+                            "LLM_TRUNCATED", error.isBlank() ? "truncated" : error, List.of(), meta
+                    );
                 }
-                return new LlmChunkOutcome("LLM_EMPTY", error.isBlank() ? "llm_failed" : error, List.of());
-            }
-            if (error.toUpperCase(Locale.ROOT).contains("SCHEMA") && out.get("result") == null) {
-                return new LlmChunkOutcome("LLM_SCHEMA_ERROR", error, List.of());
+                if (errorUp.contains("SCHEMA")) {
+                    return new LlmChunkOutcome("LLM_SCHEMA_ERROR", error, List.of(), meta);
+                }
+                if (errorUp.contains("NO_LLM") || errorUp.contains("CIRCUIT")
+                        || errorUp.contains("UNAVAILABLE") || errorUp.contains("BACKPRESSURE")) {
+                    return new LlmChunkOutcome(
+                            "LLM_UNAVAILABLE",
+                            error.isBlank() ? "llm_unavailable" : error,
+                            List.of(),
+                            meta
+                    );
+                }
+                if (errorUp.contains("EMPTY_CONTENT")) {
+                    return new LlmChunkOutcome("LLM_EMPTY", error, List.of(), meta);
+                }
+                return new LlmChunkOutcome(
+                        "LLM_UNAVAILABLE",
+                        error.isBlank() ? "llm_failed" : error,
+                        List.of(),
+                        meta
+                );
             }
             Object result = out.get("result");
             if (!(result instanceof Map<?, ?> map)) {
-                return new LlmChunkOutcome("LLM_EMPTY", "result_not_object", List.of());
+                return new LlmChunkOutcome("LLM_SCHEMA_ERROR", "result_not_object", List.of(), meta);
             }
             Object rules = map.get("rules");
             if (!(rules instanceof List<?> list)) {
-                return new LlmChunkOutcome("LLM_EMPTY", "rules_missing", List.of());
+                return new LlmChunkOutcome("LLM_SCHEMA_ERROR", "rules_missing", List.of(), meta);
             }
             List<Map<String, Object>> parsed = new ArrayList<>();
             for (Object item : list) {
                 if (item instanceof Map<?, ?> rm) {
-                    parsed.add(new LinkedHashMap<>((Map<String, Object>) rm));
+                    Map<String, Object> rule = new LinkedHashMap<>((Map<String, Object>) rm);
+                    normalizeRuleDefaults(rule);
+                    parsed.add(rule);
                 }
             }
             String provider = String.valueOf(out.getOrDefault("provider", "LLM"));
@@ -606,14 +790,14 @@ public class PolicyCompileService {
                 }
             }
             if (parsed.isEmpty()) {
-                return new LlmChunkOutcome("LLM_EMPTY", "zero_rules", List.of());
+                return new LlmChunkOutcome("LLM_OK_EMPTY", "zero_rules", List.of(), meta);
             }
-            return new LlmChunkOutcome("LLM_OK", null, parsed);
+            return new LlmChunkOutcome("LLM_OK_WITH_RULES", null, parsed, meta);
         } catch (ResourceAccessException ex) {
             if (isTimeoutException(ex)) {
                 return new LlmChunkOutcome("LLM_TIMEOUT", ex.getMessage(), List.of());
             }
-            throw ex;
+            return new LlmChunkOutcome("LLM_UNAVAILABLE", ex.getMessage(), List.of());
         } catch (Exception ex) {
             if (isTimeoutException(ex)) {
                 return new LlmChunkOutcome("LLM_TIMEOUT", ex.getMessage(), List.of());
@@ -622,8 +806,62 @@ public class PolicyCompileService {
             if (msg.toUpperCase(Locale.ROOT).contains("SCHEMA")) {
                 return new LlmChunkOutcome("LLM_SCHEMA_ERROR", msg, List.of());
             }
-            throw ex;
+            return new LlmChunkOutcome("LLM_UNAVAILABLE", msg, List.of());
         }
+    }
+
+    private static Map<String, Object> extractLlmMeta(Map<String, Object> out, int estimatedTokens) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("estimatedPromptTokens", estimatedTokens);
+        meta.put("latencyMs", out.get("latencyMs"));
+        meta.put("doneReason", out.get("doneReason"));
+        meta.put("numCtx", out.get("numCtx"));
+        meta.put("provider", out.get("provider"));
+        meta.put("model", out.get("model"));
+        Object usage = out.get("usage");
+        if (usage instanceof Map<?, ?> u) {
+            meta.put("promptTokens", u.get("prompt_tokens"));
+            meta.put("evalCount", u.get("eval_count") != null ? u.get("eval_count") : u.get("completion_tokens"));
+            if (meta.get("doneReason") == null) {
+                meta.put("doneReason", u.get("done_reason"));
+            }
+            if (meta.get("numCtx") == null) {
+                meta.put("numCtx", u.get("num_ctx"));
+            }
+        }
+        return meta;
+    }
+
+    private static int estimateTokens(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        return Math.max(1, text.length() / 4);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void normalizeRuleDefaults(Map<String, Object> rule) {
+        if (!(rule.get("then") instanceof Map<?, ?>)) {
+            Map<String, Object> then = new LinkedHashMap<>();
+            then.put("minLevel", 2);
+            then.put("scoreBoost", 0.2);
+            then.put("reasonCode", "POLICY_GENERIC");
+            rule.put("then", then);
+        } else {
+            Map<String, Object> then = new LinkedHashMap<>((Map<String, Object>) rule.get("then"));
+            then.putIfAbsent("minLevel", 2);
+            then.putIfAbsent("scoreBoost", 0.2);
+            then.putIfAbsent("reasonCode", "POLICY_GENERIC");
+            rule.put("then", then);
+        }
+        if (!(rule.get("source") instanceof Map<?, ?>)) {
+            rule.put("source", new LinkedHashMap<>());
+        }
+        if (!(rule.get("appliesTo") instanceof Map<?, ?>)) {
+            rule.put("appliesTo", Map.of("actionTypes", List.of("*")));
+        }
+        rule.putIfAbsent("severity", "MEDIUM");
+        rule.putIfAbsent("title", String.valueOf(rule.getOrDefault("ruleId", "rule")));
     }
 
     private static String classifyException(Exception ex) {
@@ -634,7 +872,10 @@ public class PolicyCompileService {
         if (msg.contains("SCHEMA")) {
             return "LLM_SCHEMA_ERROR";
         }
-        return "LLM_EMPTY";
+        if (msg.contains("TRUNCATED")) {
+            return "LLM_TRUNCATED";
+        }
+        return "LLM_UNAVAILABLE";
     }
 
     private static boolean isTimeoutException(Throwable ex) {
@@ -805,8 +1046,12 @@ public class PolicyCompileService {
         if (raw.get("source") instanceof Map<?, ?> s) {
             s.forEach((k, v) -> source.put(String.valueOf(k), v));
         }
-        source.put("documentId", documentId.toString());
-        source.put("chunkIds", List.of(chunkId.toString()));
+        if (documentId != null) {
+            source.put("documentId", documentId.toString());
+        }
+        if (chunkId != null) {
+            source.put("chunkIds", List.of(chunkId.toString()));
+        }
         // Do NOT invent clauseRef or quote for live LLM output — RuleValidator rejects gaps.
         if ("LLM_MOCK".equals(String.valueOf(rule.get("origin"))) && chunkText != null) {
             String q = chunkText.strip().replaceAll("\\s+", " ");
@@ -818,7 +1063,9 @@ public class PolicyCompileService {
         }
         rule.put("source", source);
         if (rule.get("ruleId") == null) {
-            rule.put("ruleId", "R-" + chunkId.toString().substring(0, 8));
+            rule.put("ruleId", chunkId == null
+                    ? "R-test"
+                    : "R-" + chunkId.toString().substring(0, 8));
         }
         rule.putIfAbsent("status", "PROPOSED");
         rule.putIfAbsent("origin", "LLM");
@@ -896,14 +1143,24 @@ public class PolicyCompileService {
     private static String buildSystemPrompt() {
         return """
                 You extract policy rules from one untrusted clause. Return ONLY JSON {"schemaVersion":"2","rules":[...]}.
-                Use ONLY catalogue fact paths and enum values. Copy a verbatim quote (<=200 chars) and a clauseRef.
-                If the clause is general, definitional, or has no obligation/prohibition/threshold, return {"schemaVersion":"2","rules":[]}.
+                Use ONLY catalogue fact paths and enum values listed in the user message. Copy a verbatim quote (<=200 chars) and a clauseRef from the clause heading/number when present.
+                Return rules for obligations, prohibitions, and numeric thresholds. Only return {"schemaVersion":"2","rules":[]} for pure definitions/scope/glossary with no actionable obligation.
                 Never invent amounts, durations, or action types not present in the clause.
                 """;
     }
 
+    private static String buildShortSystemPrompt() {
+        return """
+                Extract ONE policy rule as JSON {"schemaVersion":"2","rules":[...]} if the clause has must/must not/never/shall/requires/above INR.
+                If truly no obligation, return {"schemaVersion":"2","rules":[]}. JSON only.
+                """;
+    }
+
     private String buildUserPrompt(PolicyDocumentChunkEntity chunk) {
-        var subset = FactCatalogue.subsetForClause(chunk.getText());
+        return buildUserPrompt(chunk, FactCatalogue.subsetForClause(chunk.getText()));
+    }
+
+    private String buildUserPrompt(PolicyDocumentChunkEntity chunk, java.util.List<FactCatalogue.FactDef> subset) {
         String factsJson;
         try {
             factsJson = objectMapper.writeValueAsString(FactCatalogue.subsetToApiBody(subset));
@@ -919,10 +1176,10 @@ public class PolicyCompileService {
                 Output rules[0].when = {"all":[{"fact":"ask.type","op":"EQ","value":"WIRE_TRANSFER"},{"fact":"ask.amountInr","op":"GT","value":1000000},{"fact":"ask.beneficiaryKnown","op":"EQ","value":false}]}
                 then.minLevel = 3; source.quote copied from the clause; source.clauseRef = "5.2"
 
-                Worked example B (general / definition / scope → empty list — e.g. clauses 1.1, 1.2, 6.1):
-                Clause: "1.1 Definitions. This policy applies to all employees of Demo Bank and defines terms used herein."
+                Worked example B (definition/scope only → empty list):
+                Clause: "1.1 Definitions. This policy applies to all employees and defines terms used herein."
                 Output: {"schemaVersion":"2","rules":[]}
-                Do the same for pure scope statements (1.2) and glossary-only clauses (6.1) with no obligation.
+                Do NOT return empty for clauses that contain must / must not / never / shall / requires / above INR.
 
                 Chunk heading: %s
                 Chunk page: %s
@@ -932,5 +1189,81 @@ public class PolicyCompileService {
                 chunk.getHeadingPath() == null ? "" : chunk.getHeadingPath(),
                 chunk.getPageNo() == null ? "" : chunk.getPageNo()
         );
+    }
+
+    private String buildShortUserPrompt(
+            PolicyDocumentChunkEntity chunk,
+            java.util.List<FactCatalogue.FactDef> subset
+    ) {
+        String factsJson;
+        try {
+            factsJson = objectMapper.writeValueAsString(FactCatalogue.subsetToApiBody(subset));
+        } catch (Exception e) {
+            factsJson = "{}";
+        }
+        return """
+                Facts (use only these paths): %s
+                Heading: %s
+                This clause has obligation language. Propose at least one rule with when/then/source.quote.
+                Return {"schemaVersion":"2","rules":[]} ONLY if there is truly no obligation.
+                """.formatted(
+                factsJson,
+                chunk.getHeadingPath() == null ? "" : chunk.getHeadingPath()
+        );
+    }
+
+    public Map<String, Object> testClause(UUID tenantId, String clauseText) {
+        boolean allowExternal = settingsRepository.findById(tenantId)
+                .map(TenantSettingsEntity::isAllowExternalLlm)
+                .orElse(false);
+        return testClause(tenantId, clauseText, allowExternal);
+    }
+
+    /**
+     * Admin-only smoke test: run the compile LLM pipeline on a single pasted clause.
+     */
+    public Map<String, Object> testClause(UUID tenantId, String clauseText, boolean allowExternal) {
+        long t0 = System.nanoTime();
+        String text = clauseText == null ? "" : clauseText.strip();
+        if (text.isBlank()) {
+            throw new PolicyCompileException("EMPTY", "Clause text is required");
+        }
+        boolean prefilter = ChunkPrefilter.isCandidate(text);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("schemaVersion", "2");
+        out.put("prefilterCandidate", prefilter);
+        out.put("obligationCues", hasStrongObligationCues(text));
+        if (!prefilter) {
+            out.put("status", "SKIPPED_PREFILTER");
+            out.put("reason", "no_obligation_keywords");
+            out.put("timingMs", (System.nanoTime() - t0) / 1_000_000L);
+            return out;
+        }
+        PolicyDocumentChunkEntity fake = new PolicyDocumentChunkEntity();
+        fake.setText(text);
+        fake.setHeadingPath("test-clause");
+        long llmStart = System.nanoTime();
+        LlmChunkOutcome llm = callLlmWithRetry(tenantId, fake, allowExternal);
+        long llmMs = (System.nanoTime() - llmStart) / 1_000_000L;
+        out.put("status", llm.status());
+        out.put("reason", llm.reason());
+        out.put("llmMeta", llm.meta());
+        out.put("llmMs", llmMs);
+        out.put("rawRules", llm.rules());
+        List<Map<String, Object>> validations = new ArrayList<>();
+        for (Map<String, Object> raw : llm.rules()) {
+            long v0 = System.nanoTime();
+            Map<String, Object> enriched = enrich(raw, null, null, text);
+            RuleValidator.Result validated = RuleValidator.validate(enriched, text, false);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("rule", validated.rule());
+            row.put("autoReject", validated.autoReject());
+            row.put("warnings", validated.warnings());
+            row.put("validationMs", (System.nanoTime() - v0) / 1_000_000L);
+            validations.add(row);
+        }
+        out.put("validations", validations);
+        out.put("timingMs", (System.nanoTime() - t0) / 1_000_000L);
+        return out;
     }
 }

@@ -36,12 +36,32 @@ public class InterventionStateMachine {
             List<String> corroboratingFamilies,
             boolean emergency,
             boolean analystConfirmedForL5,
-            long nowMs
+            long nowMs,
+            int policyMinLevel
     ) {
         public EvaluationInput {
             corroboratingFamilies = corroboratingFamilies == null
                     ? List.of()
                     : List.copyOf(corroboratingFamilies);
+            if (policyMinLevel < 0) {
+                policyMinLevel = 0;
+            }
+            if (policyMinLevel > 4) {
+                policyMinLevel = 4;
+            }
+        }
+
+        /** Back-compat for callers that do not yet pass a policy floor. */
+        public EvaluationInput(
+                double smoothedScore,
+                boolean corroborationSatisfied,
+                List<String> corroboratingFamilies,
+                boolean emergency,
+                boolean analystConfirmedForL5,
+                long nowMs
+        ) {
+            this(smoothedScore, corroborationSatisfied, corroboratingFamilies,
+                    emergency, analystConfirmedForL5, nowMs, 0);
         }
     }
 
@@ -82,6 +102,7 @@ public class InterventionStateMachine {
                     input.corroborationSatisfied(),
                     input.analystConfirmedForL5()
             );
+            desired = max(desired, fromPolicyMinLevel(input.policyMinLevel()));
 
             if (input.emergency()) {
                 desired = max(desired, InterventionLevel.LEVEL_4_AUTO_HOLD);
@@ -403,6 +424,15 @@ public class InterventionStateMachine {
     private static InterventionLevel previous(InterventionLevel level) {
         int idx = level.ordinal() - 1;
         return idx >= 0 ? InterventionLevel.values()[idx] : null;
+    }
+
+    private static InterventionLevel fromPolicyMinLevel(int policyMinLevel) {
+        return switch (policyMinLevel) {
+            case 2 -> InterventionLevel.LEVEL_2_SOFT_NUDGE;
+            case 3 -> InterventionLevel.LEVEL_3_STEP_UP_MFA;
+            case 4 -> InterventionLevel.LEVEL_4_AUTO_HOLD;
+            default -> InterventionLevel.LEVEL_1_SILENT;
+        };
     }
 
     private static InterventionLevel max(InterventionLevel a, InterventionLevel b) {

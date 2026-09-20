@@ -10,6 +10,7 @@ const DOC_TABS = [
   { id: 'documents', label: 'Documents' },
   { id: 'archived', label: 'Archived' },
   { id: 'rules', label: 'Rules' },
+  { id: 'simulate', label: 'Simulate' },
   { id: 'keywords', label: 'Keywords' },
   { id: 'versions', label: 'Versions' },
   { id: 'approvals', label: 'Approvals' },
@@ -67,6 +68,7 @@ export function PoliciesPage() {
   const [compileBusy, setCompileBusy] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [maxDocs, setMaxDocs] = useState(1);
+  const [engineStatus, setEngineStatus] = useState(null);
   const fileRef = useRef(null);
   const pollRef = useRef(null);
 
@@ -93,7 +95,7 @@ export function PoliciesPage() {
         );
         if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
       }
-      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords') {
+      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords' || tab === 'simulate') {
         const [s, c, limits] = await Promise.all([
           apiJson('/api/v2/policy/sets', { skipErrorToast: true }).catch(() => ({ items: [] })),
           apiJson('/api/v2/policy/compilations', { skipErrorToast: true }).catch(() => ({ items: [] })),
@@ -105,6 +107,8 @@ export function PoliciesPage() {
         setCompilations(c.items || []);
         if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
       }
+      const eng = await apiJson('/api/v2/policy/engine/status', { skipErrorToast: true }).catch(() => null);
+      if (eng) setEngineStatus(eng);
     } catch (err) {
       push(err.message || 'Failed to load');
     } finally {
@@ -434,11 +438,14 @@ export function PoliciesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-full flex-col gap-4 overflow-x-hidden p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-sv-fg">Policies</h1>
-        <p className="mt-1 text-sm text-sv-muted">
-          Documents, LLM-assisted rule compile, human review, and versioned approval.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-sv-fg">Policies</h1>
+          <p className="mt-1 text-sm text-sv-muted">
+            Documents, LLM-assisted rule compile, human review, and versioned approval.
+          </p>
+        </div>
+        <EngineStatusChip status={engineStatus} />
       </div>
 
       <Tabs tabs={DOC_TABS} value={tab} onChange={setTab} />
@@ -575,6 +582,8 @@ export function PoliciesPage() {
         />
       ) : null}
 
+      {tab === 'simulate' ? <SimulateTab sets={sets} /> : null}
+
       {tab === 'keywords' ? (
         <KeywordsTab loading={loading} sets={sets} canWrite={canWrite} onRefresh={load} />
       ) : null}
@@ -634,8 +643,10 @@ function diagnosticSummary(c) {
 
 function progressCounts(progress) {
   if (!progress || typeof progress !== 'object') return null;
+  const total = Number(progress.chunksTotal ?? 0);
+  const done = Number(progress.chunksProcessed ?? progress.chunksDone ?? 0);
   return {
-    chunks: progress.chunksProcessed ?? progress.chunksDone ?? '—',
+    chunks: total > 0 ? Math.min(done, total) : done || '—',
     proposed: progress.rulesProposed ?? '—',
     hallucinated:
       progress.rulesHallucinated ??
@@ -659,11 +670,80 @@ function RulesTab({
   onRefresh,
 }) {
   const { push } = useToast();
+  const [testText, setTestText] = useState('');
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  async function runTestClause() {
+    if (!canWrite || !testText.trim()) return;
+    setTestBusy(true);
+    setTestResult(null);
+    try {
+      const data = await apiJson('/api/v2/policy/compile/test-clause', {
+        method: 'POST',
+        body: JSON.stringify({ text: testText }),
+      });
+      setTestResult(data);
+    } catch (err) {
+      push(err.message || 'Test compile failed');
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   if (loading && draftSets.length === 0 && sets.length === 0 && compilations.length === 0) {
     return <p className="text-sm text-sv-muted">Loading…</p>;
   }
   return (
     <div className="space-y-4">
+      {canWrite ? (
+        <div className="rounded border border-sv-border p-4">
+          <p className="text-sm font-medium text-sv-fg">Test compile on one clause</p>
+          <p className="mt-1 text-xs text-sv-muted">
+            Runs the same LLM + validation pipeline as a full compile (admin only). Shows raw
+            structured output, validation, and timing — not saved to a policy set.
+          </p>
+          <textarea
+            className="mt-3 min-h-[100px] w-full rounded border border-sv-border bg-sv-elevated p-2 text-sm text-sv-fg"
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            placeholder='e.g. Staff must not process wire transfers above INR 10,00,000 to unknown beneficiaries…'
+          />
+          <div className="mt-2">
+            <Button disabled={testBusy || !testText.trim()} onClick={runTestClause}>
+              {testBusy ? 'Running…' : 'Test compile'}
+            </Button>
+          </div>
+          {testResult ? (
+            <div className="mt-3 space-y-2 rounded border border-sv-border/70 bg-sv-elevated/40 p-3 text-xs">
+              <p>
+                Status <Badge tone="neutral">{testResult.status}</Badge>
+                {testResult.reason ? ` · ${testResult.reason}` : ''} · {testResult.timingMs}ms
+                {testResult.llmMs != null ? ` (LLM ${testResult.llmMs}ms)` : ''}
+              </p>
+              {testResult.llmMeta ? (
+                <p className="text-sv-muted">
+                  promptTokens={String(testResult.llmMeta.promptTokens ?? testResult.llmMeta.estimatedPromptTokens ?? '—')}
+                  {' · '}evalCount={String(testResult.llmMeta.evalCount ?? '—')}
+                  {' · '}numCtx={String(testResult.llmMeta.numCtx ?? '—')}
+                  {' · '}doneReason={String(testResult.llmMeta.doneReason ?? '—')}
+                </p>
+              ) : null}
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-sv-fg">
+                {JSON.stringify(
+                  {
+                    rawRules: testResult.rawRules,
+                    validations: testResult.validations,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {compilations.length > 0 ? (
         <div className="rounded border border-sv-border p-4">
           <p className="text-sm font-medium text-sv-fg">Compilation progress</p>
@@ -671,10 +751,10 @@ function RulesTab({
             {compilations.map((c) => {
               const p = progressCounts(c.progress);
               const summary = diagnosticSummary(c);
-              const hasFailed =
-                c.diagnostics?.hasFailedChunks ||
-                c.status === 'FAILED' ||
-                c.status === 'COMPLETED_NO_RULES';
+              const hasFailed = !!c.diagnostics?.hasFailedChunks;
+              const suspects = (c.chunkResults || c.diagnostics?.chunkResults || []).filter(
+                (r) => r.status === 'LLM_EMPTY_SUSPECT',
+              );
               return (
                 <li key={c.id} className="space-y-1 rounded border border-sv-border/60 px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -702,6 +782,7 @@ function RulesTab({
                         <Button
                           className="px-2 py-1 text-xs"
                           variant="ghost"
+                          title="Re-processes only chunks that timed out, failed schema checks, returned empty, or were rejected by validation"
                           onClick={() => onRerunFailed(c.id)}
                         >
                           Re-run failed
@@ -719,6 +800,22 @@ function RulesTab({
                   </div>
                   {summary ? (
                     <p className="text-xs text-sv-muted">{summary}</p>
+                  ) : null}
+                  {suspects.length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs text-risk-watch">
+                        {suspects.length} suspicious empty reply
+                        {suspects.length === 1 ? '' : 'ies'} (obligation cues present)
+                      </p>
+                      {c.policySetId ? (
+                        <Link
+                          className="text-xs text-sv-accent underline"
+                          to={`/app/policies/review?set=${c.policySetId}&addManual=1`}
+                        >
+                          Add rule manually
+                        </Link>
+                      ) : null}
+                    </div>
                   ) : null}
                   {c.status === 'COMPLETED_NO_RULES' && c.error ? (
                     <p className="text-xs text-risk-watch">{c.error}</p>
@@ -1492,3 +1589,221 @@ ChunkViewerModal.propTypes = {
   loading: PropTypes.bool,
   onClose: PropTypes.func,
 };
+
+function EngineStatusChip({ status }) {
+  if (!status) {
+    return (
+      <span className="rounded border border-sv-border px-2 py-1 text-xs text-sv-muted">
+        Engine …
+      </span>
+    );
+  }
+  if (status.state === 'NO_POLICY') {
+    return (
+      <span className="rounded border border-risk-watch/40 bg-risk-watch/10 px-2 py-1 text-xs text-risk-watch">
+        No ACTIVE policy
+      </span>
+    );
+  }
+  const loaded = status.cacheLoadedAt ? relativeAgo(status.cacheLoadedAt) : '—';
+  return (
+    <span className="rounded border border-sv-border bg-sv-elevated/50 px-2 py-1 text-xs text-sv-fg">
+      Active v{status.activePolicyVersion ?? '?'} · {status.ruleCount ?? 0} rules · loaded {loaded}
+      {status.avgEvalMicros != null ? ` · avg ${status.avgEvalMicros}µs` : ''}
+    </span>
+  );
+}
+
+EngineStatusChip.propTypes = {
+  status: PropTypes.object,
+};
+
+function relativeAgo(iso) {
+  try {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 60_000) return 'just now';
+    const min = Math.round(ms / 60_000);
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.round(min / 60);
+    return `${hr} h ago`;
+  } catch {
+    return iso;
+  }
+}
+
+const DEFAULT_SIM_FACTS = {
+  'ask.type': 'WIRE_TRANSFER',
+  'ask.amountInr': 2500000,
+  'ask.beneficiaryKnown': false,
+  'ask.amountInr.assertedByCaller': true,
+  'caller.matchType': 'NONE',
+  'relationship.isFirstContact': true,
+  'time.isBusinessHours': true,
+};
+
+function SimulateTab({ sets }) {
+  const { push } = useToast();
+  const [policySetId, setPolicySetId] = useState('active');
+  const [factsJson, setFactsJson] = useState(() => JSON.stringify(DEFAULT_SIM_FACTS, null, 2));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const active = sets.find((s) => s.status === 'ACTIVE');
+  const choices = [
+    { id: 'active', label: active ? `ACTIVE (v${active.version})` : 'ACTIVE (none)' },
+    ...sets.map((s) => ({ id: s.id, label: `v${s.version} · ${s.status} · ${s.name || s.id}` })),
+  ];
+
+  async function run() {
+    setBusy(true);
+    setResult(null);
+    try {
+      let facts;
+      try {
+        facts = JSON.parse(factsJson);
+      } catch {
+        throw new Error('Facts must be valid JSON');
+      }
+      const body = {
+        policySetId: policySetId === 'active' ? 'active' : policySetId,
+        facts,
+      };
+      const data = await apiJson('/api/v2/policy/simulate', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      setResult(data);
+    } catch (err) {
+      push(err.message || 'Simulation failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-sm font-medium text-sv-fg">Rule simulation</p>
+        <p className="mt-1 text-xs text-sv-muted">
+          Evaluate ACCEPTED/EDITED rules against a fact bag. Simulations are never audited as real
+          decisions. Missing facts yield UNDETERMINED rules (three-valued logic).
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-sv-muted">
+          Policy set
+          <select
+            className="rounded border border-sv-border bg-sv-elevated px-2 py-1.5 text-sm text-sv-fg"
+            value={policySetId}
+            onChange={(e) => setPolicySetId(e.target.value)}
+          >
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button disabled={busy} onClick={run}>
+          {busy ? 'Running…' : 'Run evaluation'}
+        </Button>
+      </div>
+      <label className="flex flex-col gap-1 text-xs text-sv-muted">
+        Facts (JSON)
+        <textarea
+          className="min-h-[180px] rounded border border-sv-border bg-sv-elevated p-3 font-mono text-xs text-sv-fg"
+          value={factsJson}
+          onChange={(e) => setFactsJson(e.target.value)}
+          spellCheck={false}
+        />
+      </label>
+
+      {result ? (
+        <div className="space-y-3 rounded border border-sv-border bg-sv-elevated/40 p-4">
+          <div className="flex flex-wrap gap-3 text-sm">
+            <Badge tone={result.state === 'NO_POLICY' ? 'danger' : 'success'}>{result.state}</Badge>
+            <span className="text-sv-fg">
+              Floor level: <strong>{result.minLevel ?? 0}</strong>
+            </span>
+            <span className="text-sv-muted">Score {Number(result.policyScore || 0).toFixed(3)}</span>
+            <span className="text-sv-muted">{result.evaluationMicros}µs</span>
+            {result.policyVersion != null ? (
+              <span className="text-sv-muted">v{result.policyVersion}</span>
+            ) : null}
+            {result.simulation ? (
+              <Badge tone="accent">simulation</Badge>
+            ) : null}
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-sv-fg">
+              Fired rules ({(result.firedRules || []).length})
+            </p>
+            {(result.firedRules || []).length === 0 ? (
+              <p className="mt-1 text-xs text-sv-muted">None fired.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {(result.firedRules || []).map((r) => (
+                  <li
+                    key={r.ruleId}
+                    className="rounded border border-sv-border/80 bg-sv-bg/40 px-3 py-2 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-sv-fg">{r.title || r.ruleId}</span>
+                      <Badge tone="neutral">{r.severity}</Badge>
+                      <span className="text-xs text-sv-muted">minLevel {r.minLevel}</span>
+                      <span className="text-xs text-sv-muted">{r.reasonCode}</span>
+                    </div>
+                    {r.sourceRef?.clauseRef || r.sourceRef?.quote ? (
+                      <p className="mt-1 text-xs text-sv-muted">
+                        {r.sourceRef.clauseRef ? `${r.sourceRef.clauseRef}: ` : ''}
+                        {r.sourceRef.quote
+                          ? `"${String(r.sourceRef.quote).slice(0, 160)}${
+                              String(r.sourceRef.quote).length > 160 ? '…' : ''
+                            }"`
+                          : null}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-sv-fg">
+              Undetermined ({(result.undeterminedRules || []).length})
+            </p>
+            {(result.undeterminedRules || []).length === 0 ? (
+              <p className="mt-1 text-xs text-sv-muted">All evaluable rules resolved.</p>
+            ) : (
+              <>
+                <p className="mt-1 text-xs text-sv-muted">
+                  {(result.undeterminedRules || []).length} rules could not be evaluated
+                  {result.unknownFacts?.length
+                    ? `: missing ${result.unknownFacts.join(', ')}`
+                    : ''}
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-sv-muted">
+                  {(result.undeterminedRules || []).map((u) => (
+                    <li key={u.ruleId}>
+                      {u.title || u.ruleId}
+                      {u.missingFacts?.length ? (
+                        <span className="text-xs"> — needs {u.missingFacts.join(', ')}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+SimulateTab.propTypes = {
+  sets: PropTypes.array,
+};
+

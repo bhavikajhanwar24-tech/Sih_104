@@ -3,6 +3,8 @@ package com.sentinelvoice.policy;
 import com.sentinelvoice.policy.compile.PolicyCompileException;
 import com.sentinelvoice.policy.compile.PolicyCompileService;
 import com.sentinelvoice.policy.dsl.FactCatalogue;
+import com.sentinelvoice.policy.engine.PolicyRuntimeService;
+import com.sentinelvoice.policy.engine.RuleEvaluation;
 import com.sentinelvoice.policy.sets.PolicySetService;
 import com.sentinelvoice.security.TenantContext;
 import org.springframework.http.HttpStatus;
@@ -32,10 +34,16 @@ public class PolicyCompileController {
 
     private final PolicyCompileService compileService;
     private final PolicySetService setService;
+    private final PolicyRuntimeService policyRuntimeService;
 
-    public PolicyCompileController(PolicyCompileService compileService, PolicySetService setService) {
+    public PolicyCompileController(
+            PolicyCompileService compileService,
+            PolicySetService setService,
+            PolicyRuntimeService policyRuntimeService
+    ) {
         this.compileService = compileService;
         this.setService = setService;
+        this.policyRuntimeService = policyRuntimeService;
     }
 
     @GetMapping("/fact-catalogue")
@@ -83,6 +91,17 @@ public class PolicyCompileController {
     public Map<String, Object> rerunFailed(@PathVariable UUID id) {
         TenantContext ctx = TenantContext.require();
         return compileService.rerunFailed(ctx.tenantId(), ctx.userId(), id);
+    }
+
+    /**
+     * Admin smoke-test: run the compile LLM pipeline on one pasted clause.
+     */
+    @PostMapping("/compile/test-clause")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> testClause(@RequestBody Map<String, Object> body) {
+        TenantContext ctx = TenantContext.require();
+        String text = body.get("text") == null ? "" : String.valueOf(body.get("text"));
+        return compileService.testClause(ctx.tenantId(), text);
     }
 
     @PostMapping("/compilations/{id}/cancel")
@@ -183,6 +202,39 @@ public class PolicyCompileController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * F7 — simulate rule evaluation. Never audited as a real decision.
+     * Body: { "policySetId": "uuid"|null|"active", "facts": { ... } }
+     */
+    @PostMapping("/simulate")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> simulate(@RequestBody Map<String, Object> body) {
+        TenantContext ctx = TenantContext.require();
+        UUID setId = null;
+        Object rawSet = body.get("policySetId");
+        if (rawSet != null && !"active".equalsIgnoreCase(String.valueOf(rawSet))
+                && !String.valueOf(rawSet).isBlank()) {
+            setId = UUID.fromString(String.valueOf(rawSet));
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> facts = body.get("facts") instanceof Map<?, ?> m
+                ? (Map<String, Object>) m
+                : Map.of();
+        try {
+            RuleEvaluation eval = policyRuntimeService.simulate(ctx.tenantId(), setId, facts);
+            return eval.toApiMap();
+        } catch (IllegalArgumentException ex) {
+            throw new PolicyCompileException("NOT_FOUND", ex.getMessage());
+        }
+    }
+
+    @GetMapping("/engine/status")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> engineStatus() {
+        TenantContext ctx = TenantContext.require();
+        return policyRuntimeService.engineStatus(ctx.tenantId());
+    }
+
     @ExceptionHandler(PolicyCompileException.class)
     public ResponseEntity<Map<String, Object>> handle(PolicyCompileException ex) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -192,7 +244,8 @@ public class PolicyCompileController {
             case "NOT_FOUND" -> HttpStatus.NOT_FOUND;
             case "SAME_USER", "BAD_STATE", "NOT_DRAFT", "NO_RULES", "COMMENT_REQUIRED",
                  "NO_DOCUMENTS", "NOT_READY", "BAD_MODE", "BUSY", "UNKNOWN_FACT",
-                 "TOO_MANY_DOCUMENTS", "INVALID_EDIT", "HALLUCINATED_QUOTE" -> HttpStatus.CONFLICT;
+                 "TOO_MANY_DOCUMENTS", "INVALID_EDIT", "HALLUCINATED_QUOTE",
+                 "NO_FAILED_CHUNKS", "EMPTY" -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(body);

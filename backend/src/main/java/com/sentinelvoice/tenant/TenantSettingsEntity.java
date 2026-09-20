@@ -35,6 +35,9 @@ public class TenantSettingsEntity {
     @Column(name = "max_concurrent_calls", nullable = false)
     private int maxConcurrentCalls = 20;
 
+    @Column(nullable = false, length = 64)
+    private String timezone = "Asia/Kolkata";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> extras = new LinkedHashMap<>();
@@ -91,6 +94,14 @@ public class TenantSettingsEntity {
 
     public void setMaxConcurrentCalls(int maxConcurrentCalls) {
         this.maxConcurrentCalls = maxConcurrentCalls;
+    }
+
+    public String getTimezone() {
+        return timezone == null || timezone.isBlank() ? "Asia/Kolkata" : timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone == null || timezone.isBlank() ? "Asia/Kolkata" : timezone;
     }
 
     public Map<String, Object> getExtras() {

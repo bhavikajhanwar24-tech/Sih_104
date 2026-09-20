@@ -8,19 +8,17 @@ import com.sentinelvoice.challenge.model.ChallengeVerdict;
 import com.sentinelvoice.config.SentinelProperties;
 import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
-import com.sentinelvoice.context.TransactionPolicyService;
 import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
-import com.sentinelvoice.context.model.TransactionAssessment;
+import com.sentinelvoice.directory.DirectoryMatch;
+import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.fusion.EvidenceFamily;
 import com.sentinelvoice.fusion.FusionContext;
 import com.sentinelvoice.fusion.FusionEngineService;
 import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.fusion.ReasonCode;
 import com.sentinelvoice.fusion.ReasonGenerator;
-import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.identity.IdentityResolutionService;
-import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
@@ -31,6 +29,8 @@ import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.RelationshipQuery;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.model.TelemetryFrame;
+import com.sentinelvoice.policy.engine.PolicyRuntimeService;
+import com.sentinelvoice.policy.engine.RuleEvaluation;
 import com.sentinelvoice.scenario.ScenarioSessionContext;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
@@ -71,7 +71,7 @@ public class FeatureFrameIngestService {
     private final ReasonGenerator reasonGenerator;
     private final IdentityResolutionService identityResolutionService;
     private final RelationshipGraphService relationshipGraphService;
-    private final TransactionPolicyService transactionPolicyService;
+    private final PolicyRuntimeService policyRuntimeService;
     private final CrossChannelCorrelationService crossChannelCorrelationService;
     private final DirectoryService directoryService;
     private final AuditWriteDispatcher auditWriteDispatcher;
@@ -95,7 +95,7 @@ public class FeatureFrameIngestService {
             ReasonGenerator reasonGenerator,
             IdentityResolutionService identityResolutionService,
             RelationshipGraphService relationshipGraphService,
-            TransactionPolicyService transactionPolicyService,
+            PolicyRuntimeService policyRuntimeService,
             CrossChannelCorrelationService crossChannelCorrelationService,
             DirectoryService directoryService,
             AuditWriteDispatcher auditWriteDispatcher,
@@ -115,7 +115,7 @@ public class FeatureFrameIngestService {
         this.reasonGenerator = reasonGenerator;
         this.identityResolutionService = identityResolutionService;
         this.relationshipGraphService = relationshipGraphService;
-        this.transactionPolicyService = transactionPolicyService;
+        this.policyRuntimeService = policyRuntimeService;
         this.crossChannelCorrelationService = crossChannelCorrelationService;
         this.directoryService = directoryService;
         this.auditWriteDispatcher = auditWriteDispatcher;
@@ -236,17 +236,25 @@ public class FeatureFrameIngestService {
         double relationshipScore = crossChannelCorrelationService.blendRelationshipScore(
                 relationship.score(), crossChannel
         );
-        DirectoryRecord claimed = null;
-        if (identity.directoryRecordForClaim() != null
-                && identity.directoryRecordForClaim().get("employeeId") instanceof String empId) {
-            claimed = directoryService.findByEmployeeId(empId).orElse(null);
-        }
-        TransactionAssessment transaction = transactionPolicyService.assess(working, claimed);
+
+        String claimedRole = working.linguistic() != null ? working.linguistic().claimedRole() : null;
+        String claimedName = working.linguistic() != null ? working.linguistic().claimedIdentity() : null;
+        DirectoryMatch directoryMatch = directoryService.resolve(
+                session.getTenantId(), session.getCallerId(), claimedName, claimedRole
+        );
+
+        RuleEvaluation policyEval = policyRuntimeService.evaluateLive(
+                session.getTenantId(), session, working, directoryMatch, relationship
+        );
+        double transactionScore = RuleEvaluation.STATE_NO_POLICY.equals(policyEval.state())
+                ? 0.0
+                : policyEval.policyScore();
+        boolean transactionAvailable = !RuleEvaluation.STATE_NO_POLICY.equals(policyEval.state());
 
         FusionContext fusionContext = FusionContext.withIdentity(
                 working,
-                transaction.score(),
-                true,
+                transactionScore,
+                transactionAvailable,
                 relationshipScore,
                 true,
                 identity
@@ -267,7 +275,8 @@ public class FeatureFrameIngestService {
                         corroborating,
                         fusion.emergencyReason() != null || challengeEmergency,
                         false,
-                        nowMs
+                        nowMs,
+                        policyEval.minLevel()
                 )
         );
 
@@ -313,6 +322,12 @@ public class FeatureFrameIngestService {
         auditPayload.put("level", decision.level().name());
         auditPayload.put("state", fusion.state().name());
         auditPayload.put("changed", decision.changed());
+        auditPayload.put("policyState", policyEval.state());
+        auditPayload.put("policyMinLevel", policyEval.minLevel());
+        auditPayload.put("policyScore", policyEval.policyScore());
+        auditPayload.put("policyVersion", policyEval.policyVersion());
+        auditPayload.put("firedRuleCount", policyEval.firedRules().size());
+        auditPayload.put("undeterminedRuleCount", policyEval.undeterminedRules().size());
         auditWriteDispatcher.submit(
                 session.getSessionId(),
                 AuditEventType.FEATURE_FRAME_SCORED,

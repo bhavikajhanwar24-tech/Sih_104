@@ -59,6 +59,31 @@
     { "path": "time.isBusinessHours", "type": "boolean", "description": "Within configured business hours" },
     { "path": "voice.syntheticScore", "type": "number", "description": "Synthetic voice score 0..1" },
     { "path": "voice.speakerMismatch", "type": "boolean", "description": "Speaker embedding mismatch vs enrolled" },
-    { "path": "session.durationSec", "type": "number", "description": "Call duration in seconds" }
+    { "path": "session.durationSec", "type": "number", "description": "Call duration in seconds" },
+    {
+      "path": "caller.claimedRole.assertedByCaller",
+      "type": "boolean",
+      "description": "True when caller.claimedRole came only from caller speech (not directory-verified)"
+    },
+    {
+      "path": "ask.amountInr.assertedByCaller",
+      "type": "boolean",
+      "description": "True when ask.amountInr was stated only by the caller"
+    },
+    {
+      "path": "ask.type.assertedByCaller",
+      "type": "boolean",
+      "description": "True when ask.type was inferred only from caller speech"
+    },
+    {
+      "path": "cross.recentEmailFromSameIdentity",
+      "type": "boolean",
+      "description": "Email precursor from same identity within correlation window"
+    },
+    {
+      "path": "cross.recentSmsLinkClicked",
+      "type": "boolean",
+      "description": "SMS link-click precursor within correlation window"
+    }
   ]
 }
