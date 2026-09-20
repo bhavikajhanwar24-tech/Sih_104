@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiJson } from '@/services/api.js';
+import { ConflictPanel } from '@/components/policy/ConflictPanel.jsx';
 import { Badge, Button, Input, Modal, Table, Tabs } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
@@ -43,6 +44,10 @@ export function PolicyReviewPage() {
   const [builderError, setBuilderError] = useState('');
   const [rejectedOpen, setRejectedOpen] = useState(true);
   const [builderFocusKey, setBuilderFocusKey] = useState(0);
+  const [rulesJsonOpen, setRulesJsonOpen] = useState(false);
+  const [rulesJsonText, setRulesJsonText] = useState('');
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
 
   const canWrite = hasPermission('policies:write');
 
@@ -80,17 +85,21 @@ export function PolicyReviewPage() {
   );
 
   const diagnostics = set?.compileDiagnostics || null;
-  const allRules = set?.rules || [];
+  const allRules = (set?.rules || []).filter((r) => !r.deletedAt);
+  const deletedRules = (set?.deletedRules || set?.rules || []).filter((r) => r.deletedAt);
   const reviewRules = useMemo(
     () => allRules.filter((r) => r.status !== 'REJECTED'),
     [allRules]
   );
+  /** Meaningful rejections only — placeholders (empty when / no clause) are never shown as cards. */
   const rejectedRules = useMemo(
-    () => allRules.filter((r) => r.status === 'REJECTED'),
+    () => allRules.filter((r) => r.status === 'REJECTED' && isMeaningfulRejection(r)),
     [allRules]
   );
+  const couldNotRule = diagnostics?.couldNotRule || [];
   const ruleCount = allRules.length;
   const canSubmit = Boolean(set?.canSubmit);
+  const preflight = set?.preflight || null;
   const compilationId = diagnostics?.compilationId || null;
   const canRerun =
     canWrite &&
@@ -106,6 +115,37 @@ export function PolicyReviewPage() {
     setEditError('');
     setRejectedOpen(true);
     setBuilderFocusKey((k) => k + 1);
+  }
+
+  async function addRuleManually(prefill = {}) {
+    if (!canWrite) return;
+    const text =
+      prefill.quote ||
+      selected?.source?.quote ||
+      chunks.find((c) => c.id === (prefill.chunkId || selected?.source?.chunkIds?.[0]))?.text ||
+      '';
+    if (!text || String(text).trim().length < 15) {
+      push('Select a clause with enough text, or add the rule from the Rules tab text box');
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await apiJson('/api/v2/policy/rules/from-text', {
+        method: 'POST',
+        body: JSON.stringify({ text: String(text).trim(), setId }),
+      });
+      if (!data.ok) {
+        push(data.reason || 'Could not extract a rule');
+        return;
+      }
+      push(data.message || 'Rule added');
+      await load({ soft: true });
+      if ((data.newConflicts || []).length) setConflictOpen(true);
+    } catch (err) {
+      push(err.message || 'Could not add rule');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function rerunFailed() {
@@ -252,6 +292,16 @@ export function PolicyReviewPage() {
 
   const citeIds = new Set(selected?.source?.chunkIds || []);
 
+  useEffect(() => {
+    const id = selected?.source?.chunkIds?.[0];
+    if (!id) return undefined;
+    const el = document.getElementById(`chunk-${id}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return undefined;
+  }, [selected?.id, selected?.source?.chunkIds]);
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col bg-sv-bg">
       <header className="flex items-center justify-between border-b border-sv-border px-4 py-2">
@@ -298,11 +348,60 @@ export function PolicyReviewPage() {
           {canWrite && set?.status === 'DRAFT' ? (
             <Button
               className="px-3 py-1 text-xs"
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  const r = await apiJson(`/api/v2/policy/sets/${setId}/repair-sources`, {
+                    method: 'POST',
+                  });
+                  push(
+                    `Repaired sources on ${r.repaired ?? 0} rule(s)` +
+                      (r.skipped ? ` · ${r.skipped} skipped` : ''),
+                  );
+                  await load({ soft: true });
+                } catch (err) {
+                  push(err.message || 'Repair failed');
+                }
+              }}
+            >
+              Repair sources
+            </Button>
+          ) : null}
+          {(set?.openConflictCount > 0 || (set?.conflicts || []).some((c) => c.status === 'OPEN')) ? (
+            <Button
+              className="px-3 py-1 text-xs"
+              variant="ghost"
+              onClick={() => setConflictOpen(true)}
+            >
+              Conflicts ({set.openConflictCount || (set.conflicts || []).filter((c) => c.status === 'OPEN').length})
+            </Button>
+          ) : null}
+          {canWrite && set?.status === 'DRAFT' ? (
+            <Button
+              className="px-3 py-1 text-xs"
+              variant="ghost"
+              onClick={async () => {
+                try {
+                  const j = await apiJson(`/api/v2/policy/sets/${setId}/json`);
+                  setRulesJsonText(JSON.stringify(j.rules, null, 2));
+                  setRulesJsonOpen(true);
+                } catch (err) {
+                  push(err.message || 'Failed to load JSON');
+                }
+              }}
+            >
+              Edit as JSON
+            </Button>
+          ) : null}
+          {canWrite && set?.status === 'DRAFT' ? (
+            <Button
+              className="px-3 py-1 text-xs"
               disabled={busy || !canSubmit}
               title={
                 canSubmit
                   ? 'Submit for approval'
-                  : 'Accept at least one rule before submitting'
+                  : 'Pre-flight must be fully green (see checklist)'
               }
               onClick={async () => {
                 try {
@@ -319,6 +418,45 @@ export function PolicyReviewPage() {
           ) : null}
         </div>
       </header>
+
+      {preflight?.checklist ? (
+        <div className="border-b border-sv-border bg-sv-elevated/30 px-4 py-2">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-sv-muted">
+            Pre-flight {preflight.canSubmit ? '· ready' : '· blocked'}
+          </p>
+          <ul className="flex flex-wrap gap-3 text-xs">
+            {(preflight.checklist || []).map((c) => (
+              <li key={c.id} className={c.pass ? 'text-sv-muted' : 'text-risk-critical'}>
+                {c.pass ? '✓' : '✗'} {c.label || c.id}: {c.detail || c.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {(set?.conflicts || []).length > 0 ? (
+        <div className="border-b border-sv-border bg-risk-alert/5 px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-risk-alert">
+              Conflicts ({(set.conflicts || []).filter((c) => c.status === 'OPEN').length} open)
+            </p>
+            <Button className="px-2 py-1 text-xs" variant="ghost" onClick={() => setConflictOpen(true)}>
+              Open conflict panel
+            </Button>
+          </div>
+          <ul className="mt-1 space-y-1 text-xs text-sv-muted">
+            {(set.conflicts || []).slice(0, 5).map((c) => (
+              <li key={c.id}>
+                <Badge tone={c.advisory ? 'neutral' : 'danger'}>{c.type}</Badge>{' '}
+                {c.summary || c.why} · {c.status}
+                {c.resolution === 'KEEP_BOTH' ? (
+                  <span className="ml-1 text-risk-alert">kept both</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {loading || !set ? (
         <p className="p-6 text-sm text-sv-muted">Loading…</p>
@@ -340,12 +478,32 @@ export function PolicyReviewPage() {
                   return (
                     <li
                       key={c.id}
+                      id={`chunk-${c.id}`}
                       className={`rounded border p-3 text-sm ${
                         cited ? 'border-risk-watch/50 bg-risk-watch/5' : 'border-sv-border'
                       }`}
                     >
-                      <div className="mb-1 text-xs text-sv-muted">
-                        #{c.ordinal} {c.headingPath || ''} {c.pageNo != null ? `p.${c.pageNo}` : ''}
+                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-sv-muted">
+                        <span>
+                          #{c.ordinal} {c.headingPath || ''}{' '}
+                          {c.pageNo != null ? `p.${c.pageNo}` : ''}
+                        </span>
+                        {canWrite && set.status === 'DRAFT' ? (
+                          <Button
+                            className="px-2 py-0.5 text-[11px]"
+                            variant="ghost"
+                            onClick={() =>
+                              addRuleManually({
+                                documentId: docMeta?.id || selected?.source?.documentId,
+                                chunkId: c.id,
+                                quote: (c.text || '').replace(/\s+/g, ' ').slice(0, 200),
+                                clauseRef: c.headingPath || '',
+                              })
+                            }
+                          >
+                            Add rule from this clause
+                          </Button>
+                        ) : null}
                       </div>
                       <pre className="whitespace-pre-wrap font-sans text-sv-fg">{highlighted}</pre>
                     </li>
@@ -375,6 +533,7 @@ export function PolicyReviewPage() {
                       rule={r}
                       selected={r.id === selectedRuleId}
                       onSelect={() => setSelectedRuleId(r.id)}
+                      onShowInDocument={() => setSelectedRuleId(r.id)}
                     />
                   </li>
                 ))}
@@ -401,12 +560,76 @@ export function PolicyReviewPage() {
                             selected={r.id === selectedRuleId}
                             onSelect={() => setSelectedRuleId(r.id)}
                             rejected
-                            onEditToFix={canWrite && set.status === 'DRAFT' ? () => editToFix(r) : undefined}
+                            onShowInDocument={() => setSelectedRuleId(r.id)}
+                            onEditToFix={
+                              canWrite && set.status === 'DRAFT'
+                                ? () =>
+                                    isUnrepairableRejection(r)
+                                      ? addRuleManually({
+                                          quote: r.source?.quote,
+                                          clauseRef: r.source?.clauseRef,
+                                          documentId: r.source?.documentId,
+                                          chunkId: r.source?.chunkIds?.[0],
+                                          title: r.title,
+                                          when: r.when,
+                                        })
+                                      : editToFix(r)
+                                : undefined
+                            }
+                            editLabel={
+                              isUnrepairableRejection(r) ? 'Add rule manually for this clause' : 'Edit to fix'
+                            }
                           />
                         </li>
                       ))}
                     </ul>
                   ) : null}
+                </div>
+              ) : null}
+
+              {couldNotRule.length > 0 ? (
+                <div className="mb-4 rounded border border-risk-watch/40 bg-risk-watch/5">
+                  <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-risk-watch">
+                    Could not be turned into a rule · {couldNotRule.length}
+                  </p>
+                  <ul className="max-h-[28vh] space-y-2 overflow-y-auto border-t border-risk-watch/20 px-2 py-2">
+                    {couldNotRule.map((c) => (
+                      <li
+                        key={`${c.chunkId}-${c.documentId}`}
+                        className="rounded border border-sv-border bg-sv-bg px-3 py-2 text-sm"
+                      >
+                        <p className="font-medium text-sv-fg">
+                          {c.clauseRef || c.headingPath || 'Clause'}
+                          {c.pageNo != null ? (
+                            <span className="ml-2 text-xs text-sv-muted">p.{c.pageNo}</span>
+                          ) : null}
+                        </p>
+                        {c.quote || c.textPreview ? (
+                          <p className="mt-1 border-l-2 border-sv-border pl-2 text-xs italic text-sv-muted">
+                            “{(c.quote || c.textPreview || '').slice(0, 160)}
+                            {(c.quote || c.textPreview || '').length > 160 ? '…' : ''}”
+                          </p>
+                        ) : null}
+                        <p className="mt-1 text-xs text-sv-muted">{c.reason || 'Model returned empty/placeholder'}</p>
+                        {canWrite && set.status === 'DRAFT' ? (
+                          <Button
+                            className="mt-2 px-2 py-1 text-xs"
+                            disabled={busy}
+                            onClick={() =>
+                              addRuleManually({
+                                quote: c.quote || c.textPreview,
+                                clauseRef: c.clauseRef,
+                                documentId: c.documentId,
+                                chunkId: c.chunkId,
+                              })
+                            }
+                          >
+                            Add rule manually
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
               </>
@@ -432,9 +655,22 @@ export function PolicyReviewPage() {
                   <Button
                     className="px-2 py-1 text-xs"
                     disabled={busy}
-                    onClick={() => editToFix(selected)}
+                    onClick={() =>
+                      isUnrepairableRejection(selected)
+                        ? addRuleManually({
+                            quote: selected.source?.quote,
+                            clauseRef: selected.source?.clauseRef,
+                            documentId: selected.source?.documentId,
+                            chunkId: selected.source?.chunkIds?.[0],
+                            title: selected.title,
+                            when: selected.when,
+                          })
+                        : editToFix(selected)
+                    }
                   >
-                    Edit to fix
+                    {isUnrepairableRejection(selected)
+                      ? 'Add rule manually for this clause'
+                      : 'Edit to fix'}
                   </Button>
                 ) : null}
                 {editError ? (
@@ -449,6 +685,34 @@ export function PolicyReviewPage() {
                     </Button>
                     <Button className="px-2 py-1 text-xs" disabled={busy} onClick={() => setStatus('REJECTED')}>
                       Reject
+                    </Button>
+                    <Button
+                      className="px-2 py-1 text-xs"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={async () => {
+                        const reason = window.prompt('Delete reason (min 5 chars)');
+                        if (!reason || reason.trim().length < 5) {
+                          push('Reason required (min 5 chars)');
+                          return;
+                        }
+                        try {
+                          await apiJson(
+                            `/api/v2/policy/sets/${setId}/rules/${encodeURIComponent(selected.ruleId)}`,
+                            {
+                              method: 'DELETE',
+                              body: JSON.stringify({ reason: reason.trim() }),
+                            },
+                          );
+                          push('Rule deleted');
+                          setSelectedRuleId(null);
+                          await load({ soft: true });
+                        } catch (err) {
+                          push(err.message || 'Delete failed');
+                        }
+                      }}
+                    >
+                      Delete
                     </Button>
                     <Button
                       className="px-2 py-1 text-xs"
@@ -517,29 +781,128 @@ export function PolicyReviewPage() {
                   canWrite={canWrite && set.status === 'DRAFT'}
                   onChanged={() => load({ soft: true })}
                 />
+
+                {deletedRules.length > 0 ? (
+                  <div className="mt-4 border-t border-sv-border pt-3">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-sv-muted"
+                      onClick={() => setDeletedOpen((v) => !v)}
+                    >
+                      {deletedOpen ? '▾' : '▸'} Deleted rules · {deletedRules.length}
+                    </button>
+                    {deletedOpen ? (
+                      <ul className="mt-2 space-y-1 text-xs">
+                        {deletedRules.map((r) => (
+                          <li key={r.id} className="flex items-center justify-between gap-2">
+                            <span>
+                              {r.ruleId} · {r.title}
+                              {r.deleteReason ? ` — ${r.deleteReason}` : ''}
+                            </span>
+                            {canWrite && set.status === 'DRAFT' ? (
+                              <Button
+                                className="px-2 py-0.5 text-[11px]"
+                                variant="ghost"
+                                onClick={async () => {
+                                  try {
+                                    await apiJson(
+                                      `/api/v2/policy/sets/${setId}/rules/${encodeURIComponent(r.ruleId)}/restore`,
+                                      { method: 'POST' },
+                                    );
+                                    push('Rule restored');
+                                    await load({ soft: true });
+                                  } catch (err) {
+                                    push(err.message || 'Restore failed');
+                                  }
+                                }}
+                              >
+                                Restore
+                              </Button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </section>
         </div>
       )}
+
+      {rulesJsonOpen ? (
+        <Modal open title="Edit draft rules as JSON" onClose={() => setRulesJsonOpen(false)}>
+          <p className="mb-2 text-xs text-sv-muted">
+            Paste or edit the full rules array. Save runs the full validator; invalid rules cannot become
+            ACCEPTED. Removing a rule from the array soft-deletes it (same audit as Delete).
+          </p>
+          <textarea
+            className="h-80 w-full rounded border border-sv-border bg-sv-bg p-2 font-mono text-xs"
+            value={rulesJsonText}
+            onChange={(e) => setRulesJsonText(e.target.value)}
+            spellCheck={false}
+          />
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setRulesJsonOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                try {
+                  const rules = JSON.parse(rulesJsonText);
+                  if (!Array.isArray(rules)) throw new Error('Root must be a JSON array');
+                  await apiJson(`/api/v2/policy/sets/${setId}/rules-json`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ rules }),
+                  });
+                  push('Rules JSON saved');
+                  setRulesJsonOpen(false);
+                  await load({ soft: true });
+                } catch (err) {
+                  push(err.message || 'Save failed');
+                }
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
+
+      <ConflictPanel
+        open={conflictOpen}
+        onClose={() => setConflictOpen(false)}
+        conflicts={set?.conflicts || []}
+        canResolve={canWrite && set?.status === 'DRAFT'}
+        push={push}
+        onResolved={async () => {
+          await load({ soft: true });
+        }}
+      />
     </div>
   );
 }
 
 function OriginBadge({ origin }) {
   if (origin === 'LLM_MOCK') return <Badge tone="warn">LLM(mock)</Badge>;
-  if (origin === 'MANUAL') return <Badge tone="accent">manual</Badge>;
+  if (origin === 'MANUAL') return <Badge tone="accent">MANUAL</Badge>;
+  if (origin === 'DEMO_FIXTURE') return <Badge tone="neutral">demo</Badge>;
   if (origin === 'LLM') return <Badge tone="accent">LLM</Badge>;
   return origin ? <Badge tone="neutral">{origin}</Badge> : null;
 }
 
 OriginBadge.propTypes = { origin: PropTypes.string };
 
-function RuleCard({ rule, selected, onSelect, rejected, onEditToFix }) {
+function RuleCard({ rule, selected, onSelect, rejected, onEditToFix, editLabel, onShowInDocument }) {
   const dup = (rule.warnings || []).find((w) => w.code === 'POSSIBLE_DUPLICATE');
   const rejectReason = rejected
     ? (rule.warnings || []).map((w) => `${w.code}: ${w.message}`).join(' · ')
     : '';
+  const docName = rule.documentTitle || rule.source?.documentTitle;
+  const clauseRef = rule.source?.clauseRef;
+  const quote = rule.source?.quote;
   return (
     <div
       className={`w-full rounded border px-3 py-2 text-left text-sm ${
@@ -557,27 +920,42 @@ function RuleCard({ rule, selected, onSelect, rejected, onEditToFix }) {
           <Badge tone={STATUS_TONE[rule.status] || 'neutral'}>{rule.status}</Badge>
           <OriginBadge origin={rule.origin} />
           {dup ? <Badge tone="warn">possible duplicate</Badge> : null}
+          {(rule.warnings || []).some((w) => w.code === 'CONFLICT') ? (
+            <Badge tone="danger">conflict</Badge>
+          ) : null}
+          {rule.source?.kind === 'ADMIN_DIRECTIVE' || rule.source?.adminDirective ? (
+            <Badge tone="warn">admin directive</Badge>
+          ) : null}
         </div>
+        {(docName || clauseRef) ? (
+          <p className="mt-1 text-xs text-sv-muted">
+            {docName ? <span className="font-medium text-sv-fg">{docName}</span> : null}
+            {docName && clauseRef ? ' · ' : null}
+            {clauseRef ? <span>{clauseRef}</span> : null}
+          </p>
+        ) : null}
         <p className="mt-1 text-xs text-sv-muted">{rule.plainEnglish}</p>
         {rejectReason ? (
           <p className="mt-1 text-xs text-risk-critical">{rejectReason}</p>
         ) : null}
-        {rule.source?.quote ? (
+        {quote ? (
           <p className="mt-1 border-l-2 border-sv-border pl-2 text-xs italic text-sv-muted">
-            “{rule.source.quote}”
-            {rule.source.clauseRef ? (
-              <span className="not-italic text-sv-muted"> · {rule.source.clauseRef}</span>
-            ) : null}
+            “{quote}”
           </p>
         ) : null}
       </button>
-      {onEditToFix ? (
-        <div className="mt-2">
-          <Button className="px-2 py-1 text-xs" onClick={onEditToFix}>
-            Edit to fix
+      <div className="mt-2 flex flex-wrap gap-2">
+        {onShowInDocument && rule.source?.documentId ? (
+          <Button className="px-2 py-1 text-xs" variant="ghost" onClick={onShowInDocument}>
+            Show in document
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+        {onEditToFix ? (
+          <Button className="px-2 py-1 text-xs" onClick={onEditToFix}>
+            {editLabel || 'Edit to fix'}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -588,7 +966,28 @@ RuleCard.propTypes = {
   onSelect: PropTypes.func,
   rejected: PropTypes.bool,
   onEditToFix: PropTypes.func,
+  editLabel: PropTypes.string,
+  onShowInDocument: PropTypes.func,
 };
+
+/** Rejected cards worth showing: clause ref + non-empty condition. */
+function isMeaningfulRejection(rule) {
+  const ref = rule?.source?.clauseRef;
+  if (!ref || String(ref).trim() === '' || String(ref).toLowerCase() === 'null') return false;
+  return hasCondition(rule?.when);
+}
+
+function isUnrepairableRejection(rule) {
+  const ref = rule?.source?.clauseRef;
+  const noRef = !ref || String(ref).trim() === '' || String(ref).toLowerCase() === 'null';
+  return noRef && !hasCondition(rule?.when);
+}
+
+function hasCondition(when) {
+  if (!when || typeof when !== 'object') return false;
+  if (Object.keys(when).length === 0) return false;
+  return collectLeaves(when).length > 0;
+}
 
 function validateWhenObject(when, facts) {
   if (!when || typeof when !== 'object') return 'Condition is required';

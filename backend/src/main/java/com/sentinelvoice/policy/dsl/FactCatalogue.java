@@ -278,46 +278,48 @@ public final class FactCatalogue {
                 "value", Map.of("description", "Scalar matching the fact type/enum")
         ));
 
-        // Shallow condition: object only — no recursive $ref / oneOf (4B-hostile)
-        Map<String, Object> when = new LinkedHashMap<>();
-        when.put("type", "object");
-        when.put("description", "Condition tree: {all:[...]}, {any:[...]}, {not:{...}}, or a leaf {fact,op,value}");
-
         Map<String, Object> thenObj = new LinkedHashMap<>();
         thenObj.put("type", "object");
         thenObj.put("properties", Map.of(
-                "minLevel", Map.of("type", "integer"),
+                "minLevel", Map.of("type", "integer", "minimum", 1, "maximum", 4),
                 "scoreBoost", Map.of("type", "number"),
                 "reasonCode", Map.of("type", "string"),
                 "advice", Map.of("type", "string")
         ));
+        thenObj.put("required", List.of("minLevel"));
 
-        Map<String, Object> source = new LinkedHashMap<>();
-        source.put("type", "object");
-        source.put("properties", Map.of(
-                "clauseRef", Map.of("type", "string"),
-                "quote", Map.of("type", "string")
-        ));
+        Map<String, Object> whenRequired = new LinkedHashMap<>();
+        whenRequired.put("type", "object");
+        whenRequired.put("description", "Condition tree: {all:[...]}, {any:[...]}, {not:{...}}, or a leaf {fact,op,value}");
+        whenRequired.put("minProperties", 1);
 
         Map<String, Object> rule = new LinkedHashMap<>();
         rule.put("type", "object");
         Map<String, Object> ruleProps = new LinkedHashMap<>();
-        ruleProps.put("ruleId", Map.of("type", "string"));
-        ruleProps.put("title", Map.of("type", "string"));
-        ruleProps.put("description", Map.of("type", "string"));
-        ruleProps.put("source", source);
-        ruleProps.put("appliesTo", Map.of("type", "object"));
-        ruleProps.put("when", when);
+        // Meaning only — title/source/ids are attached in Java from the chunk
+        ruleProps.put("when", whenRequired);
         ruleProps.put("then", thenObj);
-        ruleProps.put("severity", Map.of(
+        ruleProps.put("appliesTo", Map.of("type", "object"));
+        ruleProps.put("modality", Map.of(
                 "type", "string",
-                "enum", List.of("LOW", "MEDIUM", "HIGH", "CRITICAL")
+                "description", "must|must_not|never|requires|verify|approval|halt"
         ));
-        ruleProps.put("keywords", Map.of("type", "array"));
+        ruleProps.put("keywords", Map.of(
+                "type", "array",
+                "items", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "term", Map.of("type", "string"),
+                                "category", Map.of("type", "string"),
+                                "lang", Map.of("type", "string"),
+                                "weight", Map.of("type", "number")
+                        )
+                )
+        ));
         ruleProps.put("policyFact", Map.of("type", "string"));
         rule.put("properties", ruleProps);
-        // Document leaf for models that inspect $defs — not referenced recursively
-        rule.put("$comment", "ConditionLeaf shape: fact+op+value; fact enum limited to catalogue subset");
+        rule.put("required", List.of("when", "then"));
+        rule.put("$comment", "Do not emit title, source, clauseRef, quote, ruleId, documentId, or chunkId");
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("type", "object");

@@ -21,6 +21,21 @@ public final class ConditionEnglish {
         return "IF " + cond + " THEN raise the level to at least " + minLevel;
     }
 
+    /** Operator-facing "fires when …" line (positive condition only). */
+    public static String firesWhen(Map<String, Object> when) {
+        return "fires when " + renderCond(when);
+    }
+
+    /** Operator-facing "does NOT fire when …" — negation of the root condition. */
+    public static String doesNotFireWhen(Map<String, Object> when) {
+        if (when == null || when.isEmpty()) {
+            return "does NOT fire when (never — condition is always true)";
+        }
+        Map<String, Object> negated = new java.util.LinkedHashMap<>();
+        negated.put("not", when);
+        return "does NOT fire when " + renderCond(negated);
+    }
+
     @SuppressWarnings("unchecked")
     private static String renderCond(Map<String, Object> m) {
         if (m == null || m.isEmpty()) {

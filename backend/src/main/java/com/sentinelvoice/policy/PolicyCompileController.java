@@ -2,9 +2,11 @@ package com.sentinelvoice.policy;
 
 import com.sentinelvoice.policy.compile.PolicyCompileException;
 import com.sentinelvoice.policy.compile.PolicyCompileService;
+import com.sentinelvoice.policy.conflict.RuleConflictService;
 import com.sentinelvoice.policy.dsl.FactCatalogue;
 import com.sentinelvoice.policy.engine.PolicyRuntimeService;
 import com.sentinelvoice.policy.engine.RuleEvaluation;
+import com.sentinelvoice.policy.sets.LiveRulesService;
 import com.sentinelvoice.policy.sets.PolicySetService;
 import com.sentinelvoice.security.TenantContext;
 import org.springframework.http.HttpStatus;
@@ -15,9 +17,11 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
@@ -27,6 +31,7 @@ import java.util.UUID;
 
 /**
  * F6 — compilations, fact catalogue, policy sets / rules / approval.
+ * F6/F7 addendum — Live Rules, JSON access, removal drafts.
  */
 @RestController
 @RequestMapping("/api/v2/policy")
@@ -35,15 +40,21 @@ public class PolicyCompileController {
     private final PolicyCompileService compileService;
     private final PolicySetService setService;
     private final PolicyRuntimeService policyRuntimeService;
+    private final LiveRulesService liveRulesService;
+    private final RuleConflictService conflictService;
 
     public PolicyCompileController(
             PolicyCompileService compileService,
             PolicySetService setService,
-            PolicyRuntimeService policyRuntimeService
+            PolicyRuntimeService policyRuntimeService,
+            LiveRulesService liveRulesService,
+            RuleConflictService conflictService
     ) {
         this.compileService = compileService;
         this.setService = setService;
         this.policyRuntimeService = policyRuntimeService;
+        this.liveRulesService = liveRulesService;
+        this.conflictService = conflictService;
     }
 
     @GetMapping("/fact-catalogue")
@@ -142,11 +153,70 @@ public class PolicyCompileController {
         return setService.diff(ctx.tenantId(), leftId, rightId);
     }
 
+    @PostMapping("/rules/from-text")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> addRuleFromText(@RequestBody Map<String, Object> body) {
+        TenantContext ctx = TenantContext.require();
+        String text = body.get("text") == null ? "" : String.valueOf(body.get("text"));
+        UUID setId = null;
+        if (body.get("setId") != null && !String.valueOf(body.get("setId")).isBlank()) {
+            setId = UUID.fromString(String.valueOf(body.get("setId")));
+        }
+        return setService.addRuleFromText(ctx.tenantId(), ctx.userId(), text, setId);
+    }
+
     @PostMapping("/sets/{id}/rules")
     @PreAuthorize("hasRole('TENANT_ADMIN')")
     public Map<String, Object> createRule(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
         TenantContext ctx = TenantContext.require();
         return setService.createManualRule(ctx.tenantId(), ctx.userId(), id, body);
+    }
+
+    @PostMapping("/sets/{id}/ensure-draft")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> ensureDraft(@PathVariable UUID id) {
+        TenantContext ctx = TenantContext.require();
+        return setService.ensureEditableDraft(ctx.tenantId(), ctx.userId(), id);
+    }
+
+    @GetMapping("/conflicts")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> listConflicts(
+            @RequestParam(required = false) UUID setId,
+            @RequestParam(required = false) String status
+    ) {
+        TenantContext ctx = TenantContext.require();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("items", conflictService.list(ctx.tenantId(), setId, status));
+        return body;
+    }
+
+    @PostMapping("/conflicts/check")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER')")
+    public Map<String, Object> checkConflicts(@RequestBody(required = false) Map<String, Object> body) {
+        TenantContext ctx = TenantContext.require();
+        boolean advisory = body != null && Boolean.TRUE.equals(body.get("includeAdvisory"));
+        if (body != null && body.get("setId") != null) {
+            UUID setId = UUID.fromString(String.valueOf(body.get("setId")));
+            return conflictService.checkSet(ctx.tenantId(), ctx.userId(), setId, advisory);
+        }
+        return conflictService.checkAll(ctx.tenantId(), ctx.userId(), advisory);
+    }
+
+    @PostMapping("/conflicts/{id}/resolve")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> resolveConflict(
+            @PathVariable UUID id, @RequestBody Map<String, Object> body
+    ) {
+        TenantContext ctx = TenantContext.require();
+        return conflictService.resolve(ctx.tenantId(), ctx.userId(), id, body);
+    }
+
+    @PostMapping("/sets/{id}/repair-sources")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> repairSources(@PathVariable UUID id) {
+        TenantContext ctx = TenantContext.require();
+        return setService.repairSources(ctx.tenantId(), ctx.userId(), id);
     }
 
     @PatchMapping("/rules/{ruleId}")
@@ -232,7 +302,120 @@ public class PolicyCompileController {
     @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
     public Map<String, Object> engineStatus() {
         TenantContext ctx = TenantContext.require();
-        return policyRuntimeService.engineStatus(ctx.tenantId());
+        return liveRulesService.engineStatusExtended(ctx.tenantId());
+    }
+
+    @PostMapping("/engine/reload")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> engineReload() {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.reloadEngine(ctx.tenantId());
+    }
+
+    // --- Live Rules addendum ---
+
+    @GetMapping("/live-rules")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> liveRules() {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.liveRules(ctx.tenantId());
+    }
+
+    @GetMapping("/live-rules/{ruleId}/json")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> liveRuleJson(@PathVariable String ruleId) {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.ruleJson(ctx.tenantId(), ruleId);
+    }
+
+    @GetMapping("/sets/{id}/json")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> setJson(@PathVariable UUID id) {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.setJson(ctx.tenantId(), id);
+    }
+
+    @DeleteMapping("/sets/{draftId}/rules/{ruleId}")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> deleteDraftRule(
+            @PathVariable UUID draftId,
+            @PathVariable String ruleId,
+            @RequestBody Map<String, Object> body
+    ) {
+        TenantContext ctx = TenantContext.require();
+        String reason = body == null || body.get("reason") == null ? "" : String.valueOf(body.get("reason"));
+        return liveRulesService.deleteDraftRule(ctx.tenantId(), ctx.userId(), draftId, ruleId, reason);
+    }
+
+    @PostMapping("/sets/{activeId}/removal-drafts")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> removalDraft(
+            @PathVariable UUID activeId,
+            @RequestBody Map<String, Object> body
+    ) {
+        TenantContext ctx = TenantContext.require();
+        @SuppressWarnings("unchecked")
+        List<String> ruleIds = body.get("ruleIds") instanceof List<?> l
+                ? l.stream().map(String::valueOf).toList()
+                : List.of();
+        String reason = body.get("reason") == null ? "" : String.valueOf(body.get("reason"));
+        boolean confirmEmpty = Boolean.TRUE.equals(body.get("confirmEmptyPolicy"));
+        return liveRulesService.createRemovalDraft(
+                ctx.tenantId(), ctx.userId(), activeId, ruleIds, reason, confirmEmpty
+        );
+    }
+
+    @PostMapping("/sets/{draftId}/rules/{ruleId}/restore")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> restoreDraftRule(
+            @PathVariable UUID draftId,
+            @PathVariable String ruleId
+    ) {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.restoreDraftRule(ctx.tenantId(), ctx.userId(), draftId, ruleId);
+    }
+
+    @PutMapping("/sets/{draftId}/rules-json")
+    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    public Map<String, Object> replaceRulesJson(
+            @PathVariable UUID draftId,
+            @RequestBody Map<String, Object> body
+    ) {
+        TenantContext ctx = TenantContext.require();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rules = body.get("rules") instanceof List<?> l
+                ? l.stream().map(o -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> m = o instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+                    return m;
+                }).toList()
+                : List.of();
+        return liveRulesService.replaceRulesJson(ctx.tenantId(), ctx.userId(), draftId, rules);
+    }
+
+    @PostMapping("/sets/{id}/rules-json/validate")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','ANALYST','AUDITOR')")
+    public Map<String, Object> validateRulesJson(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> body
+    ) {
+        TenantContext ctx = TenantContext.require();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rules = body.get("rules") instanceof List<?> l
+                ? l.stream().map(o -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> m = o instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+                    return m;
+                }).toList()
+                : List.of();
+        return liveRulesService.validateRulesJson(ctx.tenantId(), id, rules);
+    }
+
+    @GetMapping("/sets/{draftId}/preflight")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER','AUDITOR')")
+    public Map<String, Object> preflight(@PathVariable UUID draftId) {
+        TenantContext ctx = TenantContext.require();
+        return liveRulesService.preflight(ctx.tenantId(), draftId);
     }
 
     @ExceptionHandler(PolicyCompileException.class)
@@ -245,7 +428,8 @@ public class PolicyCompileController {
             case "SAME_USER", "BAD_STATE", "NOT_DRAFT", "NO_RULES", "COMMENT_REQUIRED",
                  "NO_DOCUMENTS", "NOT_READY", "BAD_MODE", "BUSY", "UNKNOWN_FACT",
                  "TOO_MANY_DOCUMENTS", "INVALID_EDIT", "HALLUCINATED_QUOTE",
-                 "NO_FAILED_CHUNKS", "EMPTY" -> HttpStatus.CONFLICT;
+                 "NO_FAILED_CHUNKS", "EMPTY", "CONFLICT", "PREFLIGHT_FAILED",
+                 "LAST_RULE", "INVALID_RULES", "REASON_REQUIRED", "SOURCE_REQUIRED" -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(body);

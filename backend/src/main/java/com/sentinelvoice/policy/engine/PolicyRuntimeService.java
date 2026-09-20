@@ -65,14 +65,38 @@ public class PolicyRuntimeService {
     public Map<String, Object> engineStatus(UUID tenantId) {
         Map<String, Object> body = new LinkedHashMap<>();
         Optional<CompiledPolicy> policy = activePolicyCache.get(tenantId);
+        Optional<Map<String, Object>> dbActive = policySetRepository.findActiveSet(tenantId);
+
+        Integer dbVersion = null;
+        String dbSha = null;
+        int dbRuleCount = 0;
+        if (dbActive.isPresent()) {
+            Map<String, Object> set = dbActive.get();
+            dbVersion = ((Number) set.get("version")).intValue();
+            UUID setId = UUID.fromString(String.valueOf(set.get("id")));
+            dbSha = set.get("contentSha256") == null
+                    ? policySetRepository.computeContentSha(tenantId, setId)
+                    : String.valueOf(set.get("contentSha256"));
+            dbRuleCount = policySetRepository.listRuntimeRules(tenantId, setId).size();
+        }
+
         if (policy.isEmpty()) {
             body.put("schemaVersion", "2");
             body.put("state", RuleEvaluation.STATE_NO_POLICY);
             body.put("activePolicyVersion", null);
             body.put("ruleCount", 0);
             body.put("cacheLoadedAt", null);
+            body.put("policySha", null);
             body.put("avgEvalMicros", ruleEngine.avgEvalMicros());
             body.put("lastEvalMicros", ruleEngine.lastEvalMicros());
+            body.put("databaseVersion", dbVersion);
+            body.put("databaseSha", dbSha);
+            body.put("databaseRuleCount", dbRuleCount);
+            body.put("engineVersion", null);
+            body.put("engineSha", null);
+            boolean inSync = dbActive.isEmpty();
+            body.put("inSync", inSync);
+            body.put("syncState", inSync ? "IN_SYNC" : "MISMATCH");
             return body;
         }
         CompiledPolicy p = policy.get();
@@ -84,6 +108,17 @@ public class PolicyRuntimeService {
         body.put("policySha", p.contentSha());
         body.put("avgEvalMicros", ruleEngine.avgEvalMicros());
         body.put("lastEvalMicros", ruleEngine.lastEvalMicros());
+        body.put("databaseVersion", dbVersion);
+        body.put("databaseSha", dbSha);
+        body.put("databaseRuleCount", dbRuleCount);
+        body.put("engineVersion", p.version());
+        body.put("engineSha", p.contentSha());
+        boolean versionMatch = dbVersion != null && dbVersion.equals(p.version());
+        boolean shaMatch = dbSha != null && dbSha.equals(p.contentSha());
+        boolean countMatch = dbRuleCount == p.ruleCount();
+        boolean inSync = versionMatch && shaMatch && countMatch;
+        body.put("inSync", inSync);
+        body.put("syncState", inSync ? "IN_SYNC" : "MISMATCH");
         return body;
     }
 

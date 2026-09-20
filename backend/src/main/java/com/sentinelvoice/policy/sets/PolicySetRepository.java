@@ -66,12 +66,180 @@ public class PolicySetRepository {
         return jdbc.query("""
                 SELECT * FROM policy_rules
                 WHERE tenant_id = ? AND policy_set_id = ?
+                  AND deleted_at IS NULL
                   AND status IN ('ACCEPTED', 'EDITED')
                   AND NOT (warnings @> '[{"code":"HALLUCINATED_QUOTE"}]'::jsonb)
                   AND NOT (warnings @> '[{"code":"VALUE_NOT_IN_SOURCE"}]'::jsonb)
                   AND NOT (warnings @> '[{"code":"REJECTED_VALUE_NOT_IN_SOURCE"}]'::jsonb)
                 ORDER BY rule_id NULLS LAST, created_at
                 """, (rs, i) -> mapRule(rs), tenantId, setId);
+    }
+
+    public List<Map<String, Object>> listLiveRulesIncludingDeleted(UUID tenantId, UUID setId) {
+        return jdbc.query("""
+                SELECT * FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ?
+                ORDER BY (deleted_at IS NULL) DESC, rule_id NULLS LAST, created_at
+                """, (rs, i) -> mapRule(rs), tenantId, setId);
+    }
+
+    public Optional<Map<String, Object>> findRuleByRuleId(UUID tenantId, UUID setId, String ruleId) {
+        List<Map<String, Object>> rows = jdbc.query("""
+                SELECT * FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ? AND rule_id = ?
+                LIMIT 1
+                """, (rs, i) -> mapRule(rs), tenantId, setId, ruleId);
+        return rows.stream().findFirst();
+    }
+
+    public Optional<Map<String, Object>> findOpenDraft(UUID tenantId) {
+        List<Map<String, Object>> rows = jdbc.query("""
+                SELECT * FROM policy_sets
+                WHERE tenant_id = ? AND status = 'DRAFT'
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """, (rs, i) -> mapSet(rs), tenantId);
+        return rows.stream().findFirst();
+    }
+
+    public void updateSetMeta(UUID tenantId, UUID setId, Map<String, Object> meta) {
+        jdbc.update("""
+                UPDATE policy_sets SET meta = ?::jsonb, updated_at = now()
+                WHERE tenant_id = ? AND id = ?
+                """, toJson(meta), tenantId, setId);
+    }
+
+    public void softDeleteRule(UUID tenantId, UUID rulePk, UUID deletedBy, String reason) {
+        // Drop keywords tied to this rule before soft-delete
+        findRule(tenantId, rulePk).ifPresent(rule -> {
+            String ruleId = String.valueOf(rule.get("ruleId"));
+            UUID setId = UUID.fromString(String.valueOf(rule.get("policySetId")));
+            deleteKeywordsForRule(tenantId, setId, ruleId);
+        });
+        jdbc.update("""
+                UPDATE policy_rules
+                SET deleted_at = now(), deleted_by = ?, delete_reason = ?, updated_at = now()
+                WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
+                """, deletedBy, reason, tenantId, rulePk);
+    }
+
+    public void markReplacedBy(UUID tenantId, UUID rulePk, String replacedByRuleId) {
+        jdbc.update("""
+                UPDATE policy_rules
+                SET replaced_by_rule_id = ?, updated_at = now()
+                WHERE tenant_id = ? AND id = ?
+                """, replacedByRuleId, tenantId, rulePk);
+    }
+
+    public void restoreRule(UUID tenantId, UUID rulePk) {
+        jdbc.update("""
+                UPDATE policy_rules
+                SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = now()
+                WHERE tenant_id = ? AND id = ? AND deleted_at IS NOT NULL
+                """, tenantId, rulePk);
+    }
+
+    public void hardDeleteRule(UUID tenantId, UUID rulePk) {
+        jdbc.update("DELETE FROM policy_rules WHERE tenant_id = ? AND id = ?", tenantId, rulePk);
+    }
+
+    public void deleteAllRules(UUID tenantId, UUID setId) {
+        jdbc.update("DELETE FROM policy_rules WHERE tenant_id = ? AND policy_set_id = ?", tenantId, setId);
+    }
+
+    public void copyRulesExcluding(
+            UUID tenantId, UUID fromSetId, UUID toSetId, java.util.Collection<String> excludeRuleIds
+    ) {
+        List<Map<String, Object>> rules = listRules(tenantId, fromSetId);
+        for (Map<String, Object> rule : rules) {
+            if (rule.get("deletedAt") != null) {
+                continue;
+            }
+            String rid = String.valueOf(rule.get("ruleId"));
+            if (excludeRuleIds != null && excludeRuleIds.contains(rid)) {
+                continue;
+            }
+            insertCopiedRule(tenantId, toSetId, rule);
+        }
+        copyKeywords(tenantId, fromSetId, toSetId, excludeRuleIds);
+    }
+
+    public void copyKeywords(
+            UUID tenantId, UUID fromSetId, UUID toSetId, java.util.Collection<String> excludeRuleIds
+    ) {
+        List<Map<String, Object>> kws = listKeywords(tenantId, fromSetId);
+        for (Map<String, Object> k : kws) {
+            String src = k.get("sourceRuleId") == null ? null : String.valueOf(k.get("sourceRuleId"));
+            if (src != null && excludeRuleIds != null && excludeRuleIds.contains(src)) {
+                continue;
+            }
+            addKeywordForRule(
+                    tenantId, toSetId,
+                    String.valueOf(k.get("term")),
+                    String.valueOf(k.getOrDefault("lang", "en")),
+                    String.valueOf(k.getOrDefault("category", "CUSTOM")),
+                    k.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                    src
+            );
+        }
+    }
+
+    public void insertCopiedRule(UUID tenantId, UUID setId, Map<String, Object> rule) {
+        String origin = rule.get("origin") == null ? "MANUAL" : String.valueOf(rule.get("origin"));
+        jdbc.update("""
+                INSERT INTO policy_rules (
+                  tenant_id, policy_set_id, rule_id, title, description, source,
+                  applies_to, when_json, then_json, severity, status, origin, warnings, rule_body,
+                  simulation_examples
+                ) VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?,?::jsonb,?::jsonb,?::jsonb)
+                """,
+                tenantId,
+                setId,
+                rule.get("ruleId"),
+                rule.get("title"),
+                rule.get("description"),
+                toJson(rule.get("source")),
+                toJson(rule.get("appliesTo")),
+                toJson(rule.get("when")),
+                toJson(rule.get("then")),
+                rule.getOrDefault("severity", "MEDIUM"),
+                rule.getOrDefault("status", "ACCEPTED"),
+                origin,
+                toJson(rule.getOrDefault("warnings", List.of())),
+                toJson(rule),
+                toJson(rule.getOrDefault("simulationExamples", List.of()))
+        );
+    }
+
+    public void updateSimulationExamples(UUID tenantId, UUID rulePk, Object examples) {
+        jdbc.update("""
+                UPDATE policy_rules
+                SET simulation_examples = ?::jsonb, updated_at = now()
+                WHERE tenant_id = ? AND id = ?
+                """, toJson(examples), tenantId, rulePk);
+    }
+
+    public CoverageCounts coverageFromCompilation(UUID tenantId, UUID compilationId) {
+        if (compilationId == null) {
+            return new CoverageCounts(0, 0, 0);
+        }
+        Integer procedural = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM policy_compile_chunk_results
+                WHERE tenant_id = ? AND compilation_id = ? AND status = 'SKIPPED_PREFILTER'
+                """, Integer.class, tenantId, compilationId);
+        Integer enforceable = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM policy_compile_chunk_results
+                WHERE tenant_id = ? AND compilation_id = ?
+                  AND status <> 'SKIPPED_PREFILTER'
+                """, Integer.class, tenantId, compilationId);
+        return new CoverageCounts(
+                enforceable == null ? 0 : enforceable,
+                procedural == null ? 0 : procedural,
+                0
+        );
+    }
+
+    public record CoverageCounts(int enforceable, int procedural, int unmapped) {
     }
 
     public Optional<Map<String, Object>> findSet(UUID tenantId, UUID id) {
@@ -95,7 +263,23 @@ public class PolicySetRepository {
         return jdbc.query("""
                 SELECT * FROM policy_rules
                 WHERE tenant_id = ? AND policy_set_id = ?
+                ORDER BY (deleted_at IS NULL) DESC, rule_id NULLS LAST, created_at
+                """, (rs, i) -> mapRule(rs), tenantId, setId);
+    }
+
+    public List<Map<String, Object>> listActiveRules(UUID tenantId, UUID setId) {
+        return jdbc.query("""
+                SELECT * FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ? AND deleted_at IS NULL
                 ORDER BY rule_id NULLS LAST, created_at
+                """, (rs, i) -> mapRule(rs), tenantId, setId);
+    }
+
+    public List<Map<String, Object>> listDeletedRules(UUID tenantId, UUID setId) {
+        return jdbc.query("""
+                SELECT * FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ? AND deleted_at IS NOT NULL
+                ORDER BY deleted_at DESC
                 """, (rs, i) -> mapRule(rs), tenantId, setId);
     }
 
@@ -143,8 +327,9 @@ public class PolicySetRepository {
         jdbc.update("""
                 INSERT INTO policy_rules (
                   tenant_id, policy_set_id, rule_id, title, description, source,
-                  applies_to, when_json, then_json, severity, status, origin, warnings, rule_body
-                ) VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb)
+                  applies_to, when_json, then_json, severity, status, origin, warnings, rule_body,
+                  simulation_examples
+                ) VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,?,?,?::jsonb,?::jsonb,?::jsonb)
                 """,
                 tenantId,
                 setId,
@@ -159,7 +344,8 @@ public class PolicySetRepository {
                 rule.getOrDefault("status", "ACCEPTED"),
                 "MANUAL",
                 toJson(rule.getOrDefault("warnings", List.of())),
-                toJson(rule)
+                toJson(rule),
+                toJson(rule.getOrDefault("simulationExamples", List.of()))
         );
     }
 
@@ -185,6 +371,26 @@ public class PolicySetRepository {
                 INSERT INTO policy_keywords (tenant_id, policy_set_id, term, lang, category, weight)
                 VALUES (?,?,?,?,?,?)
                 """, tenantId, setId, term, lang, category, weight);
+    }
+
+    public void addKeywordForRule(
+            UUID tenantId, UUID setId, String term, String lang, String category, double weight, String sourceRuleId
+    ) {
+        jdbc.update("""
+                INSERT INTO policy_keywords
+                  (tenant_id, policy_set_id, term, lang, category, weight, source_rule_id)
+                VALUES (?,?,?,?,?,?,?)
+                """, tenantId, setId, term, lang, category, weight, sourceRuleId);
+    }
+
+    public void deleteKeywordsForRule(UUID tenantId, UUID setId, String ruleId) {
+        if (ruleId == null || ruleId.isBlank()) {
+            return;
+        }
+        jdbc.update("""
+                DELETE FROM policy_keywords
+                WHERE tenant_id = ? AND policy_set_id = ? AND source_rule_id = ?
+                """, tenantId, setId, ruleId);
     }
 
     public void deleteKeyword(UUID tenantId, UUID keywordId) {
@@ -246,11 +452,25 @@ public class PolicySetRepository {
     }
 
     public String computeContentSha(UUID tenantId, UUID setId) {
-        List<Map<String, Object>> rules = listRules(tenantId, setId);
+        List<Map<String, Object>> rules = listActiveRules(tenantId, setId);
         try {
-            String canonical = mapper.writeValueAsString(rules);
+            // Canonicalise to stable fields only (exclude ephemeral UI fields)
+            List<Map<String, Object>> canonical = new ArrayList<>();
+            for (Map<String, Object> r : rules) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("ruleId", r.get("ruleId"));
+                row.put("title", r.get("title"));
+                row.put("when", r.get("when"));
+                row.put("then", r.get("then"));
+                row.put("appliesTo", r.get("appliesTo"));
+                row.put("status", r.get("status"));
+                row.put("severity", r.get("severity"));
+                row.put("origin", r.get("origin"));
+                canonical.add(row);
+            }
+            String json = mapper.writeValueAsString(canonical);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] dig = md.digest(canonical.getBytes(StandardCharsets.UTF_8));
+            byte[] dig = md.digest(json.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(dig);
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -261,6 +481,7 @@ public class PolicySetRepository {
         Long n = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM policy_rules
                 WHERE tenant_id = ? AND policy_set_id = ?
+                  AND deleted_at IS NULL
                   AND status IN ('ACCEPTED','EDITED')
                   AND NOT (warnings @> '[{"code":"HALLUCINATED_QUOTE"}]'::jsonb)
                   AND NOT (warnings @> '[{"code":"VALUE_NOT_IN_SOURCE"}]'::jsonb)
@@ -293,6 +514,11 @@ public class PolicySetRepository {
         m.put("compilationId", uuidStr(rs, "compilation_id"));
         m.put("createdAt", toIso(rs.getTimestamp("created_at")));
         m.put("updatedAt", toIso(rs.getTimestamp("updated_at")));
+        try {
+            m.put("meta", parseMap(rs.getString("meta")));
+        } catch (SQLException ignored) {
+            m.put("meta", Map.of());
+        }
         return m;
     }
 
@@ -315,11 +541,37 @@ public class PolicySetRepository {
         Map<String, Object> m = new LinkedHashMap<>(body);
         m.put("id", rs.getObject("id", UUID.class).toString());
         m.put("policySetId", rs.getObject("policy_set_id", UUID.class).toString());
+        m.put("ruleId", rs.getString("rule_id") != null ? rs.getString("rule_id") : m.get("ruleId"));
+        m.put("title", rs.getString("title") != null ? rs.getString("title") : m.get("title"));
         m.put("status", rs.getString("status"));
         m.put("origin", rs.getString("origin"));
-        m.put("plainEnglish", com.sentinelvoice.policy.dsl.ConditionEnglish.render(
-                asMap(m.get("when")), asMap(m.get("then")), asMap(m.get("appliesTo"))
-        ));
+        m.put("warnings", parseList(rs.getString("warnings")));
+        m.put("when", parseMap(rs.getString("when_json")).isEmpty()
+                ? asMap(m.get("when")) : parseMap(rs.getString("when_json")));
+        m.put("then", parseMap(rs.getString("then_json")).isEmpty()
+                ? asMap(m.get("then")) : parseMap(rs.getString("then_json")));
+        m.put("appliesTo", parseMap(rs.getString("applies_to")).isEmpty()
+                ? asMap(m.get("appliesTo")) : parseMap(rs.getString("applies_to")));
+        m.put("source", parseMap(rs.getString("source")).isEmpty()
+                ? asMap(m.get("source")) : parseMap(rs.getString("source")));
+        try {
+            m.put("deletedAt", toIso(rs.getTimestamp("deleted_at")));
+            m.put("deletedBy", uuidStr(rs, "deleted_by"));
+            m.put("deleteReason", rs.getString("delete_reason"));
+        } catch (SQLException ignored) {
+            m.put("deletedAt", null);
+        }
+        try {
+            m.put("simulationExamples", parseList(rs.getString("simulation_examples")));
+        } catch (SQLException ignored) {
+            m.put("simulationExamples", List.of());
+        }
+        Map<String, Object> when = asMap(m.get("when"));
+        Map<String, Object> then = asMap(m.get("then"));
+        Map<String, Object> applies = asMap(m.get("appliesTo"));
+        m.put("plainEnglish", com.sentinelvoice.policy.dsl.ConditionEnglish.render(when, then, applies));
+        m.put("firesWhen", com.sentinelvoice.policy.dsl.ConditionEnglish.firesWhen(when));
+        m.put("doesNotFireWhen", com.sentinelvoice.policy.dsl.ConditionEnglish.doesNotFireWhen(when));
         return m;
     }
 

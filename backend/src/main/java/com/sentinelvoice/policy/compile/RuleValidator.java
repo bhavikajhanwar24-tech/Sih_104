@@ -118,7 +118,7 @@ public final class RuleValidator {
         Object clauseRef = source.get("clauseRef");
         if (clauseRef == null || String.valueOf(clauseRef).isBlank()) {
             return reject(rule, warnings, ruleId, "MISSING_CLAUSE_REF",
-                    "source.clauseRef is required");
+                    "source.clauseRef is required — pick a source chunk in the document viewer");
         }
 
         String quote = source.get("quote") == null ? "" : String.valueOf(source.get("quote"));
@@ -289,7 +289,7 @@ public final class RuleValidator {
         if (source == null
                 || source.get("clauseRef") == null
                 || String.valueOf(source.get("clauseRef")).isBlank()) {
-            errors.add("source.clauseRef is required");
+            errors.add("source.clauseRef is required — pick a source chunk in the document viewer");
         }
         if (quote.isBlank()) {
             errors.add("quote not found in source");
@@ -354,6 +354,59 @@ public final class RuleValidator {
             }
         }
         return new EditValidation(errors.isEmpty(), errors, warnings);
+    }
+
+    /**
+     * Admin-directive rules have no document citation — skip quote/clauseRef/number-in-source.
+     * Still enforce catalogue keys, types, non-discriminating leave, and level 1..4.
+     */
+    public static EditValidation validateEditAdmin(
+            Map<String, Object> when,
+            Map<String, Object> then,
+            Map<String, Object> source
+    ) {
+        List<String> errors = new ArrayList<>();
+        List<Map<String, Object>> warnings = new ArrayList<>();
+        if (source != null) {
+            String basis = source.get("basis") == null ? "" : String.valueOf(source.get("basis")).trim();
+            if (basis.length() < 15) {
+                errors.add("Admin directive basis must be at least 15 characters");
+            }
+        }
+        if (when == null || when.isEmpty()) {
+            errors.add("Condition (when) is required");
+            return new EditValidation(false, errors, warnings);
+        }
+        List<Map<String, Object>> leaves = ConditionEnglish.collectLeaves(when);
+        if (leaves.isEmpty()) {
+            errors.add("Condition has no leaf facts");
+        }
+        if (leaves.size() == 1 && FactCatalogue.isNonDiscriminating(String.valueOf(leaves.get(0).get("fact")))) {
+            errors.add("A single non-discriminating fact is not allowed");
+        }
+        for (Map<String, Object> leaf : leaves) {
+            String fact = String.valueOf(leaf.get("fact"));
+            String op = String.valueOf(leaf.get("op"));
+            Object value = leaf.get("value");
+            Optional<String> err = FactCatalogue.validateValue(fact, op, value);
+            err.ifPresent(errors::add);
+        }
+        if (then != null) {
+            Object ml = then.get("minLevel");
+            if (!(ml instanceof Number n) || n.intValue() <= 0 || n.intValue() > 4) {
+                errors.add("minLevel must be an integer 1..4");
+            }
+        }
+        warnings.add(warn("ADMIN_DIRECTIVE", "Rule origin is an admin directive (no document clause)"));
+        return new EditValidation(errors.isEmpty(), errors, warnings);
+    }
+
+    /** Public floor/cap pair for Live Rules UI (same logic as validate). */
+    public static LevelBand levelBand(String chunkText, String quote) {
+        return new LevelBand(levelFloor(chunkText, quote), levelCap(chunkText, quote));
+    }
+
+    public record LevelBand(int floor, int cap) {
     }
 
     /** True when warnings include a quote/source hallucination that blocks Accept. */

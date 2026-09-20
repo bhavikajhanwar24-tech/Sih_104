@@ -68,7 +68,9 @@ public class ActivePolicyCache {
         Map<String, Object> set = active.get();
         UUID setId = UUID.fromString(String.valueOf(set.get("id")));
         int version = ((Number) set.get("version")).intValue();
-        String sha = set.get("contentSha256") == null ? null : String.valueOf(set.get("contentSha256"));
+        String sha = set.get("contentSha256") == null
+                ? repository.computeContentSha(tenantId, setId)
+                : String.valueOf(set.get("contentSha256"));
 
         List<Map<String, Object>> rules = repository.listRuntimeRules(tenantId, setId);
         List<CompiledPolicy.CompiledRule> compiled = new ArrayList<>();

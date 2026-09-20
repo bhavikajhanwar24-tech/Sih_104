@@ -3,12 +3,14 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiFetch, apiJson } from '@/services/api.js';
+import { ConflictPanel } from '@/components/policy/ConflictPanel.jsx';
 import { Badge, Button, Input, Modal, Table, Tabs } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
 const DOC_TABS = [
   { id: 'documents', label: 'Documents' },
   { id: 'archived', label: 'Archived' },
+  { id: 'live-rules', label: 'Live Rules' },
   { id: 'rules', label: 'Rules' },
   { id: 'simulate', label: 'Simulate' },
   { id: 'keywords', label: 'Keywords' },
@@ -95,7 +97,7 @@ export function PoliciesPage() {
         );
         if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
       }
-      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords' || tab === 'simulate') {
+      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords' || tab === 'simulate' || tab === 'live-rules') {
         const [s, c, limits] = await Promise.all([
           apiJson('/api/v2/policy/sets', { skipErrorToast: true }).catch(() => ({ items: [] })),
           apiJson('/api/v2/policy/compilations', { skipErrorToast: true }).catch(() => ({ items: [] })),
@@ -115,6 +117,12 @@ export function PoliciesPage() {
       setLoading(false);
     }
   }, [push, archivedTab, docsTab, tab]);
+
+  const reloadEngine = useCallback(async () => {
+    const eng = await apiJson('/api/v2/policy/engine/reload', { method: 'POST' });
+    setEngineStatus(eng);
+    return eng;
+  }, []);
 
   useEffect(() => {
     if (!hasPermission('policies:read')) return undefined;
@@ -567,6 +575,15 @@ export function PoliciesPage() {
         </>
       ) : null}
 
+      {tab === 'live-rules' ? (
+        <LiveRulesTab
+          canWrite={canWrite}
+          engineStatus={engineStatus}
+          onEngineReload={reloadEngine}
+          onEngineStatus={setEngineStatus}
+        />
+      ) : null}
+
       {tab === 'rules' ? (
         <RulesTab
           loading={loading}
@@ -670,24 +687,46 @@ function RulesTab({
   onRefresh,
 }) {
   const { push } = useToast();
-  const [testText, setTestText] = useState('');
-  const [testBusy, setTestBusy] = useState(false);
-  const [testResult, setTestResult] = useState(null);
+  const [clauseText, setClauseText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
 
-  async function runTestClause() {
-    if (!canWrite || !testText.trim()) return;
-    setTestBusy(true);
-    setTestResult(null);
+  async function submitRule() {
+    if (!canWrite || !clauseText.trim()) return;
+    setBusy(true);
+    setLastResult(null);
     try {
-      const data = await apiJson('/api/v2/policy/compile/test-clause', {
+      const draft = draftSets[0];
+      const active = (sets || []).find((s) => s.status === 'ACTIVE');
+      const body = { text: clauseText.trim() };
+      if (draft?.id) body.setId = draft.id;
+      else if (active?.id) body.setId = active.id;
+
+      const data = await apiJson('/api/v2/policy/rules/from-text', {
         method: 'POST',
-        body: JSON.stringify({ text: testText }),
+        body: JSON.stringify(body),
       });
-      setTestResult(data);
+      setLastResult(data);
+      if (!data.ok) {
+        push(data.reason || 'Could not extract a rule from that text');
+        return;
+      }
+      const found = data.newConflicts || [];
+      setConflicts(found);
+      push(data.message || 'Rule added');
+      setClauseText('');
+      onRefresh?.();
+      if (found.length > 0) {
+        setConflictOpen(true);
+      } else if (data.draftId) {
+        // Optional: stay on tab; user can open draft
+      }
     } catch (err) {
-      push(err.message || 'Test compile failed');
+      push(err.message || 'Add rule failed');
     } finally {
-      setTestBusy(false);
+      setBusy(false);
     }
   }
 
@@ -698,51 +737,67 @@ function RulesTab({
     <div className="space-y-4">
       {canWrite ? (
         <div className="rounded border border-sv-border p-4">
-          <p className="text-sm font-medium text-sv-fg">Test compile on one clause</p>
+          <p className="text-sm font-medium text-sv-fg">Add a rule</p>
           <p className="mt-1 text-xs text-sv-muted">
-            Runs the same LLM + validation pipeline as a full compile (admin only). Shows raw
-            structured output, validation, and timing — not saved to a policy set.
+            Paste a policy clause. It is compiled into a rule, checked against live and draft rules for
+            contradictions or duplicates, and keywords are extracted automatically.
           </p>
           <textarea
             className="mt-3 min-h-[100px] w-full rounded border border-sv-border bg-sv-elevated p-2 text-sm text-sv-fg"
-            value={testText}
-            onChange={(e) => setTestText(e.target.value)}
-            placeholder='e.g. Staff must not process wire transfers above INR 10,00,000 to unknown beneficiaries…'
+            value={clauseText}
+            onChange={(e) => setClauseText(e.target.value)}
+            placeholder="e.g. Staff must not process wire transfers above INR 10,00,000 to unknown beneficiaries…"
           />
-          <div className="mt-2">
-            <Button disabled={testBusy || !testText.trim()} onClick={runTestClause}>
-              {testBusy ? 'Running…' : 'Test compile'}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button disabled={busy || clauseText.trim().length < 15} onClick={submitRule}>
+              {busy ? 'Checking…' : 'Add rule'}
             </Button>
+            {lastResult?.draftId ? (
+              <Link
+                className="text-xs text-sv-accent underline"
+                to={`/app/policies/review?set=${lastResult.draftId}`}
+              >
+                Open draft
+              </Link>
+            ) : null}
           </div>
-          {testResult ? (
-            <div className="mt-3 space-y-2 rounded border border-sv-border/70 bg-sv-elevated/40 p-3 text-xs">
-              <p>
-                Status <Badge tone="neutral">{testResult.status}</Badge>
-                {testResult.reason ? ` · ${testResult.reason}` : ''} · {testResult.timingMs}ms
-                {testResult.llmMs != null ? ` (LLM ${testResult.llmMs}ms)` : ''}
-              </p>
-              {testResult.llmMeta ? (
-                <p className="text-sv-muted">
-                  promptTokens={String(testResult.llmMeta.promptTokens ?? testResult.llmMeta.estimatedPromptTokens ?? '—')}
-                  {' · '}evalCount={String(testResult.llmMeta.evalCount ?? '—')}
-                  {' · '}numCtx={String(testResult.llmMeta.numCtx ?? '—')}
-                  {' · '}doneReason={String(testResult.llmMeta.doneReason ?? '—')}
-                </p>
-              ) : null}
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-sv-fg">
-                {JSON.stringify(
-                  {
-                    rawRules: testResult.rawRules,
-                    validations: testResult.validations,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </div>
+          {lastResult?.ok === false ? (
+            <p className="mt-2 text-xs text-risk-critical">
+              {lastResult.reason || 'No enforceable rule found'}
+            </p>
+          ) : null}
+          {lastResult?.ok && (lastResult.conflictCount || 0) > 0 ? (
+            <p className="mt-2 text-xs text-risk-alert">
+              {lastResult.conflictCount} conflict(s) with existing rules — choose which to keep.
+            </p>
           ) : null}
         </div>
       ) : null}
+
+      <ConflictPanel
+        open={conflictOpen}
+        onClose={() => setConflictOpen(false)}
+        conflicts={conflicts}
+        canResolve={canWrite}
+        push={push}
+        onResolved={async (result) => {
+          onRefresh?.();
+          const draftId = result?.draftId || lastResult?.draftId;
+          if (draftId) {
+            try {
+              const s = await apiJson(`/api/v2/policy/sets/${draftId}`);
+              const open = (s.conflicts || []).filter((c) => c.status === 'OPEN');
+              setConflicts(open);
+              if (open.length === 0) {
+                setConflictOpen(false);
+                push(result?.message || 'Conflict resolved — open the draft to review / submit');
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }}
+      />
 
       {compilations.length > 0 ? (
         <div className="rounded border border-sv-border p-4">
@@ -801,6 +856,23 @@ function RulesTab({
                   {summary ? (
                     <p className="text-xs text-sv-muted">{summary}</p>
                   ) : null}
+                  {c.progress?.conflictSummary || c.progress?.conflictCount ? (
+                    <p className="text-xs text-risk-alert">
+                      {c.progress.conflictSummary ||
+                        `Conflicts: ${c.progress.conflictCount}`}
+                      {c.policySetId ? (
+                        <>
+                          {' · '}
+                          <Link
+                            className="underline"
+                            to={`/app/policies/review?set=${c.policySetId}`}
+                          >
+                            Open conflict panel
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {suspects.length > 0 ? (
                     <div className="mt-1 space-y-1">
                       <p className="text-xs text-risk-watch">
@@ -810,9 +882,9 @@ function RulesTab({
                       {c.policySetId ? (
                         <Link
                           className="text-xs text-sv-accent underline"
-                          to={`/app/policies/review?set=${c.policySetId}&addManual=1`}
+                          to={`/app/policies/review?set=${c.policySetId}`}
                         >
-                          Add rule manually
+                          Open draft to add rule
                         </Link>
                       ) : null}
                     </div>
@@ -1606,10 +1678,19 @@ function EngineStatusChip({ status }) {
     );
   }
   const loaded = status.cacheLoadedAt ? relativeAgo(status.cacheLoadedAt) : '—';
+  const mismatch = status.inSync === false;
   return (
-    <span className="rounded border border-sv-border bg-sv-elevated/50 px-2 py-1 text-xs text-sv-fg">
+    <span
+      className={`rounded border px-2 py-1 text-xs ${
+        mismatch
+          ? 'border-risk-alert/50 bg-risk-alert/10 text-risk-alert'
+          : 'border-sv-border bg-sv-elevated/50 text-sv-fg'
+      }`}
+    >
+      {mismatch ? 'Engine out of sync · ' : ''}
       Active v{status.activePolicyVersion ?? '?'} · {status.ruleCount ?? 0} rules · loaded {loaded}
       {status.avgEvalMicros != null ? ` · avg ${status.avgEvalMicros}µs` : ''}
+      {status.inSync ? ' · in sync' : ''}
     </span>
   );
 }
@@ -1641,12 +1722,522 @@ const DEFAULT_SIM_FACTS = {
   'time.isBusinessHours': true,
 };
 
+function shortSha(sha) {
+  if (!sha) return '—';
+  const s = String(sha);
+  return s.length <= 12 ? s : `${s.slice(0, 8)}…`;
+}
+
+function LiveRulesTab({ canWrite, engineStatus, onEngineReload, onEngineStatus }) {
+  const { push } = useToast();
+  const [, setSearchParams] = useSearchParams();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(() => new Set());
+  const [jsonDrawer, setJsonDrawer] = useState(null);
+  const [setJson, setSetJson] = useState(null);
+  const [deleteDlg, setDeleteDlg] = useState(null);
+  const [reason, setReason] = useState('');
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [downstreamRule, setDownstreamRule] = useState(null);
+  const onEngineStatusRef = useRef(onEngineStatus);
+  onEngineStatusRef.current = onEngineStatus;
+
+  const load = useCallback(async ({ soft = false } = {}) => {
+    if (!soft) setLoading(true);
+    try {
+      const d = await apiJson('/api/v2/policy/live-rules', { skipErrorToast: true });
+      setData(d);
+      if (d?.engine) {
+        onEngineStatusRef.current?.(d.engine);
+      }
+    } catch (err) {
+      push(err.message || 'Failed to load live rules');
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [push]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const rules = data?.rules || [];
+  const coverage = data?.coverage || {};
+  const eng = data?.engine || engineStatus || {};
+  const mismatch = eng.inSync === false;
+
+  function toggle(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function viewJson(ruleId) {
+    try {
+      const j = await apiJson(`/api/v2/policy/live-rules/${encodeURIComponent(ruleId)}/json`);
+      setJsonDrawer(j);
+    } catch (err) {
+      push(err.message || 'Failed to load JSON');
+    }
+  }
+
+  async function copyJson(ruleId) {
+    try {
+      const j = await apiJson(`/api/v2/policy/live-rules/${encodeURIComponent(ruleId)}/json`);
+      await navigator.clipboard.writeText(JSON.stringify(j.rule || j.json, null, 2));
+      push('Rule JSON copied');
+    } catch (err) {
+      push(err.message || 'Copy failed');
+    }
+  }
+
+  async function openSetJson() {
+    if (!data?.policySet?.id) return;
+    try {
+      const j = await apiJson(`/api/v2/policy/sets/${data.policySet.id}/json`);
+      setSetJson(j);
+    } catch (err) {
+      push(err.message || 'Failed to load set JSON');
+    }
+  }
+
+  function simulateRule(row, expectFire = true) {
+    const facts =
+      expectFire !== false
+        ? row.factsTemplate?.shouldFire || DEFAULT_SIM_FACTS
+        : row.factsTemplate?.shouldNotFire || DEFAULT_SIM_FACTS;
+    setSearchParams({
+      tab: 'simulate',
+      ruleId: row.ruleId,
+      facts: JSON.stringify(facts),
+    });
+  }
+
+  function openSource(row) {
+    if (!row.documentId) {
+      push('No source document on this rule');
+      return;
+    }
+    const q = new URLSearchParams({
+      tab: 'documents',
+      doc: String(row.documentId),
+      clause: String(row.clauseRef || ''),
+    });
+    setSearchParams(q);
+  }
+
+  async function confirmDelete() {
+    if (!deleteDlg || reason.trim().length < 5) {
+      push('Reason must be at least 5 characters');
+      return;
+    }
+    setBusy(true);
+    try {
+      const ruleIds =
+        deleteDlg.mode === 'bulk' ? [...selected] : [deleteDlg.rule.ruleId];
+      if (deleteDlg.mode === 'draft') {
+        for (const rid of ruleIds) {
+          await apiJson(`/api/v2/policy/sets/${deleteDlg.draftId}/rules/${encodeURIComponent(rid)}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+        }
+        push('Rule removed from draft');
+      } else {
+        await apiJson(`/api/v2/policy/sets/${data.policySet.id}/removal-drafts`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ruleIds,
+            reason: reason.trim(),
+            confirmEmptyPolicy: confirmEmpty,
+          }),
+        });
+        push('Removal draft created — submit & approve to take effect');
+      }
+      setDeleteDlg(null);
+      setReason('');
+      setConfirmEmpty(false);
+      setSelected(new Set());
+      await load();
+    } catch (err) {
+      push(err.message || 'Delete failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm text-sv-muted">Loading live rules…</p>;
+  }
+
+  if (!data || data.state === 'NO_POLICY') {
+    return (
+      <p className="text-sm text-sv-muted">
+        No ACTIVE policy set. Approve a draft to load rules into the runtime engine.
+      </p>
+    );
+  }
+
+  const columns = [
+    {
+      key: 'sel',
+      header: '',
+      render: (row) =>
+        canWrite ? (
+          <input
+            type="checkbox"
+            checked={selected.has(row.ruleId)}
+            onChange={() => toggle(row.ruleId)}
+          />
+        ) : null,
+    },
+    { key: 'ruleId', header: 'Rule ID', render: (r) => <span className="font-mono text-xs">{r.ruleId}</span> },
+    { key: 'title', header: 'Title', render: (r) => r.title || '—' },
+    {
+      key: 'source',
+      header: 'Source',
+      render: (r) => (
+        <span className="text-xs">
+          {r.clauseRef || '—'}
+          {r.documentId ? (
+            <button type="button" className="ml-1 text-sv-accent underline" onClick={() => openSource(r)}>
+              open
+            </button>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      key: 'fires',
+      header: 'Fires / does not',
+      render: (r) => (
+        <div className="max-w-xs text-xs text-sv-muted">
+          <div>{r.firesWhen}</div>
+          <div className="mt-0.5 opacity-80">{r.doesNotFireWhen}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'level',
+      header: 'Level / band',
+      render: (r) => (
+        <span className="text-xs">
+          {r.minLevel} · floor {r.band?.floor ?? '—'} / cap {r.band?.cap ?? '—'}
+        </span>
+      ),
+    },
+    { key: 'severity', header: 'Severity', render: (r) => <Badge tone="neutral">{r.severity}</Badge> },
+    { key: 'origin', header: 'Origin', render: (r) => (
+      r.origin === 'MANUAL' ? <Badge tone="accent">MANUAL</Badge> : (r.origin || '—')
+    ) },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => (
+        <div className="flex flex-col gap-1">
+          <Badge tone="success">{r.status}</Badge>
+          {r.removalPending ? (
+            <span className="text-[10px] text-risk-watch">{r.removalPendingLabel}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'fires7',
+      header: 'Fire 7d',
+      render: (r) => (r.fireCount7d == null ? '—' : r.fireCount7d),
+    },
+    {
+      key: 'warn',
+      header: 'Warnings',
+      render: (r) =>
+        (r.validationWarnings || []).length === 0 ? (
+          '—'
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {(r.validationWarnings || []).map((w) => (
+              <Badge key={w.code} tone="warn">
+                {w.code}
+              </Badge>
+            ))}
+          </div>
+        ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (r) => (
+        <div className="flex flex-wrap gap-1">
+          <Button className="px-1.5 py-0.5 text-[11px]" variant="ghost" onClick={() => viewJson(r.ruleId)}>
+            JSON
+          </Button>
+          <Button className="px-1.5 py-0.5 text-[11px]" variant="ghost" onClick={() => copyJson(r.ruleId)}>
+            Copy
+          </Button>
+          <Button className="px-1.5 py-0.5 text-[11px]" variant="ghost" onClick={() => simulateRule(r, true)}>
+            Simulate
+          </Button>
+          <Button
+            className="px-1.5 py-0.5 text-[11px]"
+            variant="ghost"
+            onClick={() => setDownstreamRule(r)}
+          >
+            Downstream
+          </Button>
+          {canWrite ? (
+            <Button
+              className="px-1.5 py-0.5 text-[11px]"
+              variant="danger"
+              onClick={() => setDeleteDlg({ mode: 'active', rule: r })}
+            >
+              Delete
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-sv-fg">Live Rules</p>
+          <p className="mt-1 text-xs text-sv-muted">
+            ACCEPTED / EDITED rules from the ACTIVE set — exactly what the runtime evaluates.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-sv-muted">
+            <span>Policy v{data.policySet?.version}</span>
+            <span>sha {shortSha(data.policySet?.contentSha256)}</span>
+            <span>{data.ruleCount ?? rules.length} rules</span>
+            <span>loaded {eng.cacheLoadedAt ? relativeAgo(eng.cacheLoadedAt) : '—'}</span>
+            <span>avg {eng.avgEvalMicros ?? '—'}µs</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" onClick={openSetJson}>
+            Whole-set JSON
+          </Button>
+          <Button variant="ghost" onClick={load}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {mismatch ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-risk-alert/40 bg-risk-alert/10 px-3 py-2 text-sm text-risk-alert">
+          <span>
+            Engine cache differs from database — engine v{eng.engineVersion ?? '—'} (
+            {shortSha(eng.engineSha)}) vs database v{eng.databaseVersion ?? '—'} (
+            {shortSha(eng.databaseSha)})
+          </span>
+          {canWrite ? (
+            <Button
+              onClick={async () => {
+                try {
+                  await onEngineReload();
+                  push('Engine reloaded');
+                  await load();
+                } catch (err) {
+                  push(err.message || 'Reload failed');
+                }
+              }}
+            >
+              Reload
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded border border-sv-border/60 bg-sv-elevated/30 px-3 py-2 text-xs text-sv-muted">
+          Engine in sync with database
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        {[
+          ['Enforceable clauses', coverage.enforceableClauses],
+          ['Rules live', coverage.rulesLive],
+          ['Procedural', coverage.procedural],
+          ['Unmapped', coverage.unmapped],
+        ].map(([label, val]) => (
+          <div key={label} className="rounded border border-sv-border bg-sv-elevated/40 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-sv-muted">{label}</p>
+            <p className="mt-1 text-lg font-semibold text-sv-fg">{val ?? 0}</p>
+          </div>
+        ))}
+      </div>
+
+      {canWrite && selected.size > 0 ? (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="danger"
+            onClick={() => setDeleteDlg({ mode: 'bulk', rule: { ruleId: `${selected.size} rules` } })}
+          >
+            Remove selected ({selected.size})
+          </Button>
+        </div>
+      ) : null}
+
+      <Table columns={columns} rows={rules} />
+
+      {downstreamRule ? (
+        <Modal
+          open
+          title={`Downstream · ${downstreamRule.ruleId}`}
+          onClose={() => setDownstreamRule(null)}
+        >
+          <pre className="max-h-80 overflow-auto rounded bg-sv-bg p-3 font-mono text-xs text-sv-fg">
+            {JSON.stringify(downstreamRule.downstream, null, 2)}
+          </pre>
+        </Modal>
+      ) : null}
+
+      {jsonDrawer ? (
+        <Modal open title={`Rule JSON · ${jsonDrawer.rule?.ruleId || ''}`} onClose={() => setJsonDrawer(null)}>
+          <div className="mb-2 flex flex-wrap gap-2 text-xs">
+            <Badge tone={jsonDrawer.schemaValid ? 'success' : 'danger'}>
+              schema {jsonDrawer.schemaValid ? 'valid' : 'invalid'}
+            </Badge>
+            {(jsonDrawer.validator?.checks || []).map((c) => (
+              <Badge key={c.check} tone={c.result === 'PASS' ? 'success' : 'danger'}>
+                {c.check}: {c.result}
+              </Badge>
+            ))}
+          </div>
+          <pre className="max-h-96 overflow-auto rounded bg-sv-bg p-3 font-mono text-xs text-sv-fg">
+            {JSON.stringify(jsonDrawer.rule || jsonDrawer.json, null, 2)}
+          </pre>
+        </Modal>
+      ) : null}
+
+      {setJson ? (
+        <Modal open title="Live rules JSON (whole set)" onClose={() => setSetJson(null)}>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(setJson, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `live-rules-v${setJson.version}-${shortSha(setJson.contentSha256)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Download JSON
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                try {
+                  const v = await apiJson(`/api/v2/policy/sets/${setJson.policySetId}/rules-json/validate`, {
+                    method: 'POST',
+                    body: JSON.stringify({ rules: setJson.rules }),
+                  });
+                  push(v.ok ? 'Validation PASS' : 'Validation FAIL — see console');
+                  // eslint-disable-next-line no-console
+                  console.log('rules-json validate', v);
+                } catch (err) {
+                  push(err.message || 'Validate failed');
+                }
+              }}
+            >
+              Validate
+            </Button>
+            <span className="text-xs text-sv-muted">
+              Read-only for ACTIVE. Edit-as-JSON only in a DRAFT via Rules review.
+            </span>
+          </div>
+          <pre className="max-h-96 overflow-auto rounded bg-sv-bg p-3 font-mono text-xs text-sv-fg">
+            {JSON.stringify(setJson.rules, null, 2)}
+          </pre>
+        </Modal>
+      ) : null}
+
+      {deleteDlg ? (
+        <Modal
+          open
+          title={deleteDlg.mode === 'draft' ? 'Delete from draft' : 'Remove from live policy'}
+          onClose={() => !busy && setDeleteDlg(null)}
+        >
+          <p className="text-sm text-sv-muted">
+            {deleteDlg.mode === 'bulk'
+              ? `Create a removal draft for ${selected.size} selected rule(s). They keep firing until a different user approves.`
+              : `Rule ${deleteDlg.rule?.ruleId} — ${deleteDlg.rule?.title || ''}. Creates (or reuses) a DRAFT without this rule; takes effect only after submit → approve.`}
+          </p>
+          {deleteDlg.rule?.downstream ? (
+            <pre className="mt-2 max-h-32 overflow-auto rounded bg-sv-bg p-2 font-mono text-[11px]">
+              {JSON.stringify(deleteDlg.rule.downstream, null, 2)}
+            </pre>
+          ) : null}
+          <label className="mt-3 flex flex-col gap-1 text-xs text-sv-muted">
+            Reason (min 5 chars)
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <label className="mt-2 flex items-center gap-2 text-xs text-sv-muted">
+            <input
+              type="checkbox"
+              checked={confirmEmpty}
+              onChange={(e) => setConfirmEmpty(e.target.checked)}
+            />
+            Confirm: this tenant may end up with no enforceable rules
+          </label>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" disabled={busy} onClick={() => setDeleteDlg(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={confirmDelete}>
+              {busy ? 'Working…' : 'Confirm removal request'}
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+LiveRulesTab.propTypes = {
+  canWrite: PropTypes.bool,
+  engineStatus: PropTypes.object,
+  onEngineReload: PropTypes.func,
+  onEngineStatus: PropTypes.func,
+};
+
 function SimulateTab({ sets }) {
   const { push } = useToast();
+  const [searchParams] = useSearchParams();
+  const preRule = searchParams.get('ruleId');
+  const preFacts = searchParams.get('facts');
   const [policySetId, setPolicySetId] = useState('active');
-  const [factsJson, setFactsJson] = useState(() => JSON.stringify(DEFAULT_SIM_FACTS, null, 2));
+  const [factsJson, setFactsJson] = useState(() => {
+    if (preFacts) {
+      try {
+        return JSON.stringify(JSON.parse(preFacts), null, 2);
+      } catch {
+        return preFacts;
+      }
+    }
+    return JSON.stringify(DEFAULT_SIM_FACTS, null, 2);
+  });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (preFacts) {
+      try {
+        setFactsJson(JSON.stringify(JSON.parse(preFacts), null, 2));
+      } catch {
+        setFactsJson(preFacts);
+      }
+    }
+  }, [preFacts]);
 
   const active = sets.find((s) => s.status === 'ACTIVE');
   const choices = [
@@ -1687,6 +2278,9 @@ function SimulateTab({ sets }) {
         <p className="mt-1 text-xs text-sv-muted">
           Evaluate ACCEPTED/EDITED rules against a fact bag. Simulations are never audited as real
           decisions. Missing facts yield UNDETERMINED rules (three-valued logic).
+          {preRule ? (
+            <span className="ml-1 text-sv-fg"> Preselected from Live Rules: {preRule}.</span>
+          ) : null}
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
@@ -1730,8 +2324,13 @@ function SimulateTab({ sets }) {
             {result.policyVersion != null ? (
               <span className="text-sv-muted">v{result.policyVersion}</span>
             ) : null}
-            {result.simulation ? (
-              <Badge tone="accent">simulation</Badge>
+            {result.simulation ? <Badge tone="accent">simulation</Badge> : null}
+            {preRule ? (
+              <Badge
+                tone={(result.firedRules || []).some((f) => f.ruleId === preRule) ? 'success' : 'neutral'}
+              >
+                {preRule}: {(result.firedRules || []).some((f) => f.ruleId === preRule) ? 'FIRED' : 'not fired'}
+              </Badge>
             ) : null}
           </div>
 

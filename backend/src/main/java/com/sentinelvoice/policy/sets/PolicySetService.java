@@ -4,9 +4,15 @@ import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.policy.PolicyDocumentChunkEntity;
 import com.sentinelvoice.policy.PolicyDocumentChunkRepository;
+import com.sentinelvoice.policy.PolicyDocumentEntity;
+import com.sentinelvoice.policy.PolicyDocumentRepository;
+import com.sentinelvoice.policy.conflict.ConditionConstraintNormalizer;
+import com.sentinelvoice.policy.conflict.RuleConflictService;
+import com.sentinelvoice.policy.compile.KeywordExtractor;
 import com.sentinelvoice.policy.compile.PolicyCompileException;
 import com.sentinelvoice.policy.compile.PolicyCompileService;
 import com.sentinelvoice.policy.compile.PolicySetActivatedEvent;
+import com.sentinelvoice.policy.compile.RuleSourceAttributor;
 import com.sentinelvoice.policy.compile.RuleValidator;
 import com.sentinelvoice.policy.dsl.ConditionEnglish;
 import com.sentinelvoice.policy.dsl.FactCatalogue;
@@ -19,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -28,21 +35,30 @@ public class PolicySetService {
     private final PolicySetRepository setRepository;
     private final PolicyCompileService compileService;
     private final PolicyDocumentChunkRepository chunkRepository;
+    private final PolicyDocumentRepository documentRepository;
     private final AuditLedgerService auditLedgerService;
     private final ApplicationEventPublisher events;
+    private final LiveRulesService liveRulesService;
+    private final RuleConflictService conflictService;
 
     public PolicySetService(
             PolicySetRepository setRepository,
             PolicyCompileService compileService,
             PolicyDocumentChunkRepository chunkRepository,
+            PolicyDocumentRepository documentRepository,
             AuditLedgerService auditLedgerService,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            LiveRulesService liveRulesService,
+            RuleConflictService conflictService
     ) {
         this.setRepository = setRepository;
         this.compileService = compileService;
         this.chunkRepository = chunkRepository;
+        this.documentRepository = documentRepository;
         this.auditLedgerService = auditLedgerService;
         this.events = events;
+        this.liveRulesService = liveRulesService;
+        this.conflictService = conflictService;
     }
 
     public List<Map<String, Object>> listSets(UUID tenantId) {
@@ -53,11 +69,13 @@ public class PolicySetService {
         Map<String, Object> set = setRepository.findSet(tenantId, id)
                 .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Policy set not found"));
         List<Map<String, Object>> rules = setRepository.listRules(tenantId, id);
+        enrichRulesWithDocumentNames(tenantId, rules);
         set.put("rules", rules);
         set.put("keywords", setRepository.listKeywords(tenantId, id));
         set.put("facts", setRepository.listFacts(tenantId, id));
         set.put("compileDiagnostics", compileService.diagnosticsForPolicySet(tenantId, id));
         long accepted = rules.stream()
+                .filter(r -> r.get("deletedAt") == null)
                 .filter(r -> {
                     String st = String.valueOf(r.get("status"));
                     if (!"ACCEPTED".equals(st) && !"EDITED".equals(st)) {
@@ -71,7 +89,30 @@ public class PolicySetService {
                 })
                 .count();
         set.put("acceptedRuleCount", accepted);
-        set.put("canSubmit", "DRAFT".equals(set.get("status")) && accepted > 0);
+        List<Map<String, Object>> deleted = rules.stream()
+                .filter(r -> r.get("deletedAt") != null)
+                .toList();
+        set.put("deletedRules", deleted);
+        set.put("activeRules", rules.stream().filter(r -> r.get("deletedAt") == null).toList());
+        List<Map<String, Object>> conflicts = conflictService.list(tenantId, id, null);
+        set.put("conflicts", conflicts);
+        long openBlocking = conflicts.stream()
+                .filter(c -> "OPEN".equals(String.valueOf(c.get("status")))
+                        && !Boolean.TRUE.equals(c.get("advisory")))
+                .count();
+        set.put("openConflictCount", openBlocking);
+        boolean canSubmit = "DRAFT".equals(set.get("status")) && accepted > 0;
+        if (canSubmit) {
+            try {
+                Map<String, Object> pf = liveRulesService.preflight(tenantId, id);
+                set.put("preflight", pf);
+                canSubmit = Boolean.TRUE.equals(pf.get("canSubmit"));
+            } catch (Exception e) {
+                set.put("preflight", Map.of("canSubmit", false, "error", e.getMessage()));
+                canSubmit = false;
+            }
+        }
+        set.put("canSubmit", canSubmit);
         return set;
     }
 
@@ -121,13 +162,11 @@ public class PolicySetService {
         }
 
         Map<String, Object> source = asMap(body.get("source"));
-        String chunkText = loadCitedChunkText(tenantId, source);
-        RuleValidator.EditValidation editCheck = RuleValidator.validateEdit(
-                when,
-                asMap(body.get("then")),
-                source,
-                chunkText
-        );
+        boolean adminDirective = isAdminDirective(source);
+        String chunkText = adminDirective ? null : loadCitedChunkText(tenantId, source);
+        RuleValidator.EditValidation editCheck = adminDirective
+                ? RuleValidator.validateEditAdmin(when, asMap(body.get("then")), source)
+                : RuleValidator.validateEdit(when, asMap(body.get("then")), source, chunkText);
 
         List<Map<String, Object>> warnings = new ArrayList<>();
         if (body.get("warnings") instanceof List<?> priorWarnings) {
@@ -186,7 +225,30 @@ public class PolicySetService {
                 asMap(body.get("then")),
                 asMap(body.get("appliesTo"))
         ));
+        if (("ACCEPTED".equals(status) || "EDITED".equals(status))
+                && !hasSimExamples(body.get("simulationExamples"))) {
+            body.put("simulationExamples", defaultSimExamples(when));
+        }
         setRepository.updateRuleStatus(tenantId, rulePk, status, body);
+        if (body.get("simulationExamples") != null) {
+            setRepository.updateSimulationExamples(tenantId, rulePk, body.get("simulationExamples"));
+        }
+        // Refresh keywords when condition/text changes
+        String rid = String.valueOf(body.get("ruleId"));
+        setRepository.deleteKeywordsForRule(tenantId, setId, rid);
+        String harvestText = isAdminDirective(asMap(body.get("source")))
+                ? String.valueOf(asMap(body.get("source")).getOrDefault("basis", ""))
+                : String.valueOf(asMap(body.get("source")).getOrDefault("quote", ""));
+        for (Map<String, Object> km : KeywordExtractor.merge(body.get("keywords"), harvestText)) {
+            setRepository.addKeywordForRule(
+                    tenantId, setId,
+                    String.valueOf(km.get("term")),
+                    String.valueOf(km.getOrDefault("lang", "en")),
+                    String.valueOf(km.getOrDefault("category", "CUSTOM")),
+                    km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                    rid
+            );
+        }
         auditLedgerService.append(
                 tenantId, null, AuditEventType.POLICY_RULE_UPDATED, "USER", userId.toString(),
                 Map.of("ruleId", body.get("ruleId"), "status", status, "policySetId", setId.toString())
@@ -195,7 +257,23 @@ public class PolicySetService {
         if (groundingFailed) {
             updated.put("editError", "quote not found in source");
         }
+        // Re-check conflicts after edit
+        List<Map<String, Object>> conflicts = conflictService.checkRule(
+                tenantId, userId, setId, updated, false
+        );
+        updated.put("conflicts", conflicts);
+        Map<String, Object> setOut = getSet(tenantId, setId);
+        setOut.put("updatedRule", updated);
+        setOut.put("newConflicts", conflicts);
         return updated;
+    }
+
+    private static boolean isAdminDirective(Map<String, Object> source) {
+        if (source == null) {
+            return false;
+        }
+        String kind = String.valueOf(source.getOrDefault("kind", source.getOrDefault("type", "")));
+        return "ADMIN_DIRECTIVE".equalsIgnoreCase(kind);
     }
 
     private String loadCitedChunkText(UUID tenantId, Map<String, Object> source) {
@@ -245,21 +323,532 @@ public class PolicySetService {
 
     @Transactional
     public Map<String, Object> createManualRule(UUID tenantId, UUID userId, UUID setId, Map<String, Object> body) {
+        Map<String, Object> draftMeta = ensureEditableDraft(tenantId, userId, setId);
+        UUID draftId = UUID.fromString(String.valueOf(draftMeta.get("draftId")));
+        body = new LinkedHashMap<>(body == null ? Map.of() : body);
+        Map<String, Object> sourceIn = asMap(body.get("source"));
+        boolean adminDirective = isAdminDirective(sourceIn)
+                || "ADMIN_DIRECTIVE".equalsIgnoreCase(String.valueOf(body.getOrDefault("sourceKind", "")));
+
+        Map<String, Object> attributed;
+        if (adminDirective) {
+            attributed = buildAdminDirectiveRule(body, sourceIn);
+        } else {
+            UUID documentId = parseUuid(sourceIn.get("documentId"));
+            UUID chunkId = firstChunkId(sourceIn);
+            if (documentId == null || chunkId == null) {
+                throw new PolicyCompileException(
+                        "SOURCE_REQUIRED",
+                        "Pick a source chunk from the document viewer (documentId + chunkId), "
+                                + "or set source.kind=ADMIN_DIRECTIVE with a basis (min 15 chars)"
+                );
+            }
+            PolicyDocumentChunkEntity chunk = chunkRepository
+                    .findByTenantIdAndDocumentIdOrderByOrdinalAsc(tenantId, documentId)
+                    .stream()
+                    .filter(c -> c.getId().equals(chunkId))
+                    .findFirst()
+                    .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Source chunk not found"));
+
+            String selectedQuote = sourceIn.get("quote") == null ? null : String.valueOf(sourceIn.get("quote")).trim();
+            attributed = RuleSourceAttributor.attribute(body, documentId, chunk);
+            if (selectedQuote != null && !selectedQuote.isBlank()
+                    && chunk.getText() != null
+                    && chunk.getText().toLowerCase(Locale.ROOT)
+                    .contains(selectedQuote.toLowerCase(Locale.ROOT).strip())) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> src = attributed.get("source") instanceof Map<?, ?> m
+                        ? new LinkedHashMap<>((Map<String, Object>) m) : new LinkedHashMap<>();
+                String q = selectedQuote.length() > 200 ? selectedQuote.substring(0, 200) : selectedQuote;
+                src.put("quote", q);
+                attributed.put("source", src);
+            }
+            Map<String, Object> src = asMap(attributed.get("source"));
+            src.put("kind", "DOCUMENT_CLAUSE");
+            attributed.put("source", src);
+
+            RuleValidator.EditValidation check = RuleValidator.validateEdit(
+                    asMap(attributed.get("when")),
+                    asMap(attributed.get("then")),
+                    src,
+                    chunk.getText()
+            );
+            if (!check.ok()) {
+                throw new PolicyCompileException("INVALID_RULE", String.join("; ", check.errors()));
+            }
+            attributed.put("warnings", check.warnings());
+        }
+
+        attributed.put("origin", "MANUAL");
+        attributed.put("status", "ACCEPTED");
+        if (attributed.get("modality") == null && body.get("modality") != null) {
+            attributed.put("modality", body.get("modality"));
+        }
+        if (body.get("keywords") != null) {
+            attributed.put("keywords", body.get("keywords"));
+        }
+        if (body.get("title") != null && !String.valueOf(body.get("title")).isBlank()) {
+            attributed.put("title", body.get("title"));
+        }
+        attributed.put("plainEnglish", ConditionEnglish.render(
+                asMap(attributed.get("when")),
+                asMap(attributed.get("then")),
+                asMap(attributed.get("appliesTo"))
+        ));
+        if (!hasSimExamples(attributed.get("simulationExamples"))) {
+            attributed.put("simulationExamples", defaultSimExamples(asMap(attributed.get("when"))));
+        }
+
+        setRepository.insertManualRule(tenantId, draftId, attributed);
+        // Persist keywords for document-clause / admin manual adds
+        List<Map<String, Object>> kws = KeywordExtractor.merge(
+                attributed.get("keywords"),
+                adminDirective
+                        ? String.valueOf(asMap(attributed.get("source")).getOrDefault("basis", ""))
+                        : String.valueOf(asMap(attributed.get("source")).getOrDefault("quote", ""))
+        );
+        String newRuleId = String.valueOf(attributed.get("ruleId"));
+        for (Map<String, Object> km : kws) {
+            setRepository.addKeywordForRule(
+                    tenantId, draftId,
+                    String.valueOf(km.get("term")),
+                    String.valueOf(km.getOrDefault("lang", "en")),
+                    String.valueOf(km.getOrDefault("category", "CUSTOM")),
+                    km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                    newRuleId
+            );
+        }
+        auditLedgerService.append(
+                tenantId, null, AuditEventType.POLICY_RULE_ADDED, "USER", userId.toString(),
+                Map.of(
+                        "ruleId", attributed.get("ruleId"),
+                        "policySetId", draftId.toString(),
+                        "origin", "MANUAL",
+                        "sourceKind", adminDirective ? "ADMIN_DIRECTIVE" : "DOCUMENT_CLAUSE"
+                )
+        );
+        // Also keep POLICY_RULE_CREATED for backward-compatible consumers
+        auditLedgerService.append(
+                tenantId, null, AuditEventType.POLICY_RULE_CREATED, "USER", userId.toString(),
+                Map.of("ruleId", attributed.get("ruleId"), "policySetId", draftId.toString(), "origin", "MANUAL")
+        );
+
+        List<Map<String, Object>> conflicts = conflictService.checkRule(
+                tenantId, userId, draftId, attributed, true
+        );
+        Map<String, Object> out = getSet(tenantId, draftId);
+        out.put("draftId", draftId.toString());
+        out.put("draftMessage", draftMeta.get("message"));
+        out.put("newConflicts", conflicts);
+        out.put("addedRuleId", attributed.get("ruleId"));
+        return out;
+    }
+
+    /**
+     * ACTIVE sets are immutable — open or reuse a DRAFT copy for edits / manual adds.
+     */
+    @Transactional
+    public Map<String, Object> ensureEditableDraft(UUID tenantId, UUID userId, UUID setId) {
+        Map<String, Object> set = setRepository.findSet(tenantId, setId)
+                .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Policy set not found"));
+        String status = String.valueOf(set.get("status"));
+        if ("DRAFT".equals(status)) {
+            return Map.of(
+                    "draftId", setId.toString(),
+                    "version", set.get("version"),
+                    "message", "Editing draft v" + set.get("version")
+            );
+        }
+        if (!"ACTIVE".equals(status)) {
+            throw new PolicyCompileException("NOT_EDITABLE", "Only DRAFT or ACTIVE sets can receive new rules");
+        }
+        // Reuse open draft that was copied from this ACTIVE set for manual edits
+        Optional<Map<String, Object>> existing = setRepository.findOpenDraft(tenantId);
+        if (existing.isPresent()) {
+            Map<String, Object> meta = asMap(existing.get().get("meta"));
+            String from = String.valueOf(meta.getOrDefault("editFromActiveId", ""));
+            if (setId.toString().equals(from) || setId.toString().equals(
+                    String.valueOf(meta.getOrDefault("removalFromActiveId", "")))) {
+                return Map.of(
+                        "draftId", String.valueOf(existing.get().get("id")),
+                        "version", existing.get().get("version"),
+                        "message", "Changes go into draft v" + existing.get().get("version")
+                                + " and need approval"
+                );
+            }
+        }
+        int version = setRepository.nextVersion(tenantId);
+        UUID draftId = setRepository.createDraft(
+                tenantId, userId,
+                "Edit draft from ACTIVE v" + set.get("version"),
+                version
+        );
+        setRepository.copyRulesExcluding(tenantId, setId, draftId, List.of());
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("editFromActiveId", setId.toString());
+        setRepository.updateSetMeta(tenantId, draftId, meta);
+        // Conflict check when draft is created from ACTIVE
+        conflictService.checkSet(tenantId, userId, draftId, false);
+        return Map.of(
+                "draftId", draftId.toString(),
+                "version", version,
+                "message", "Changes go into draft v" + version + " and need approval"
+        );
+    }
+
+    private Map<String, Object> buildAdminDirectiveRule(
+            Map<String, Object> body, Map<String, Object> sourceIn
+    ) {
+        String basis = sourceIn.get("basis") == null
+                ? (body.get("basis") == null ? "" : String.valueOf(body.get("basis")).trim())
+                : String.valueOf(sourceIn.get("basis")).trim();
+        if (basis.length() < 15) {
+            throw new PolicyCompileException(
+                    "BASIS_REQUIRED",
+                    "Admin directive requires Basis / who decided (min 15 characters)"
+            );
+        }
+        Map<String, Object> when = asMap(body.get("when"));
+        if (when.isEmpty()) {
+            throw new PolicyCompileException("WHEN_REQUIRED", "Condition (when) is required");
+        }
+        Map<String, Object> then = asMap(body.get("then"));
+        if (then.isEmpty()) {
+            then = new LinkedHashMap<>(Map.of("minLevel", 2));
+        }
+        RuleValidator.EditValidation check = RuleValidator.validateEditAdmin(when, then, sourceIn);
+        if (!check.ok()) {
+            throw new PolicyCompileException("INVALID_RULE", String.join("; ", check.errors()));
+        }
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("kind", "ADMIN_DIRECTIVE");
+        source.put("basis", basis);
+        if (sourceIn.get("reference") != null) {
+            source.put("reference", String.valueOf(sourceIn.get("reference")).trim());
+        }
+        source.put("adminDirective", true);
+        String ruleId = body.get("ruleId") == null
+                ? "manual-admin-" + UUID.randomUUID().toString().substring(0, 8)
+                : String.valueOf(body.get("ruleId"));
+        String title = body.get("title") == null || String.valueOf(body.get("title")).isBlank()
+                ? RuleSourceAttributor.generateTitle(when, body.get("modality"), basis, then)
+                : String.valueOf(body.get("title"));
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("ruleId", ruleId);
+        rule.put("title", title);
+        rule.put("when", when);
+        rule.put("then", then);
+        rule.put("source", source);
+        rule.put("modality", body.getOrDefault("modality", "must"));
+        rule.put("appliesTo", body.getOrDefault("appliesTo", Map.of("action", "*")));
+        rule.put("severity", body.getOrDefault("severity", "MEDIUM"));
+        rule.put("warnings", check.warnings());
+        rule.put("description", basis);
+        return rule;
+    }
+
+    /**
+     * Simple text-box add: paste a clause → LLM extract → save to draft → conflict-check vs ACTIVE/draft.
+     * Deterministic conflict only (low latency). Keywords always harvested.
+     */
+    @Transactional
+    public Map<String, Object> addRuleFromText(
+            UUID tenantId, UUID userId, String clauseText, UUID preferredSetId
+    ) {
+        String text = clauseText == null ? "" : clauseText.strip();
+        if (text.length() < 15) {
+            throw new PolicyCompileException("TEXT_REQUIRED", "Paste a policy clause (at least 15 characters)");
+        }
+
+        UUID draftId;
+        String draftMessage;
+        if (preferredSetId != null) {
+            Map<String, Object> meta = ensureEditableDraft(tenantId, userId, preferredSetId);
+            draftId = UUID.fromString(String.valueOf(meta.get("draftId")));
+            draftMessage = String.valueOf(meta.get("message"));
+        } else {
+            Optional<Map<String, Object>> open = setRepository.findOpenDraft(tenantId);
+            if (open.isPresent()) {
+                draftId = UUID.fromString(String.valueOf(open.get().get("id")));
+                draftMessage = "Added to draft v" + open.get().get("version");
+            } else {
+                Optional<Map<String, Object>> active = setRepository.findActiveSet(tenantId);
+                if (active.isPresent()) {
+                    Map<String, Object> meta = ensureEditableDraft(
+                            tenantId, userId, UUID.fromString(String.valueOf(active.get().get("id")))
+                    );
+                    draftId = UUID.fromString(String.valueOf(meta.get("draftId")));
+                    draftMessage = String.valueOf(meta.get("message"));
+                } else {
+                    int version = setRepository.nextVersion(tenantId);
+                    draftId = setRepository.createDraft(tenantId, userId, "Manual rules v" + version, version);
+                    draftMessage = "Created draft v" + version;
+                }
+            }
+        }
+
+        Map<String, Object> extracted = compileService.testClause(tenantId, text);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> validations = extracted.get("validations") instanceof List<?> v
+                ? (List<Map<String, Object>>) v : List.of();
+
+        List<Map<String, Object>> added = new ArrayList<>();
+        List<Map<String, Object>> allConflicts = new ArrayList<>();
+        int rejected = 0;
+
+        for (Map<String, Object> row : validations) {
+            if (Boolean.TRUE.equals(row.get("placeholder"))) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.get("autoReject"))) {
+                rejected++;
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> ruleBody = row.get("rule") instanceof Map<?, ?> m
+                    ? new LinkedHashMap<>((Map<String, Object>) m) : null;
+            if (ruleBody == null || asMap(ruleBody.get("when")).isEmpty()) {
+                continue;
+            }
+
+            // Rebuild as admin-directive manual rule (no PDF citation)
+            Map<String, Object> sourceIn = new LinkedHashMap<>();
+            sourceIn.put("kind", "ADMIN_DIRECTIVE");
+            sourceIn.put("basis", text.length() > 500 ? text.substring(0, 500) : text);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("when", ruleBody.get("when"));
+            body.put("then", ruleBody.get("then"));
+            body.put("modality", ruleBody.getOrDefault("modality", "must"));
+            body.put("appliesTo", ruleBody.get("appliesTo"));
+            body.put("title", ruleBody.get("title"));
+            body.put("source", sourceIn);
+            Map<String, Object> attributed = buildAdminDirectiveRule(body, sourceIn);
+            attributed.put("origin", "MANUAL");
+            attributed.put("status", "ACCEPTED");
+            attributed.put("plainEnglish", ConditionEnglish.render(
+                    asMap(attributed.get("when")),
+                    asMap(attributed.get("then")),
+                    asMap(attributed.get("appliesTo"))
+            ));
+            if (!hasSimExamples(attributed.get("simulationExamples"))) {
+                attributed.put("simulationExamples", defaultSimExamples(asMap(attributed.get("when"))));
+            }
+
+            // Keywords from LLM raw + heuristic from pasted text
+            Object rawKeywords = null;
+            // Find matching raw rule keywords if present
+            if (extracted.get("rawRules") instanceof List<?> raws) {
+                for (Object r : raws) {
+                    if (r instanceof Map<?, ?> rm && rm.get("keywords") != null) {
+                        rawKeywords = rm.get("keywords");
+                        break;
+                    }
+                }
+            }
+            List<Map<String, Object>> kws = KeywordExtractor.merge(rawKeywords, text);
+            attributed.put("keywords", kws.stream().map(k -> k.get("term")).toList());
+
+            // Reuse equivalent draft rule instead of inserting a duplicate (e.g. after a failed resolve)
+            conflictService.cleanupOrphans(tenantId, draftId);
+            Optional<Map<String, Object>> existingEq = findEquivalentDraftRule(tenantId, draftId, attributed);
+            Map<String, Object> savedRule;
+            boolean reused;
+            if (existingEq.isPresent()) {
+                savedRule = new LinkedHashMap<>(existingEq.get());
+                reused = true;
+            } else {
+                setRepository.insertManualRule(tenantId, draftId, attributed);
+                String ruleId = String.valueOf(attributed.get("ruleId"));
+                for (Map<String, Object> km : kws) {
+                    setRepository.addKeywordForRule(
+                            tenantId, draftId,
+                            String.valueOf(km.get("term")),
+                            String.valueOf(km.getOrDefault("lang", "en")),
+                            String.valueOf(km.getOrDefault("category", "CUSTOM")),
+                            km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                            ruleId
+                    );
+                }
+                auditLedgerService.append(
+                        tenantId, null, AuditEventType.POLICY_RULE_ADDED, "USER", userId.toString(),
+                        Map.of(
+                                "ruleId", ruleId,
+                                "policySetId", draftId.toString(),
+                                "origin", "MANUAL",
+                                "sourceKind", "TEXT_BOX"
+                        )
+                );
+                savedRule = attributed;
+                reused = false;
+            }
+
+            // Deterministic conflict check only (fast — no LLM advisory)
+            List<Map<String, Object>> conflicts = conflictService.checkRule(
+                    tenantId, userId, draftId, savedRule, false
+            );
+            allConflicts.addAll(conflicts);
+            Map<String, Object> addedRow = new LinkedHashMap<>(savedRule);
+            addedRow.put("conflicts", conflicts);
+            addedRow.put("reused", reused);
+            added.add(addedRow);
+        }
+
+        if (added.isEmpty()) {
+            Map<String, Object> fail = new LinkedHashMap<>();
+            fail.put("ok", false);
+            fail.put("status", extracted.get("status"));
+            fail.put("reason", extracted.getOrDefault("reason",
+                    rejected > 0 ? "extracted rules failed validation" : "no enforceable rule found"));
+            fail.put("draftId", draftId.toString());
+            fail.put("extracted", extracted);
+            return fail;
+        }
+
+        Map<String, Object> out = getSet(tenantId, draftId);
+        out.put("ok", true);
+        out.put("draftId", draftId.toString());
+        out.put("draftMessage", draftMessage);
+        out.put("addedRules", added);
+        out.put("newConflicts", allConflicts);
+        out.put("conflictCount", allConflicts.size());
+        out.put("message", allConflicts.isEmpty()
+                ? (Boolean.TRUE.equals(added.stream().anyMatch(a -> Boolean.TRUE.equals(a.get("reused"))))
+                        ? "Same rule already in this draft — checked against live policy only"
+                        : "Rule added — no conflicts with live rules")
+                : "Rule added — " + allConflicts.size() + " conflict(s) with live policy; choose which to keep");
+        return out;
+    }
+
+    /**
+     * Reuse only a prior MANUAL add in this draft with the same when+level
+     * (avoids stacking duplicates after a failed resolve). Never treats LIVE copies as duplicates here.
+     */
+    private Optional<Map<String, Object>> findEquivalentDraftRule(
+            UUID tenantId, UUID draftId, Map<String, Object> candidate
+    ) {
+        var candNorm = ConditionConstraintNormalizer.normalize(candidate);
+        for (Map<String, Object> existing : setRepository.listActiveRules(tenantId, draftId)) {
+            if (!"MANUAL".equals(String.valueOf(existing.get("origin")))) {
+                continue;
+            }
+            if ("REJECTED".equals(String.valueOf(existing.get("status")))) {
+                continue;
+            }
+            if (candNorm.ruleId().equals(String.valueOf(existing.get("ruleId")))) {
+                return Optional.of(existing);
+            }
+            var peerNorm = ConditionConstraintNormalizer.normalize(existing);
+            if (ConditionConstraintNormalizer.conditionsEquivalent(candNorm, peerNorm)
+                    && candNorm.minLevel() == peerNorm.minLevel()) {
+                return Optional.of(existing);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Re-attach clauseRef/quote/title for DRAFT rules missing a code-attributed source.
+     */
+    @Transactional
+    public Map<String, Object> repairSources(UUID tenantId, UUID userId, UUID setId) {
         Map<String, Object> set = setRepository.findSet(tenantId, setId)
                 .orElseThrow(() -> new PolicyCompileException("NOT_FOUND", "Policy set not found"));
         if (!"DRAFT".equals(set.get("status"))) {
-            throw new PolicyCompileException("NOT_DRAFT", "Only DRAFT sets accept new rules");
+            throw new PolicyCompileException("NOT_DRAFT", "Only DRAFT sets can repair sources");
         }
-        body = new LinkedHashMap<>(body);
-        body.put("origin", "MANUAL");
-        body.putIfAbsent("status", "ACCEPTED");
-        body.putIfAbsent("ruleId", "R-manual-" + UUID.randomUUID().toString().substring(0, 8));
-        setRepository.insertManualRule(tenantId, setId, body);
+        List<Map<String, Object>> rules = setRepository.listRules(tenantId, setId);
+        int repaired = 0;
+        int skipped = 0;
+        for (Map<String, Object> rule : rules) {
+            if (rule.get("deletedAt") != null) {
+                continue;
+            }
+            if (!RuleSourceAttributor.needsSourceRepair(rule)) {
+                skipped++;
+                continue;
+            }
+            Map<String, Object> source = asMap(rule.get("source"));
+            UUID documentId = parseUuid(source.get("documentId"));
+            UUID chunkId = firstChunkId(source);
+            if (documentId == null || chunkId == null) {
+                skipped++;
+                continue;
+            }
+            PolicyDocumentChunkEntity chunk = chunkRepository
+                    .findByTenantIdAndDocumentIdOrderByOrdinalAsc(tenantId, documentId)
+                    .stream()
+                    .filter(c -> c.getId().equals(chunkId))
+                    .findFirst()
+                    .orElse(null);
+            if (chunk == null) {
+                skipped++;
+                continue;
+            }
+            Map<String, Object> attributed = RuleSourceAttributor.reattribute(rule, documentId, chunk);
+            UUID pk = UUID.fromString(String.valueOf(rule.get("id")));
+            String status = String.valueOf(attributed.getOrDefault("status", "PROPOSED"));
+            setRepository.updateRuleStatus(tenantId, pk, status, attributed);
+            repaired++;
+        }
         auditLedgerService.append(
-                tenantId, null, AuditEventType.POLICY_RULE_CREATED, "USER", userId.toString(),
-                Map.of("ruleId", body.get("ruleId"), "policySetId", setId.toString())
+                tenantId, null, AuditEventType.POLICY_RULE_UPDATED, "USER", userId.toString(),
+                Map.of("policySetId", setId.toString(), "repairSources", repaired, "skipped", skipped)
         );
-        return getSet(tenantId, setId);
+        Map<String, Object> out = getSet(tenantId, setId);
+        out.put("repaired", repaired);
+        out.put("skipped", skipped);
+        return out;
+    }
+
+    private void enrichRulesWithDocumentNames(UUID tenantId, List<Map<String, Object>> rules) {
+        Map<String, String> titles = new java.util.HashMap<>();
+        for (Map<String, Object> rule : rules) {
+            Map<String, Object> source = asMap(rule.get("source"));
+            Object docId = source.get("documentId");
+            if (docId == null) {
+                continue;
+            }
+            String key = String.valueOf(docId);
+            if (!titles.containsKey(key)) {
+                try {
+                    UUID id = UUID.fromString(key);
+                    String title = documentRepository.findById(id)
+                            .filter(d -> tenantId.equals(d.getTenantId()))
+                            .map(PolicyDocumentEntity::getTitle)
+                            .orElse(null);
+                    titles.put(key, title);
+                } catch (Exception e) {
+                    titles.put(key, null);
+                }
+            }
+            if (titles.get(key) != null) {
+                rule.put("documentTitle", titles.get(key));
+                source = new LinkedHashMap<>(source);
+                source.put("documentTitle", titles.get(key));
+                rule.put("source", source);
+            }
+        }
+    }
+
+    private static UUID parseUuid(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(String.valueOf(raw));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static UUID firstChunkId(Map<String, Object> source) {
+        if (source.get("chunkId") != null) {
+            return parseUuid(source.get("chunkId"));
+        }
+        if (source.get("chunkIds") instanceof List<?> ids && !ids.isEmpty()) {
+            return parseUuid(ids.get(0));
+        }
+        return null;
     }
 
     @Transactional
@@ -273,6 +862,10 @@ public class PolicySetService {
         }
         if (setRepository.countAccepted(tenantId, setId) < 1) {
             throw new PolicyCompileException("NO_RULES", "Accept at least one rule before submit");
+        }
+        Map<String, Object> pf = liveRulesService.preflight(tenantId, setId);
+        if (!Boolean.TRUE.equals(pf.get("canSubmit"))) {
+            throw new PolicyCompileException("PREFLIGHT_FAILED", "Pre-flight checklist is not fully green");
         }
         setRepository.submit(tenantId, setId, userId);
         String sha = setRepository.computeContentSha(tenantId, setId);
@@ -304,6 +897,9 @@ public class PolicySetService {
         events.publishEvent(new PolicySetActivatedEvent(
                 this, tenantId, setId, ((Number) activated.get("version")).intValue()
         ));
+        // Post-activation: engine reload is driven by PolicySetActivatedEvent; surface sync check
+        Map<String, Object> sync = liveRulesService.postActivationCheck(tenantId);
+        activated.put("engineSync", sync);
         auditLedgerService.append(
                 tenantId, null, AuditEventType.POLICY_SET_APPROVED, "USER", userId.toString(),
                 Map.of("policySetId", setId.toString(), "contentSha256", sha, "comment", comment == null ? "" : comment)
@@ -391,5 +987,50 @@ public class PolicySetService {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object o) {
         return o instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    private static boolean hasSimExamples(Object raw) {
+        if (!(raw instanceof List<?> list) || list.size() < 2) {
+            return false;
+        }
+        boolean fire = false;
+        boolean noFire = false;
+        for (Object o : list) {
+            if (o instanceof Map<?, ?> m) {
+                if (Boolean.TRUE.equals(m.get("expectFire"))) fire = true;
+                if (Boolean.FALSE.equals(m.get("expectFire"))) noFire = true;
+            }
+        }
+        return fire && noFire;
+    }
+
+    private static List<Map<String, Object>> defaultSimExamples(Map<String, Object> when) {
+        Map<String, Object> fire = new LinkedHashMap<>();
+        Map<String, Object> noFire = new LinkedHashMap<>();
+        fire.put("ask.type", "WIRE_TRANSFER");
+        fire.put("ask.amountInr", 2_500_000);
+        fire.put("ask.beneficiaryKnown", false);
+        fire.put("time.isBusinessHours", true);
+        noFire.put("ask.type", "INFORMATION");
+        noFire.put("ask.amountInr", 1000);
+        noFire.put("ask.beneficiaryKnown", true);
+        noFire.put("time.isBusinessHours", true);
+        for (Map<String, Object> leaf : ConditionEnglish.collectLeaves(when)) {
+            String fact = String.valueOf(leaf.get("fact"));
+            String op = String.valueOf(leaf.get("op"));
+            Object value = leaf.get("value");
+            if ("EQ".equals(op) || "GTE".equals(op) || "GT".equals(op)) {
+                fire.put(fact, value);
+            }
+        }
+        Map<String, Object> a = new LinkedHashMap<>();
+        a.put("label", "should fire");
+        a.put("expectFire", true);
+        a.put("facts", fire);
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("label", "should not fire");
+        b.put("expectFire", false);
+        b.put("facts", noFire);
+        return List.of(a, b);
     }
 }
