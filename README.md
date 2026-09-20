@@ -40,6 +40,7 @@ Historical v1 host commands (prototype only): `.\make.cmd help` / `.\make.cmd de
 |-----|---------|
 | [`docs/v2/ARCHITECTURE.md`](docs/v2/ARCHITECTURE.md) | V2 architecture record |
 | [`docs/v2/CHANGELOG.md`](docs/v2/CHANGELOG.md) | Deviations from v1, dependencies, features |
+| [`docs/v2/SUPABASE.md`](docs/v2/SUPABASE.md) | Deployed central DB (Supabase) + local→cloud migration |
 | [`docs/v2/features/`](docs/v2/features/) | Per-feature notes + manual verification (through F5) |
 | [`docs/contracts/v2/`](docs/contracts/v2/) | Wire contracts (source of truth) |
 | [`docs/contracts/v1/`](docs/contracts/v1/) | Historical v1 schemas |

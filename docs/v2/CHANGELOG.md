@@ -27,6 +27,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | FactCatalogue directory enums bound to `DirectoryMatch`; REJECTED rules kept for Edit-to-fix; POSSIBLE_DUPLICATE flag; level clamp down-only | F6 follow-up quality |
 | 2026-09-20 | Level floors (credential never-share/ask & unverified-accept →3; approval/verify →2) with LEVEL_ADJUSTED up | F6 level bounds |
 | 2026-09-20 | v1 ContextScoring / RelationshipScoring / CrossChannelScoring YAML deleted; TRANSACTION score from ACTIVE DSL rules | F7 runtime rule engine |
+| 2026-09-20 | Deployed central DB is Supabase (Session Pooler); local Docker Postgres kept for lab/offline | Shared multi-env system of record |
 
 ## New dependencies
 
@@ -63,3 +64,4 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | F6 | Quality follow-up: VALUE_NOT_IN_SOURCE; no invented clauseRef; max-docs=1; must-never level cap; F6.md checklist + Quick Policy re-compile |
 | 2026-09-20 | F7 | Runtime RuleEngine + FactAssembler; simulate/status APIs; Simulation UI; delete v1 ContextScoring |
 | 2026-09-20 | F6 | Empty-LLM fix: outcome statuses, truncated vs empty, subset schema, suspect retry, progress clamp, test-clause |
+| 2026-09-20 | Ops | Supabase central DB + `migrate-to-supabase.ps1` local dump/restore; docs/v2/SUPABASE.md |

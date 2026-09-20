@@ -35,8 +35,11 @@
 - Partial indexes where useful (add in feature migrations with a comment explaining the predicate)
 
 ## Roles
-- `sv_owner` — Flyway migrations, owns objects, may `ALTER`
+- `sv_owner` — Flyway migrations, owns objects, may `ALTER` (**local Docker only**)
 - `sv_app` — runtime pool; **no** `SUPERUSER`, **no** `BYPASSRLS`; cannot alter schema
+- **Supabase (deployed central DB):** Flyway uses the project `postgres` role
+  (`DB_OWNER_USER=postgres.<ref>`); `sv_app` is created via
+  `infra/supabase/01-bootstrap-roles.sql`. See `docs/v2/SUPABASE.md`.
 - Immutable tables (audit): `REVOKE UPDATE, DELETE, TRUNCATE` from `sv_app` plus a raise-on-mutate trigger
 
 ## Migrations

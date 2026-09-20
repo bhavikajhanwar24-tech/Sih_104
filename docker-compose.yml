@@ -6,6 +6,9 @@
 # Copy .env.example → .env before `docker compose up`.
 
 services:
+  # Optional offline companion. Deployed / shared central DB is Supabase
+  # (set DB_URL in .env — docs/v2/SUPABASE.md). Backend does not require this
+  # service when JDBC points at the Session Pooler.
   postgres:
     image: postgres:16
     container_name: sentinelvoice-postgres
@@ -67,8 +70,6 @@ services:
     container_name: sentinelvoice-backend
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
       asterisk:
         condition: service_healthy
     env_file:
@@ -77,7 +78,9 @@ services:
       SENTINELVOICE_ML_BASE_URL: http://ml-engine:8000
       SENTINELVOICE_ML_WEBSOCKET_URL: ws://ml-engine:8000/ingest
       SENTINELVOICE_CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
-      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sentinelvoice}
+      # Prefer .env DB_* (Supabase Session Pooler for central DB). Local compose
+      # fallback only when USE_SUPABASE is not true.
+      DB_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sentinelvoice}}
       DB_APP_USER: ${DB_APP_USER:-sv_app}
       DB_APP_PASSWORD: ${DB_APP_PASSWORD:-changeme_app}
       DB_OWNER_USER: ${DB_OWNER_USER:-sv_owner}

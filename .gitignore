@@ -83,3 +83,7 @@ tools/*.zip
 # Local detached process PIDs (make.cmd / sv.ps1)
 .sv-run/
 
+# Local → Supabase dump artefacts (may contain tenant data)
+.sv-run/supabase-dump/
+**/supabase-dump/
+

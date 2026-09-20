@@ -144,7 +144,7 @@ sequenceDiagram
 | Media + ml-engine ring | Raw PCM (≤8 s, overwritten) | **Never** — not to Java, DB, disk, logs, or LLM |
 | Inference → Decision wire | FeatureFrame numbers, enums, redacted structured labels | Yes — no audio, no full transcript |
 | Decision Plane memory | Session state, tenant config cache, risk / level | Tenant-scoped; audited on change |
-| PostgreSQL | Tenant config, directory, policy versions, audit chain, redacted derived labels | RLS + `tenant_id`; no PCM, no full transcripts |
+| PostgreSQL (Supabase centrally; optional local Docker) | Tenant config, directory, policy versions, audit chain, redacted derived labels | RLS + `tenant_id`; no PCM, no full transcripts |
 | LLM gateway | Redacted text / clause text for **feature extraction** or offline **policy compile** | Prompt-injection hardened; outputs are features only — never scores/levels/actions |
 | Presentation | Telemetry + admin APIs | AuthZ by role / `permissions[]`; JWT httpOnly cookies (F2); no raw audio |
 
