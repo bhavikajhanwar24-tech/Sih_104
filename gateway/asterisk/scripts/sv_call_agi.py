@@ -49,7 +49,7 @@ def agi_verbose(msg: str, level: int = 1) -> None:
     agi_cmd(f'VERBOSE "{safe}" {level}')
 
 
-def http_json(method: str, url: str, body: dict | None = None) -> dict:
+def http_json(method: str, url: str, body: dict | None = None, timeout: float = 20) -> dict:
     token = os.environ.get("ML_SERVICE_TOKEN") or os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN") or ""
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -62,7 +62,7 @@ def http_json(method: str, url: str, body: dict | None = None) -> dict:
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=8) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
@@ -84,6 +84,7 @@ def setup(extension: str, caller_endpoint: str, caller_num: str, sip_call_id: st
         resolved = http_json(
             "GET",
             f"{base}/internal/v2/telephony/resolve?{urllib.parse.urlencode(q)}",
+            timeout=10,
         )
     except Exception as exc:  # noqa: BLE001
         agi_verbose(f"resolve failed: {exc}", 2)
@@ -98,16 +99,10 @@ def setup(extension: str, caller_endpoint: str, caller_num: str, sip_call_id: st
         agi_set("DEST_ENDPOINT", "")
         return
 
-    # Capture CLI / PAI if Asterisk set channel vars (lab + carrier trunks).
-    pai = ""
-    trunk_hint = ""
-    try:
-        pai_line = agi_cmd('GET VARIABLE SIP_HEADER(P-Asserted-Identity)')
-        if "result=1" in pai_line and "(" in pai_line:
-            pai = pai_line.split("(", 1)[1].rsplit(")", 1)[0]
-    except Exception:  # noqa: BLE001
-        pass
+    # Do NOT call SIP_HEADER — chan_sip only; PJSIP lab has no SIP_HEADER and it
+    # can abort the AGI channel (return 4) before Originate.
 
+    # Ringing audit is best-effort and must not delay the dial.
     try:
         http_json(
             "POST",
@@ -117,15 +112,15 @@ def setup(extension: str, caller_endpoint: str, caller_num: str, sip_call_id: st
                 "callerUsername": caller_endpoint or None,
                 "callerNumber": caller_num or None,
                 "sipCallId": sip_call_id or None,
-                "pAssertedIdentity": pai or None,
-                "trunkHint": trunk_hint or None,
                 "direction": "INTERNAL",
             },
+            timeout=3,
         )
     except Exception as exc:  # noqa: BLE001
         agi_verbose(f"sessions/ringing failed (non-fatal): {exc}", 2)
 
     sv_session = str(uuid.uuid4())
+    conf = "sv" + sv_session.replace("-", "")
     try:
         started = http_json(
             "POST",
@@ -136,19 +131,16 @@ def setup(extension: str, caller_endpoint: str, caller_num: str, sip_call_id: st
                 "callerUsername": caller_endpoint or None,
                 "callerNumber": caller_num or None,
                 "sipCallId": sip_call_id or None,
-                "pAssertedIdentity": pai or None,
-                "trunkHint": trunk_hint or None,
                 "direction": "INTERNAL",
             },
+            timeout=25,
         )
         sv_session = started.get("svSessionUuid") or sv_session
-        conf = started.get("conf") or ("sv" + sv_session.replace("-", ""))
+        conf = started.get("conf") or conf
         dest = started.get("destEndpoint") or dest
     except Exception as exc:  # noqa: BLE001
-        agi_verbose(f"sessions/start failed: {exc}", 2)
-        agi_set("AGI_STATUS", "FAILED")
-        agi_set("DEST_ENDPOINT", "")
-        return
+        # Still ring the callee — Live Calls metadata can catch up later.
+        agi_verbose(f"sessions/start failed (dial continues): {exc}", 2)
 
     agi_set("SV_SESSION", sv_session)
     agi_set("CONF", conf)
@@ -166,6 +158,7 @@ def end_call(sv_session: str) -> None:
             "POST",
             f"{base}/internal/v2/sessions/end",
             {"svSessionUuid": sv_session, "outcome": "ENDED"},
+            timeout=10,
         )
         agi_verbose(f"session ended {sv_session}", 1)
     except Exception as exc:  # noqa: BLE001

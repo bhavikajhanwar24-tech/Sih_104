@@ -48,9 +48,18 @@ if [[ -d "${SRC}" ]]; then
   done
 fi
 
-# Ensure AGI script is executable
+# AGI scripts are often bind-mounted from Windows (CRLF). Volume is :ro, so
+# copy into a writable LF-normalized path Asterisk actually executes.
+AGI_BIN=/var/lib/asterisk/agi-bin
+mkdir -p "${AGI_BIN}"
 if [[ -d "${SCRIPTS}" ]]; then
-  chmod +x "${SCRIPTS}"/*.py 2>/dev/null || true
+  for f in "${SCRIPTS}"/*.py; do
+    [[ -f "${f}" ]] || continue
+    base="$(basename "${f}")"
+    # Strip CR so shebang is "python3" not "python3\r"
+    sed 's/\r$//' "${f}" > "${AGI_BIN}/${base}"
+    chmod +x "${AGI_BIN}/${base}"
+  done
 fi
 
 # --- PJSIP REALTIME (res_config_pgsql) ---------------------------------------
@@ -78,33 +87,43 @@ if id asterisk >/dev/null 2>&1; then
 fi
 chmod 644 /etc/asterisk/res_pgsql.conf
 
-cat > /etc/asterisk/extconfig.conf <<'EOF'
+# Second field = PostgreSQL database name (must match dbname= above), NOT the schema.
+# Tables live in schema "asterisk" — set search_path on sv_asterisk (seed SQL).
+cat > /etc/asterisk/extconfig.conf <<EOF
 [settings]
-ps_endpoints => pgsql,asterisk,ps_endpoints
-ps_auths => pgsql,asterisk,ps_auths
-ps_aors => pgsql,asterisk,ps_aors
-ps_contacts => pgsql,asterisk,ps_contacts
+ps_endpoints => pgsql,${ASTERISK_DB_NAME},ps_endpoints
+ps_auths => pgsql,${ASTERISK_DB_NAME},ps_auths
+ps_aors => pgsql,${ASTERISK_DB_NAME},ps_aors
+ps_contacts => pgsql,${ASTERISK_DB_NAME},ps_contacts
 EOF
 
-# Sorcery: prefer realtime for endpoints/auths/aors; keep transport/global in conf
-if [[ -f /etc/asterisk/sorcery.conf ]]; then
-  if ! grep -q '\[res_pjsip\]' /etc/asterisk/sorcery.conf 2>/dev/null; then
-    cat >> /etc/asterisk/sorcery.conf <<'EOF'
+# Sorcery: prefer realtime for endpoints/auths/aors; keep transport/global in conf.
+# Do NOT match commented sample lines like ";[res_pjsip]".
+if [[ -f /etc/asterisk/sorcery.conf ]] && grep -qE '^\[res_pjsip\]' /etc/asterisk/sorcery.conf 2>/dev/null; then
+  :
+elif [[ -f /etc/asterisk/sorcery.conf ]]; then
+  # Strip commented sample realtime block so we don't leave a dead config.
+  sed -i '/^;\[res_pjsip\]/,/^$/d' /etc/asterisk/sorcery.conf 2>/dev/null || true
+  cat >> /etc/asterisk/sorcery.conf <<'EOF'
 
 [res_pjsip]
 endpoint=realtime,ps_endpoints
 auth=realtime,ps_auths
 aor=realtime,ps_aors
+contact=realtime,ps_contacts
 EOF
-  fi
 else
   cat > /etc/asterisk/sorcery.conf <<'EOF'
 [res_pjsip]
 endpoint=realtime,ps_endpoints
 auth=realtime,ps_auths
 aor=realtime,ps_aors
+contact=realtime,ps_contacts
 EOF
 fi
+
+echo "sentinel-entrypoint: SIP_EXTERNAL_IP=${SIP_EXTERNAL_IP} ASTERISK_DB=${ASTERISK_DB_HOST}:${ASTERISK_DB_PORT}/${ASTERISK_DB_NAME}"
+grep -E 'external_media_address|external_signaling|local_net|bind=' /etc/asterisk/pjsip.conf || true
 
 # Match common andrius flags when running as root.
 if [[ "$(id -u)" = "0" ]] && id asterisk >/dev/null 2>&1; then
