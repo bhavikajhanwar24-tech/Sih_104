@@ -84,14 +84,10 @@ public class InterventionLadderService {
     public Map<String, Object> explain(InterventionLevel level) {
         Map<String, Object> explanation = new LinkedHashMap<>();
         explanation.put("level", level.name());
+        explanation.put("levelKey", com.sentinelvoice.response.ResponsePlanDocument.levelKeyFor(level));
         explanation.put("actions", FusionRuntimeService.actionsFor(level));
-        explanation.put("action", switch (level) {
-            case LEVEL_1_SILENT -> "Log and continue monitoring.";
-            case LEVEL_2_SOFT_NUDGE -> "Display soft warning and request verification callback.";
-            case LEVEL_3_STEP_UP_MFA -> "Require step-up authentication before transferring funds.";
-            case LEVEL_4_AUTO_HOLD -> "Pause transaction completion and alert supervisor.";
-            case LEVEL_5_TERMINATE -> "Terminate call and escalate to fraud response team.";
-        });
+        explanation.put("action", "Executed from the session-snapshotted response plan (F9); not a hard-coded ladder.");
+        explanation.put("note", "Call PlanRunner / GET response plan for the ordered step list.");
         return Collections.unmodifiableMap(explanation);
     }
 

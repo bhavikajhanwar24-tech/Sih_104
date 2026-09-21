@@ -1,8 +1,8 @@
 package com.sentinelvoice.controller;
 
-import com.sentinelvoice.actuation.ActuationService;
 import com.sentinelvoice.actuation.AsteriskAriAdapter;
 import com.sentinelvoice.actuation.CallControlPort;
+import com.sentinelvoice.response.execute.PlanRunner;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
@@ -23,11 +23,11 @@ import java.util.Map;
 public class ActuationController {
 
     private final CallControlPort callControlPort;
-    private final ActuationService actuationService;
+    private final PlanRunner planRunner;
 
-    public ActuationController(CallControlPort callControlPort, ActuationService actuationService) {
+    public ActuationController(CallControlPort callControlPort, PlanRunner planRunner) {
         this.callControlPort = callControlPort;
-        this.actuationService = actuationService;
+        this.planRunner = planRunner;
     }
 
     @PostMapping("/{sessionId}/channel")
@@ -60,16 +60,16 @@ public class ActuationController {
     /** Analyst Accept hold — force physical ARI hold (idempotent retry). */
     @PostMapping("/{sessionId}/hold")
     public ResponseEntity<Map<String, Object>> forceHold(@PathVariable String sessionId) {
-        ActuationService.ActionResult result = actuationService.forceHold(sessionId);
+        PlanRunner.ActionResult result = planRunner.forceHold(sessionId);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", result.name());
         body.put("sessionId", sessionId);
         body.put("adapter", callControlPort.adapterName());
-        body.put("action", "CALL_HELD");
-        if (result == ActuationService.ActionResult.FAILURE) {
+        body.put("action", "HOLD_CALL");
+        if (result == PlanRunner.ActionResult.FAILURE) {
             return ResponseEntity.status(502).body(body);
         }
-        if (result == ActuationService.ActionResult.UNSUPPORTED) {
+        if (result == PlanRunner.ActionResult.UNSUPPORTED) {
             return ResponseEntity.status(501).body(body);
         }
         return ResponseEntity.ok(body);

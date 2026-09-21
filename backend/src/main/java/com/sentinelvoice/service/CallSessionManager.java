@@ -8,6 +8,7 @@ import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.policy.engine.ActivePolicyCache;
+import com.sentinelvoice.response.ActiveResponsePlanCache;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.tenant.TenantSettingsEntity;
 import com.sentinelvoice.tenant.TenantSettingsRepository;
@@ -39,19 +40,22 @@ public class CallSessionManager {
     private final TenantSettingsRepository tenantSettingsRepository;
     private final ActiveFusionConfigCache fusionConfigCache;
     private final ActivePolicyCache policyCache;
+    private final ActiveResponsePlanCache responsePlanCache;
 
     public CallSessionManager(
             SentinelProperties properties,
             AuditLedgerService auditLedgerService,
             TenantSettingsRepository tenantSettingsRepository,
             ActiveFusionConfigCache fusionConfigCache,
-            ActivePolicyCache policyCache
+            ActivePolicyCache policyCache,
+            ActiveResponsePlanCache responsePlanCache
     ) {
         this.properties = properties;
         this.auditLedgerService = auditLedgerService;
         this.tenantSettingsRepository = tenantSettingsRepository;
         this.fusionConfigCache = fusionConfigCache;
         this.policyCache = policyCache;
+        this.responsePlanCache = responsePlanCache;
     }
 
     public CallSession createSession(SessionStartRequest request) {
@@ -86,7 +90,14 @@ public class CallSessionManager {
                 session.setFusionConfigSnapshot(c.document());
             });
             policyCache.get(tenantId).ifPresent(p -> session.setPolicyVersion(p.version()));
-            session.setResponsePlanVersion(null);
+            Optional<ActiveResponsePlanCache.CachedResponsePlan> plan = responsePlanCache.get(tenantId);
+            if (plan.isPresent()) {
+                session.setResponsePlanVersion(plan.get().version());
+                session.setResponsePlanSnapshot(plan.get().document());
+            } else {
+                session.setResponsePlanVersion(null);
+                session.setResponsePlanSnapshot(com.sentinelvoice.response.ResponsePlanDocument.emergencyPlan());
+            }
 
             sessions.put(sessionId, session);
             try {
@@ -112,7 +123,8 @@ public class CallSessionManager {
                                         ? "" : session.getFusionConfigVersion(),
                                 "policyVersion", session.getPolicyVersion() == null
                                         ? "" : session.getPolicyVersion(),
-                                "responsePlanVersion", ""
+                                "responsePlanVersion", session.getResponsePlanVersion() == null
+                                        ? "" : session.getResponsePlanVersion()
                         )
                 );
             } catch (RuntimeException ex) {

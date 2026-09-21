@@ -1,6 +1,6 @@
 package com.sentinelvoice.ingest;
 
-import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.challenge.ChallengeProperties;
 import com.sentinelvoice.challenge.ChallengeService;
@@ -152,7 +152,7 @@ class PipelineLatencyTest {
                 auditDispatcher,
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
-                mock(ActuationService.class),
+                mock(PlanRunner.class),
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),

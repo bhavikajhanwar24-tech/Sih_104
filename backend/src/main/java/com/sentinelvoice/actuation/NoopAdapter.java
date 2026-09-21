@@ -3,7 +3,6 @@ package com.sentinelvoice.actuation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -48,16 +47,9 @@ public class NoopAdapter implements CallControlPort {
     }
 
     @Override
-    public Set<ActuationAction> capabilities() {
-        // Declare full capability set so ActuationService exercises every path in noop mode.
-        return EnumSet.of(
-                ActuationAction.HOLD,
-                ActuationAction.UNHOLD,
-                ActuationAction.WHISPER,
-                ActuationAction.ANNOUNCE,
-                ActuationAction.BRIDGE_SUPERVISOR,
-                ActuationAction.TERMINATE
-        );
+    public Set<String> capabilities() {
+        // Full capability set so PlanRunner exercises every telephony path in noop mode.
+        return Set.of("HOLD", "UNHOLD", "WHISPER", "ANNOUNCE", "BRIDGE_SUPERVISOR", "TERMINATE");
     }
 
     @Override

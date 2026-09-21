@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -58,15 +57,8 @@ public class WebRtcAdapter implements CallControlPort {
     }
 
     @Override
-    public Set<ActuationAction> capabilities() {
-        return EnumSet.of(
-                ActuationAction.HOLD,
-                ActuationAction.UNHOLD,
-                ActuationAction.WHISPER,
-                ActuationAction.ANNOUNCE,
-                ActuationAction.BRIDGE_SUPERVISOR,
-                ActuationAction.TERMINATE
-        );
+    public Set<String> capabilities() {
+        return Set.of("HOLD", "UNHOLD", "WHISPER", "ANNOUNCE", "BRIDGE_SUPERVISOR", "TERMINATE");
     }
 
     @Override

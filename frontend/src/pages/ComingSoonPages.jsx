@@ -23,15 +23,3 @@ export function LiveCallsPage() {
     </div>
   );
 }
-
-export function ResponsePlansPage() {
-  return (
-    <div className="p-6">
-      <EmptyState
-        title="Response Plans"
-        feature="F9"
-        description="Response-matrix drafts and dual-control approvals land in F9."
-      />
-    </div>
-  );
-}

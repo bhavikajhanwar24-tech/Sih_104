@@ -3,8 +3,9 @@ package com.sentinelvoice.actuation;
 import java.util.Set;
 
 /**
- * Telephony actuation port — Asterisk ARI, WebRTC signalling, or noop (Context §11.6).
+ * Telephony actuation port — Asterisk ARI, WebRTC signalling, or noop.
  * Implementations must never throw into the fusion pipeline; callers treat failures as audit results.
+ * Capability strings align with catalogue needs: HOLD, UNHOLD, WHISPER, ANNOUNCE, BRIDGE_SUPERVISOR, TERMINATE.
  */
 public interface CallControlPort {
 
@@ -20,7 +21,7 @@ public interface CallControlPort {
 
     void terminate(String sessionId, String reason);
 
-    Set<ActuationAction> capabilities();
+    Set<String> capabilities();
 
     /** Adapter name recorded in INTERVENTION_ACTION_FIRED audit blocks. */
     String adapterName();

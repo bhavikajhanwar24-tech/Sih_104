@@ -1,6 +1,6 @@
 package com.sentinelvoice.ingest;
 
-import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.challenge.ChallengeService;
@@ -75,7 +75,7 @@ public class FeatureFrameIngestService {
     private final AuditWriteDispatcher auditWriteDispatcher;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
-    private final ActuationService actuationService;
+    private final PlanRunner planRunner;
     private final ChallengeService challengeService;
     private final ScenarioSessionContext scenarioSessionContext;
     private final BreakGlassTranscriptService breakGlassTranscriptService;
@@ -98,7 +98,7 @@ public class FeatureFrameIngestService {
             AuditWriteDispatcher auditWriteDispatcher,
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
-            @Lazy ActuationService actuationService,
+            @Lazy PlanRunner planRunner,
             ChallengeService challengeService,
             ScenarioSessionContext scenarioSessionContext,
             BreakGlassTranscriptService breakGlassTranscriptService,
@@ -117,7 +117,7 @@ public class FeatureFrameIngestService {
         this.auditWriteDispatcher = auditWriteDispatcher;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
-        this.actuationService = actuationService;
+        this.planRunner = planRunner;
         this.challengeService = challengeService;
         this.scenarioSessionContext = scenarioSessionContext;
         this.breakGlassTranscriptService = breakGlassTranscriptService;
@@ -397,7 +397,7 @@ public class FeatureFrameIngestService {
         telemetryBroadcaster.publish(telemetry);
         if (decision.changed()) {
             try {
-                actuationService.onLevelChanged(session.getSessionId(), previousLevel, decision.level());
+                planRunner.onLevelChanged(session.getSessionId(), previousLevel, decision.level());
             } catch (Exception ex) {
                 log.error(
                         "actuation_invoke_failed sessionId={} level={} err={}",

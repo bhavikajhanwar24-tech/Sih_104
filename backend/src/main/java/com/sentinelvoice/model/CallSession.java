@@ -1,6 +1,7 @@
 package com.sentinelvoice.model;
 
 import com.sentinelvoice.fusion.config.FusionConfigDocument;
+import com.sentinelvoice.response.ResponsePlanDocument;
 
 import java.time.Instant;
 import java.util.List;
@@ -55,8 +56,9 @@ public class CallSession {
     private volatile Integer fusionConfigVersion;
     private volatile FusionConfigDocument fusionConfigSnapshot;
     private volatile Integer policyVersion;
-    /** Reserved for F9 response plans. */
-    private volatile String responsePlanVersion;
+    /** Snapshot of ACTIVE response plan at session open (F9). */
+    private volatile Integer responsePlanVersion;
+    private volatile ResponsePlanDocument responsePlanSnapshot;
 
     /** One evidence row retained on the Decision Plane (scores / enums / narratives only). */
     public record FiredReason(
@@ -265,11 +267,19 @@ public class CallSession {
         this.policyVersion = policyVersion;
     }
 
-    public String getResponsePlanVersion() {
+    public Integer getResponsePlanVersion() {
         return responsePlanVersion;
     }
 
-    public void setResponsePlanVersion(String responsePlanVersion) {
+    public void setResponsePlanVersion(Integer responsePlanVersion) {
         this.responsePlanVersion = responsePlanVersion;
+    }
+
+    public ResponsePlanDocument getResponsePlanSnapshot() {
+        return responsePlanSnapshot;
+    }
+
+    public void setResponsePlanSnapshot(ResponsePlanDocument responsePlanSnapshot) {
+        this.responsePlanSnapshot = responsePlanSnapshot;
     }
 }

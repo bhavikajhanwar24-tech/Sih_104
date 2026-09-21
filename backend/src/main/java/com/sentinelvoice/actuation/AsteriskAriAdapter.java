@@ -15,7 +15,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -251,15 +250,8 @@ public class AsteriskAriAdapter implements CallControlPort {
     }
 
     @Override
-    public Set<ActuationAction> capabilities() {
-        return EnumSet.of(
-                ActuationAction.HOLD,
-                ActuationAction.UNHOLD,
-                ActuationAction.WHISPER,
-                ActuationAction.ANNOUNCE,
-                ActuationAction.BRIDGE_SUPERVISOR,
-                ActuationAction.TERMINATE
-        );
+    public Set<String> capabilities() {
+        return Set.of("HOLD", "UNHOLD", "WHISPER", "ANNOUNCE", "BRIDGE_SUPERVISOR", "TERMINATE");
     }
 
     @Override

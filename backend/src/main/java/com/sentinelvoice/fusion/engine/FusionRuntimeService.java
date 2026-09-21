@@ -354,12 +354,13 @@ public class FusionRuntimeService {
     }
 
     public static List<String> actionsFor(InterventionLevel level) {
+        // Labels only — actual execution is PlanRunner + ACTIVE/session response plan (F9).
         return switch (level) {
             case LEVEL_1_SILENT -> List.of("LOG_ONLY");
-            case LEVEL_2_SOFT_NUDGE -> List.of("SOFT_WARNING", "REQUEST_CALLBACK");
-            case LEVEL_3_STEP_UP_MFA -> List.of("STEP_UP_MFA", "TXN_APPROVE_LOCKED");
-            case LEVEL_4_AUTO_HOLD -> List.of("CALL_HELD", "OOB_MFA_SENT", "SUPERVISOR_BRIDGED", "TXN_APPROVE_LOCKED");
-            case LEVEL_5_TERMINATE -> List.of("CALL_TERMINATED", "FRAUD_TEAM_ESCALATED", "ACCOUNT_FREEZE");
+            case LEVEL_2_SOFT_NUDGE -> List.of("OPERATOR_ADVISORY", "WHISPER_WARNING");
+            case LEVEL_3_STEP_UP_MFA -> List.of("LOCK_APPROVAL", "REQUIRE_CALLBACK_VERIFICATION", "SEND_OOB_MFA");
+            case LEVEL_4_AUTO_HOLD -> List.of("NOTIFY_SUPERVISOR", "HOLD_CALL", "BRIDGE_SUPERVISOR");
+            case LEVEL_5_TERMINATE -> List.of("NOTIFY_SUPERVISOR", "HOLD_CALL", "TERMINATE_CALL", "FREEZE_BENEFICIARY");
         };
     }
 

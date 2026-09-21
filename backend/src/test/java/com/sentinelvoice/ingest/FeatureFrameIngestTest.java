@@ -3,7 +3,7 @@ package com.sentinelvoice.ingest;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.challenge.ChallengeProperties;
@@ -191,7 +191,7 @@ class FeatureFrameIngestTest {
 
         DirectoryService directory = mock(DirectoryService.class);
         AuditWriteDispatcher auditDispatcher = mock(AuditWriteDispatcher.class);
-        ActuationService actuationService = mock(ActuationService.class);
+        PlanRunner PlanRunner = mock(PlanRunner.class);
         ChallengeService challengeService = mock(ChallengeService.class);
         lenient().when(challengeService.lastFailure(any())).thenReturn(Optional.empty());
         lenient().when(challengeService.properties()).thenReturn(ChallengeProperties.defaults());
@@ -218,7 +218,7 @@ class FeatureFrameIngestTest {
                 auditDispatcher,
                 new TelemetryFrameBuilder(),
                 broadcaster,
-                actuationService,
+                PlanRunner,
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),

@@ -1,6 +1,6 @@
 package com.sentinelvoice.controller;
 
-import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
 import com.sentinelvoice.model.CallSession;
@@ -35,18 +35,18 @@ public class InterventionController {
     private final CallSessionManager callSessionManager;
     private final InterventionLadderService interventionLadderService;
     private final TelemetryBroadcaster telemetryBroadcaster;
-    private final ActuationService actuationService;
+    private final PlanRunner planRunner;
 
     public InterventionController(
             CallSessionManager callSessionManager,
             InterventionLadderService interventionLadderService,
             TelemetryBroadcaster telemetryBroadcaster,
-            ActuationService actuationService
+            PlanRunner planRunner
     ) {
         this.callSessionManager = callSessionManager;
         this.interventionLadderService = interventionLadderService;
         this.telemetryBroadcaster = telemetryBroadcaster;
-        this.actuationService = actuationService;
+        this.planRunner = planRunner;
     }
 
     @PostMapping("/{sessionId}/override")
@@ -82,14 +82,14 @@ public class InterventionController {
 
         if (decision.changed()) {
             try {
-                actuationService.onLevelChanged(sessionId, previous, decision.level());
+                planRunner.onLevelChanged(sessionId, previous, decision.level());
             } catch (Exception ignored) {
-                // ActuationService never throws by contract; belt-and-braces.
+                // PlanRunner never throws by contract; belt-and-braces.
             }
         } else if (decision.level() == InterventionLevel.LEVEL_4_AUTO_HOLD) {
             // Already at L4 — still re-attempt hold (channel bind may have arrived late).
             try {
-                actuationService.forceHold(sessionId);
+                planRunner.forceHold(sessionId);
             } catch (Exception ignored) {
                 // never throw from intervention path
             }
@@ -115,7 +115,7 @@ public class InterventionController {
             @Valid @RequestBody ReleaseRequest request
     ) {
         try {
-            actuationService.forceUnhold(sessionId);
+            planRunner.forceUnhold(sessionId);
         } catch (Exception ignored) {
             // never throw from intervention path
         }

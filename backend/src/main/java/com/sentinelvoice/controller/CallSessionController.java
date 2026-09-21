@@ -1,6 +1,6 @@
 package com.sentinelvoice.controller;
 
-import com.sentinelvoice.actuation.ActuationService;
+import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.TransactionPolicyService;
@@ -58,7 +58,7 @@ public class CallSessionController {
     private final IdentityResolutionService identityResolutionService;
     private final DirectoryService directoryService;
     private final TelemetryBroadcaster telemetryBroadcaster;
-    private final ActuationService actuationService;
+    private final PlanRunner planRunner;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
@@ -71,7 +71,7 @@ public class CallSessionController {
             IdentityResolutionService identityResolutionService,
             DirectoryService directoryService,
             TelemetryBroadcaster telemetryBroadcaster,
-            ActuationService actuationService
+            PlanRunner planRunner
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionRuntimeService = fusionRuntimeService;
@@ -83,7 +83,7 @@ public class CallSessionController {
         this.identityResolutionService = identityResolutionService;
         this.directoryService = directoryService;
         this.telemetryBroadcaster = telemetryBroadcaster;
-        this.actuationService = actuationService;
+        this.planRunner = planRunner;
     }
 
     @PostMapping("/start")
@@ -129,7 +129,7 @@ public class CallSessionController {
         fusionRuntimeService.clearSession(sessionId);
         interventionLadderService.clearSession(sessionId);
         telemetryBroadcaster.clear(sessionId);
-        actuationService.clearSession(sessionId);
+        planRunner.clearSession(sessionId);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "closed");
         body.put("sessionId", sessionId);

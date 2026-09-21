@@ -11,8 +11,8 @@ import { DirectoryPage } from '@/pages/DirectoryPage.jsx';
 import {
   DashboardPage,
   LiveCallsPage,
-  ResponsePlansPage,
 } from '@/pages/ComingSoonPages.jsx';
+import { ResponsePlansPage } from '@/pages/ResponsePlansPage.jsx';
 import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
 import { PolicyReviewPage } from '@/pages/PolicyReviewPage.jsx';
 import { SettingsPage } from '@/pages/SettingsPage.jsx';
@@ -43,6 +43,7 @@ export default function App() {
                 <Route path="policies" element={<PoliciesPage />} />
                 <Route path="policies/review" element={<PolicyReviewPage />} />
                 <Route path="response" element={<ResponsePlansPage />} />
+                <Route path="response-plans" element={<ResponsePlansPage />} />
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
