@@ -137,6 +137,18 @@ export function SettingsPage() {
         <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open risk tuning →</span>
       </Link>
 
+      <Link
+        to="/app/settings/telephony"
+        className="block rounded border border-sv-border bg-sv-elevated/40 p-4 transition-colors hover:border-sv-accent/50 hover:bg-sv-elevated/60"
+      >
+        <p className="text-sm font-semibold text-sv-fg">Telephony</p>
+        <p className="mt-1 text-xs text-sv-muted">
+          SIP trunks, numbering plan, Asterisk PJSIP REALTIME health, and LAB_MODE attack
+          simulator. Softphones register to SIP_EXTERNAL_IP.
+        </p>
+        <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open telephony →</span>
+      </Link>
+
       <section className="space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-sv-muted">AI &amp; Privacy</h2>
 

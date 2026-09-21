@@ -2,6 +2,7 @@ package com.sentinelvoice.config;
 
 import com.sentinelvoice.security.AuthProperties;
 import com.sentinelvoice.security.JwtAuthenticationFilter;
+import com.sentinelvoice.security.ServiceTokenAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +31,7 @@ import java.util.List;
 
 /**
  * V2 cookie+JWT security. Replaces v1 HTTP Basic / permitAll demo config.
+ * {@code /internal/v2/**} is authenticated via {@link ServiceTokenAuthFilter} (not permitAll).
  */
 @Configuration
 @EnableWebSecurity
@@ -37,15 +39,18 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ServiceTokenAuthFilter serviceTokenAuthFilter;
     private final AuthProperties authProperties;
     private final Environment environment;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            ServiceTokenAuthFilter serviceTokenAuthFilter,
             AuthProperties authProperties,
             Environment environment
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.serviceTokenAuthFilter = serviceTokenAuthFilter;
         this.authProperties = authProperties;
         this.environment = environment;
     }
@@ -75,6 +80,7 @@ public class SecurityConfig {
                                 "/api/v2/auth/login",
                                 "/api/v2/auth/refresh",
                                 "/api/v2/auth/logout",
+                                "/internal/v2/**",
                                 "/ws/features",
                                 "/ws/features/**",
                                 "/actuator/health",
@@ -88,6 +94,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v2/public/**").permitAll()
                         .requestMatchers("/api/v2/auth/login", "/api/v2/auth/refresh", "/api/v2/auth/csrf", "/api/v2/auth/logout").permitAll()
                         .requestMatchers("/ws/features", "/ws/features/**").permitAll()
+                        .requestMatchers("/internal/v2/**").hasRole("ML_SERVICE")
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -102,7 +109,8 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(serviceTokenAuthFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

@@ -12,10 +12,14 @@ import com.sentinelvoice.directory.repo.EmployeePhoneRepository;
 import com.sentinelvoice.directory.repo.EmployeeRepository;
 import com.sentinelvoice.identity.model.DirectoryRecord;
 import com.sentinelvoice.security.TenantContext;
+import com.sentinelvoice.telephony.SipEndpointRepository;
+import com.sentinelvoice.telephony.TelephonyModels;
+import com.sentinelvoice.telephony.TelephonyResolveService;
 import com.sentinelvoice.tenant.TenantEntity;
 import com.sentinelvoice.tenant.TenantRepository;
 import com.sentinelvoice.tenant.TenantSettingsEntity;
 import com.sentinelvoice.tenant.TenantSettingsRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -36,6 +40,7 @@ import java.util.UUID;
 
 /**
  * Tenant directory resolve + employee/department CRUD (F4).
+ * F10: CLI provenance consults sip_endpoints + trunks.cli_prefixes (SUSPECT_TRUNK).
  */
 @Service
 public class DirectoryService {
@@ -50,6 +55,8 @@ public class DirectoryService {
     private final TenantSettingsRepository tenantSettingsRepository;
     private final PhoneNormaliser phoneNormaliser;
     private final AuditLedgerService auditLedgerService;
+    private final SipEndpointRepository sipEndpointRepository;
+    private final TelephonyResolveService telephonyResolveService;
 
     public DirectoryService(
             EmployeeRepository employeeRepository,
@@ -59,7 +66,9 @@ public class DirectoryService {
             TenantRepository tenantRepository,
             TenantSettingsRepository tenantSettingsRepository,
             PhoneNormaliser phoneNormaliser,
-            AuditLedgerService auditLedgerService
+            AuditLedgerService auditLedgerService,
+            SipEndpointRepository sipEndpointRepository,
+            @Lazy TelephonyResolveService telephonyResolveService
     ) {
         this.employeeRepository = employeeRepository;
         this.phoneRepository = phoneRepository;
@@ -69,6 +78,8 @@ public class DirectoryService {
         this.tenantSettingsRepository = tenantSettingsRepository;
         this.phoneNormaliser = phoneNormaliser;
         this.auditLedgerService = auditLedgerService;
+        this.sipEndpointRepository = sipEndpointRepository;
+        this.telephonyResolveService = telephonyResolveService;
     }
 
     // -------------------------------------------------------------------------
@@ -83,6 +94,7 @@ public class DirectoryService {
         DirectoryMatch.NumberProvenance provenance = DirectoryMatch.NumberProvenance.EXTERNAL_UNKNOWN;
         Optional<EmployeePhoneEntity> byNumber = Optional.empty();
         Optional<EmployeePhoneEntity> byExt = Optional.empty();
+        Optional<UUID> sipEmployeeId = Optional.empty();
 
         if (callerNumber != null && !callerNumber.isBlank()) {
             if (phoneNormaliser.looksLikeExtension(callerNumber)) {
@@ -90,6 +102,13 @@ public class DirectoryService {
                 byExt = phoneRepository.findFirstByTenantIdAndSipExtension(tenantId, ext);
                 if (byExt.isPresent()) {
                     provenance = DirectoryMatch.NumberProvenance.INTERNAL_EXT;
+                } else {
+                    // F10: also match provisioned sip_endpoints
+                    var sip = sipEndpointRepository.findByExtension(tenantId, ext);
+                    if (sip.isPresent() && !"DISABLED".equals(sip.get().status())) {
+                        provenance = DirectoryMatch.NumberProvenance.INTERNAL_EXT;
+                        sipEmployeeId = Optional.ofNullable(sip.get().employeeId());
+                    }
                 }
             } else {
                 Optional<String> e164 = phoneNormaliser.toE164(callerNumber, region);
@@ -106,6 +125,18 @@ public class DirectoryService {
                     }
                 }
             }
+
+            // F10: replace remaining trunk stub — unmatched CLI matching carrier/CCAAS prefixes
+            if (provenance == DirectoryMatch.NumberProvenance.EXTERNAL_UNKNOWN
+                    && byNumber.isEmpty()
+                    && byExt.isEmpty()
+                    && sipEmployeeId.isEmpty()) {
+                TelephonyModels.NumberClassifyResult cls =
+                        telephonyResolveService.classifyNumber(tenantId, callerNumber);
+                if (cls.classification() == TelephonyModels.NumberClass.SUSPECT_TRUNK) {
+                    provenance = DirectoryMatch.NumberProvenance.SUSPECT_TRUNK;
+                }
+            }
         }
 
         if (byNumber.isPresent()) {
@@ -113,6 +144,9 @@ public class DirectoryService {
         }
         if (byExt.isPresent()) {
             return buildMatch(tenantId, byExt.get().getEmployeeId(), DirectoryMatch.MatchType.EXT_EXACT, 0.98, provenance);
+        }
+        if (sipEmployeeId.isPresent()) {
+            return buildMatch(tenantId, sipEmployeeId.get(), DirectoryMatch.MatchType.EXT_EXACT, 0.98, provenance);
         }
 
         if (claimedName != null && !claimedName.isBlank()) {

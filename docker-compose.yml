@@ -40,20 +40,30 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8088:8088"
+      - "127.0.0.1:5038:5038"
       - "5060:5060/udp"
       - "10000-10020:10000-10020/udp"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    environment:
+      SIP_EXTERNAL_IP: ${SIP_EXTERNAL_IP:-}
+      SIP_LOCAL_NET: ${SIP_LOCAL_NET:-127.0.0.1/32}
+      # Prefer compose-network Postgres; override for Supabase Session Pooler.
+      ASTERISK_DB_HOST: ${ASTERISK_DB_HOST:-postgres}
+      ASTERISK_DB_PORT: ${ASTERISK_DB_PORT:-5432}
+      ASTERISK_DB_NAME: ${ASTERISK_DB_NAME:-${POSTGRES_DB:-sentinelvoice}}
+      ASTERISK_DB_USER: ${ASTERISK_DB_USER:-sv_asterisk}
+      ASTERISK_DB_PASSWORD: ${ASTERISK_DB_PASSWORD:-changeme_asterisk}
+      # Supabase requires TLS; harmless for local Docker Postgres.
+      PGSSLMODE: ${PGSSLMODE:-prefer}
+      SV_BACKEND_URL: ${SV_BACKEND_URL:-http://backend:8081}
+      ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
-      - ./gateway/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
-      - ./gateway/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
-      - ./gateway/asterisk/config/manager.conf:/etc/asterisk/manager.conf:ro
-      - ./gateway/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
-      - ./gateway/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
-      - ./gateway/asterisk/config/modules.conf:/etc/asterisk/modules.conf:ro
-      - ./gateway/asterisk/config/logger.conf:/etc/asterisk/logger.conf:ro
-      - ./gateway/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
-      - ./gateway/asterisk/scripts/ami_mute.py:/opt/sentinelvoice/ami_mute.py:ro
+      - ./gateway/asterisk/config:/opt/sentinelvoice/asterisk-config:ro
+      - ./gateway/asterisk/scripts:/opt/sentinelvoice/scripts:ro
       - ./gateway/asterisk/sounds/sentinel-hold.wav:/var/lib/asterisk/sounds/sentinel-hold.wav:ro
       - ./gateway/asterisk/sounds/sentinel-whisper-warning.wav:/var/lib/asterisk/sounds/sentinel-whisper-warning.wav:ro
     healthcheck:
@@ -86,6 +96,9 @@ services:
       DB_OWNER_USER: ${DB_OWNER_USER:-sv_owner}
       DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:-changeme_owner}
       SERVER_PORT: "8081"
+      LAB_MODE: ${LAB_MODE:-false}
+      SIP_EXTERNAL_IP: ${SIP_EXTERNAL_IP:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
     ports:
       - "127.0.0.1:8081:8081"
     healthcheck:

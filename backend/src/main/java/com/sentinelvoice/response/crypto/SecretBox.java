@@ -74,6 +74,13 @@ public class SecretBox {
         return enc == null ? null : Base64.getEncoder().encodeToString(enc);
     }
 
+    public String decryptFromBase64(String base64) {
+        if (base64 == null || base64.isBlank()) {
+            return null;
+        }
+        return decrypt(Base64.getDecoder().decode(base64.trim()));
+    }
+
     private static SecretKey deriveKey(String material) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

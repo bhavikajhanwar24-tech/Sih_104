@@ -130,9 +130,10 @@ sentinelvoice:
     # noop | webrtc | asterisk — lab default noop; use asterisk for live SIP hold/whisper.
     adapter: asterisk
     ari:
-      base-url: http://127.0.0.1:8088/ari
-      username: sentinel
-      password: sentineldemo
+      # Host-run Decision Plane → published Docker port (not service name "asterisk").
+      base-url: ${ASTERISK_ARI_BASE_URL:http://127.0.0.1:8088/ari}
+      username: ${ASTERISK_ARI_USER:sentinel}
+      password: ${ASTERISK_ARI_PASSWORD:sentineldemo}
       connect-timeout-ms: 2000
       read-timeout-ms: 3000
     # In-process MOCK CBS freeze sink (see MockCbsController).

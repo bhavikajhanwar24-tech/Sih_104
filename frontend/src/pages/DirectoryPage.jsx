@@ -91,6 +91,7 @@ function EmployeesTab({ canWrite, push }) {
     jobTitle: '',
   });
   const [departments, setDepartments] = useState([]);
+  const [sipByEmployee, setSipByEmployee] = useState(/** @type {Record<string, any>} */ ({}));
   const skipFirstSearchEffect = useRef(true);
 
   useEffect(() => {
@@ -112,6 +113,17 @@ function EmployeesTab({ canWrite, push }) {
       setItems(data.items || []);
       const deps = await apiJson('/api/v2/directory/departments');
       setDepartments(deps.items || []);
+      try {
+        const eps = await apiJson('/api/v2/telephony/endpoints', { skipErrorToast: true });
+        /** @type {Record<string, any>} */
+        const map = {};
+        for (const ep of Array.isArray(eps) ? eps : []) {
+          if (ep.employeeId) map[ep.employeeId] = ep;
+        }
+        setSipByEmployee(map);
+      } catch {
+        setSipByEmployee({});
+      }
     } catch (err) {
       setError(err.message || 'Failed to load employees');
       push(err.message || 'Failed to load employees');
@@ -172,9 +184,35 @@ function EmployeesTab({ canWrite, push }) {
         header: 'Status',
         render: (r) => <Badge tone={STATUS_TONE[r.status] || 'neutral'}>{r.status}</Badge>,
       },
+      {
+        key: 'sip',
+        header: 'SIP',
+        render: (r) => {
+          const ep = sipByEmployee[r.id];
+          if (!ep) {
+            return <span className="text-xs text-sv-muted">—</span>;
+          }
+          const title = ep.onCall
+            ? 'On call'
+            : ep.registered
+              ? 'Registered'
+              : 'Not registered';
+          return (
+            <span className="inline-flex items-center gap-1.5 text-xs" title={title}>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  ep.onCall ? 'bg-amber-400' : ep.registered ? 'bg-emerald-400' : 'bg-sv-border'
+                }`}
+              />
+              <span className="font-mono">{ep.extension}</span>
+              {ep.onCall ? <span className="text-amber-200">live</span> : null}
+            </span>
+          );
+        },
+      },
       { key: 'primaryPhone', header: 'Phone', render: (r) => r.primaryPhone || '—' },
     ],
-    [push],
+    [push, sipByEmployee],
   );
 
   return (
@@ -313,6 +351,211 @@ function EmployeesTab({ canWrite, push }) {
   );
 }
 
+function CopyField({ label, value }) {
+  const { push } = useToast();
+  return (
+    <div className="flex items-end gap-2">
+      <Input label={label} value={value || ''} readOnly className="flex-1 font-mono text-xs" />
+      <Button
+        type="button"
+        variant="ghost"
+        className="shrink-0 px-2 py-2 text-xs"
+        disabled={!value}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(String(value));
+            push(`Copied ${label}`);
+          } catch {
+            push('Copy failed');
+          }
+        }}
+      >
+        Copy
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * F10 — Directory employee drawer → Telephony (SIP account + Zoiper setup).
+ */
+function EmployeeTelephonyTab({ employee, canWrite, push, onChanged }) {
+  const [endpoint, setEndpoint] = useState(null);
+  const [defaults, setDefaults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  /** @type {[null | { username: string, plaintextPassword: string, domain: string, port: number, transport: string, extension: string }, Function]} */
+  const [reveal, setReveal] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [eps, soft] = await Promise.all([
+        apiJson(`/api/v2/telephony/endpoints?employeeId=${employee.id}`, { skipErrorToast: true }),
+        apiJson('/api/v2/telephony/softphone-defaults', { skipErrorToast: true }).catch(() => ({})),
+      ]);
+      setEndpoint(Array.isArray(eps) && eps.length ? eps[0] : null);
+      setDefaults(soft || {});
+    } catch {
+      setEndpoint(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [employee.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function createAccount() {
+    setBusy(true);
+    try {
+      const row = await apiJson(`/api/v2/telephony/endpoints/for-employee/${employee.id}`, {
+        method: 'POST',
+      });
+      setReveal({
+        username: row.username,
+        plaintextPassword: row.plaintextPassword,
+        domain: row.domain,
+        port: row.port,
+        transport: row.transport,
+        extension: row.extension,
+      });
+      push('SIP account created — copy the password now; it is shown once.');
+      await load();
+      if (onChanged) await onChanged();
+    } catch (err) {
+      push(err.message || 'Create SIP account failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!endpoint?.id) return;
+    setBusy(true);
+    try {
+      const row = await apiJson(`/api/v2/telephony/endpoints/${endpoint.id}/reset-password`, {
+        method: 'POST',
+      });
+      setReveal({
+        username: row.username,
+        plaintextPassword: row.plaintextPassword,
+        domain: row.domain,
+        port: row.port,
+        transport: row.transport,
+        extension: row.extension,
+      });
+      push('Password reset — copy the new password now.');
+      await load();
+    } catch (err) {
+      push(err.message || 'Reset password failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm text-sv-muted">Loading telephony…</p>;
+  }
+
+  const domain = reveal?.domain || defaults?.domain || '—';
+  const port = reveal?.port ?? defaults?.port ?? 5060;
+  const transport = reveal?.transport || defaults?.transport || 'UDP';
+
+  return (
+    <div className="space-y-4">
+      {!endpoint ? (
+        <div className="space-y-3">
+          <p className="text-sm text-sv-muted">
+            No SIP softphone account yet. Create one to register Zoiper / MicroSIP against Asterisk.
+          </p>
+          {canWrite ? (
+            <Button disabled={busy} onClick={createAccount}>
+              Create SIP account
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3 rounded border border-sv-border px-3 py-2">
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                endpoint.registered ? 'bg-emerald-400' : 'bg-sv-border'
+              }`}
+              title={endpoint.registered ? 'Registered' : 'Not registered'}
+            />
+            <div className="text-sm">
+              <div className="font-medium">
+                Ext <span className="font-mono">{endpoint.extension}</span>
+                <Badge tone={endpoint.status === 'ACTIVE' ? 'success' : 'neutral'} className="ml-2">
+                  {endpoint.status}
+                </Badge>
+              </div>
+              <div className="text-xs text-sv-muted">
+                {endpoint.registered ? 'Registered' : 'Not registered'}
+                {endpoint.lastRegisteredAt
+                  ? ` · last seen ${new Date(endpoint.lastRegisteredAt).toLocaleString()}`
+                  : ''}
+              </div>
+            </div>
+          </div>
+          <CopyField label="Username" value={endpoint.username} />
+          <CopyField label="Extension" value={endpoint.extension} />
+          {canWrite ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" disabled={busy} onClick={resetPassword}>
+                Reset password
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {reveal ? (
+        <div className="space-y-3 rounded border border-amber-500/40 bg-amber-500/10 p-3">
+          <p className="text-xs font-medium text-amber-100">
+            Password shown once — save it now. It cannot be retrieved later.
+          </p>
+          <CopyField label="Password" value={reveal.plaintextPassword} />
+          <div className="rounded border border-sv-border bg-sv-panel/60 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sv-muted">
+              Zoiper / softphone
+            </p>
+            <div className="space-y-2">
+              <CopyField label="Username" value={reveal.username} />
+              <CopyField label="Password" value={reveal.plaintextPassword} />
+              <CopyField label="Domain / Host" value={domain} />
+              <CopyField label="Port" value={String(port)} />
+              <CopyField label="Transport" value={transport} />
+            </div>
+            <p className="mt-3 text-[11px] text-sv-muted">
+              Account type: SIP · Authentication name = username · Outbound proxy blank.
+              QR: encode{' '}
+              <code className="font-mono">
+                sip:{reveal.username}@{domain}:{port}
+              </code>{' '}
+              with the password above.
+            </p>
+          </div>
+          <Button variant="ghost" className="text-xs" onClick={() => setReveal(null)}>
+            Dismiss password
+          </Button>
+        </div>
+      ) : endpoint ? (
+        <div className="rounded border border-sv-border bg-sv-panel/40 p-3 text-xs text-sv-muted">
+          <p className="font-semibold text-sv-fg">Softphone defaults</p>
+          <p className="mt-1">
+            Domain <span className="font-mono text-sv-fg">{domain}</span> · port{' '}
+            <span className="font-mono text-sv-fg">{port}</span> · {transport}. Reset password to
+            get a new one-time secret for Zoiper.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
   const [drawerTab, setDrawerTab] = useState('profile');
   const [statusForm, setStatusForm] = useState({ status: 'ACTIVE', statusUntil: '', statusNote: '' });
@@ -343,6 +586,7 @@ function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
   const drawerTabs = [
     { id: 'profile', label: 'Profile' },
     { id: 'phones', label: 'Phones' },
+    { id: 'telephony', label: 'Telephony' },
     { id: 'authority', label: 'Authority' },
     { id: 'relationships', label: 'Relationships' },
   ];
@@ -493,7 +737,7 @@ function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
                   <option value="HOME">HOME</option>
                 </Select>
                 <Input
-                  label="SIP extension"
+                  label="SIP extension (directory hint)"
                   value={phoneForm.sipExtension}
                   onChange={(e) => setPhoneForm((f) => ({ ...f, sipExtension: e.target.value }))}
                 />
@@ -516,6 +760,15 @@ function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
               </div>
             ) : null}
           </div>
+        ) : null}
+
+        {drawerTab === 'telephony' ? (
+          <EmployeeTelephonyTab
+            employee={employee}
+            canWrite={canWrite}
+            push={push}
+            onChanged={onChanged}
+          />
         ) : null}
 
         {drawerTab === 'authority' ? (

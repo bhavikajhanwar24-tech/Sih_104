@@ -10,13 +10,14 @@ import { AuditPage } from '@/pages/AuditPage.jsx';
 import { DirectoryPage } from '@/pages/DirectoryPage.jsx';
 import {
   DashboardPage,
-  LiveCallsPage,
 } from '@/pages/ComingSoonPages.jsx';
+import { LiveCallsPage } from '@/pages/LiveCallsPage.jsx';
 import { ResponsePlansPage } from '@/pages/ResponsePlansPage.jsx';
 import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
 import { PolicyReviewPage } from '@/pages/PolicyReviewPage.jsx';
 import { SettingsPage } from '@/pages/SettingsPage.jsx';
 import { RiskTuningPage } from '@/pages/RiskTuningPage.jsx';
+import { TelephonySettingsPage } from '@/pages/TelephonySettingsPage.jsx';
 
 /**
  * V2 application root — router + cookie auth. Replaces v1 four-view AppShell switcher.
@@ -47,6 +48,7 @@ export default function App() {
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
+                <Route path="settings/telephony" element={<TelephonySettingsPage />} />
                 <Route path="users" element={<UsersPage />} />
               </Route>
             </Route>

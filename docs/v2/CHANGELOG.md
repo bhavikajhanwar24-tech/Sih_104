@@ -30,6 +30,12 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | Deployed central DB is Supabase (Session Pooler); local Docker Postgres kept for lab/offline | Shared multi-env system of record |
 | 2026-09-21 | v1 YAML `sentinelvoice.fusion` / `intervention` / `emergency` deleted; decisions use tenant `fusion_configs` + pure `FusionEngine` | F8 — per-tenant fusion config |
 | 2026-09-21 | Frontend Risk tuning page at `/app/settings/risk-tuning` (draft/approve/what-if) | F8 — fusion UI |
+| 2026-09-21 | Static caller/agent PJSIP endpoints replaced by PJSIP REALTIME (`asterisk.ps_*`); AGI resolves via Java `/internal/v2` | F10 — multi-tenant telephony |
+| 2026-09-21 | `DirectoryMatch.NumberProvenance.SUSPECT_TRUNK` from `trunks.cli_prefixes` | F10 — CLI provenance |
+| 2026-09-21 | Directory Telephony tab + Settings → Telephony UI; SIP reg/on-call indicators | F10 — telephony UI |
+| 2026-09-21 | Telephony health explains Postgres/AMI/ARI/SIP_EXTERNAL_IP; DotEnv + AMI :5038 | F10 — health diagnostics |
+| 2026-09-21 | Asterisk mirror uses `AsteriskMirrorJdbc` (not a `DataSource`/`JdbcTemplate` bean) | F10 — avoid stealing primary pool when `ASTERISK_SYNC_URL` is set |
+| 2026-09-21 | Live Calls page + `/api/v2/calls`; same-tenant dial enforce; registration via `ps_contacts` | F10 — lab acceptance path |
 
 ## New dependencies
 
@@ -68,3 +74,4 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | F6 | Empty-LLM fix: outcome statuses, truncated vs empty, subset schema, suspect retry, progress clamp, test-clause |
 | 2026-09-20 | Ops | Supabase central DB + `migrate-to-supabase.ps1` local dump/restore; docs/v2/SUPABASE.md |
 | 2026-09-21 | F8 | Per-tenant fusion_configs + pure FusionEngine; Risk tuning UI; YAML fusion/intervention removed |
+| 2026-09-21 | F10 | Multi-tenant Asterisk PJSIP REALTIME; AGI dialplan; Directory/Settings telephony UI |

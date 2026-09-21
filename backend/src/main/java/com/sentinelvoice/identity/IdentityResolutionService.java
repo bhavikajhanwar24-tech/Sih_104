@@ -101,6 +101,8 @@ public class IdentityResolutionService {
             risk = 0.7;
         } else if (presence != null) {
             risk = 0.65;
+        } else if (match.numberProvenance() == DirectoryMatch.NumberProvenance.SUSPECT_TRUNK) {
+            risk = 0.4;
         } else if (match.numberProvenance() == DirectoryMatch.NumberProvenance.EXTERNAL_UNKNOWN) {
             risk = 0.25;
         }

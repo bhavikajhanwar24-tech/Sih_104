@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.NoSuchElementException;
@@ -95,6 +96,15 @@ public class GlobalExceptionHandler {
         String message = ex.getMessage() == null ? "Resource not found" : ex.getMessage();
         log.error("not found cid={} path={} msg={}", cid(), request.getRequestURI(), message);
         return error(HttpStatus.NOT_FOUND, message, request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNoResource(
+            NoResourceFoundException ex,
+            HttpServletRequest request
+    ) {
+        log.warn("no handler cid={} path={}", cid(), request.getRequestURI());
+        return error(HttpStatus.NOT_FOUND, "Not found", request);
     }
 
     @ExceptionHandler(IllegalStateException.class)

@@ -30,7 +30,9 @@ public record DirectoryMatch(
     public enum NumberProvenance {
         INTERNAL_EXT,
         KNOWN_MOBILE,
-        EXTERNAL_UNKNOWN
+        EXTERNAL_UNKNOWN,
+        /** CLI matches a carrier/CCAAS trunk prefix — treat as elevated caution (F10). */
+        SUSPECT_TRUNK
     }
 
     /** Allowed directory_employees.status values (F4). Used by FactCatalogue caller.status. */
