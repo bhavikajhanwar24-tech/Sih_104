@@ -45,6 +45,11 @@ class PrivacyViolation(RuntimeError):
 
 def assert_no_transcript_on_wire(frame: dict[str, Any]) -> None:
     """Runtime guard — FeatureFrame must not carry transcript text (F11)."""
+    from app.config import settings
+
+    if getattr(settings, "lab_mode", False):
+        # Lab operator workspace may carry redactedSnippet for Live Calls display.
+        return
     if not isinstance(frame, dict):
         return
     ling = frame.get("linguistic")
@@ -65,9 +70,21 @@ def assert_no_transcript_on_wire(frame: dict[str, Any]) -> None:
 
 def strip_transcript_fields(linguistic: dict[str, Any]) -> dict[str, Any]:
     """Return a copy safe for FeatureFrame emission."""
+    from app.config import settings
+
     out = dict(linguistic)
-    for key in _FORBIDDEN_TEXT_KEYS:
-        out.pop(key, None)
+    if getattr(settings, "lab_mode", False):
+        # Keep a short redacted rolling transcript for Live Calls More info.
+        snippet = out.get("redactedSnippet")
+        if isinstance(snippet, str) and snippet.strip():
+            out["redactedSnippet"] = snippet.strip()[-400:]
+        for key in _FORBIDDEN_TEXT_KEYS:
+            if key == "redactedSnippet":
+                continue
+            out.pop(key, None)
+    else:
+        for key in _FORBIDDEN_TEXT_KEYS:
+            out.pop(key, None)
     # Keep role tokens like [PERSON_1] / CFO; drop raw names
     cid = out.get("claimedIdentity")
     if isinstance(cid, str) and cid.strip() and not (

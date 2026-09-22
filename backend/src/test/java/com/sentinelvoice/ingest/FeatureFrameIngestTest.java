@@ -206,6 +206,7 @@ class FeatureFrameIngestTest {
 
         ingest = new FeatureFrameIngestService(
                 sessions,
+                mock(com.sentinelvoice.telephony.CallSessionRepository.class),
                 properties,
                 fusionEngine,
                 ladder,
@@ -222,9 +223,11 @@ class FeatureFrameIngestTest {
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
+                mock(com.sentinelvoice.explain.SessionExplainRecorder.class),
                 meters,
                 clock
         );
+        ingest.setPipelineExecutor(Runnable::run);
     }
 
     @Test

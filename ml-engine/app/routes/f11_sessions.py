@@ -58,6 +58,8 @@ async def linguistic_stats(
         "injectionAttempt": ling.get("injectionAttempt"),
         "matchedKeywords": ling.get("matchedKeywords") or [],
         "matchedRuleIds": ling.get("matchedRuleIds") or [],
+        "llmThinking": ling.get("llmThinking"),
+        "llmPending": bool(ling.get("llmPending") or stage_b_runner.pending(session_id)),
         "categories": ling.get("categories") or {},
         "ask": ling.get("ask"),
         "tenantId": getattr(session, "tenant_id", None) if session else None,

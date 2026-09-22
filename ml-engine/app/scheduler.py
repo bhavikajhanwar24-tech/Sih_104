@@ -41,12 +41,62 @@ def build_feature_frame(session: PipelineSession, window: np.ndarray) -> Feature
     # Prefer orchestrator wall time; fall back to measured total.
     fast_ms = float(extracted.get("fastPathMs") or 0.0)
     # Slow-path linguistic is published asynchronously; never block here.
-    linguistic_payload = session.slow_path_linguistic or extracted.get("linguistic") or {
-        "available": False
-    }
+    linguistic_payload = dict(
+        session.slow_path_linguistic or extracted.get("linguistic") or {"available": False}
+    )
+    # Always fold the latest Stage B judgment onto the wire frame.
+    try:
+        from app.modules.stage_b import stage_b_runner
+
+        overlay = stage_b_runner.latest(session.session_id)
+        if overlay:
+            mk = list(linguistic_payload.get("matchedKeywords") or [])
+            for t in overlay.get("matchedKeywords") or []:
+                if t not in mk:
+                    mk.append(t)
+            mr = list(linguistic_payload.get("matchedRuleIds") or [])
+            for rid in overlay.get("matchedRuleIds") or []:
+                if rid not in mr:
+                    mr.append(rid)
+            linguistic_payload.update(overlay)
+            linguistic_payload["matchedKeywords"] = mk[:16]
+            linguistic_payload["matchedRuleIds"] = mr[:16]
+            linguistic_payload["available"] = True
+            if overlay.get("llmThinking"):
+                linguistic_payload["llmThinking"] = overlay["llmThinking"]
+            elif stage_b_runner.pending(session.session_id):
+                linguistic_payload["llmThinking"] = linguistic_payload.get("llmThinking") or (
+                    "LLM judging ACTIVE rules against the latest transcript…"
+                )
+                linguistic_payload["llmPending"] = True
+    except Exception:
+        logger.debug("stage_b_overlay_merge_failed", exc_info=True)
+
     from app.modules.privacy import assert_no_transcript_on_wire, strip_transcript_fields
 
     linguistic_payload = strip_transcript_fields(dict(linguistic_payload))
+    # Drop keys pydantic LinguisticFamily forbids / can't coerce
+    ask = linguistic_payload.get("ask")
+    if isinstance(ask, dict):
+        allowed_ask = {
+            "type",
+            "amount",
+            "currency",
+            "beneficiaryHint",
+            "deadline",
+            "sharesCredential",
+            "beneficiaryMentioned",
+        }
+        linguistic_payload["ask"] = {k: v for k, v in ask.items() if k in allowed_ask}
+        if "type" not in linguistic_payload["ask"]:
+            linguistic_payload.pop("ask", None)
+    cats = linguistic_payload.get("categories")
+    if isinstance(cats, dict):
+        linguistic_payload["categories"] = {
+            str(k): float(v)
+            for k, v in cats.items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
     slow_ms = float(session.slow_path_latency_ms or 0.0)
     sr = session.ring_buffer.sample_rate
     window_end_ms = int(session.ring_buffer.total_samples_written * 1000 / sr)
@@ -142,12 +192,15 @@ class SessionScheduler:
         session.force_emit = False
         await self.emitter.emit(frame)
         logger.info(
-            "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s keywords=%s",
+            "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s "
+            "keywords=%s rules=%s thinking_chars=%s",
             session.session_id,
             frame.seq,
             frame.latencyMs.fastPath,
             frame.speechPresent,
             (frame.linguistic.matchedKeywords if frame.linguistic else None) or [],
+            (frame.linguistic.matchedRuleIds if frame.linguistic else None) or [],
+            len((frame.linguistic.llmThinking if frame.linguistic else None) or ""),
         )
         return frame
 

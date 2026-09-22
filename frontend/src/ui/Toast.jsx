@@ -32,7 +32,12 @@ export function ToastProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    setApiErrorHandler((err) => push(err.message || 'Request failed'));
+    setApiErrorHandler((err) => {
+      const msg = String(err?.message || '');
+      // Slow Supabase / hung poll — never spam the corner with this.
+      if (err?.code === 'timeout' || /timed out/i.test(msg)) return;
+      push(msg || 'Request failed');
+    });
     return () => setApiErrorHandler(null);
   }, [push]);
 

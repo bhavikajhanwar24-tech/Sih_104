@@ -103,6 +103,7 @@ class LinguisticFamily(BaseModel):
     matchedKeywords: Optional[list[str]] = None
     injectionAttempt: Optional[bool] = None
     llmPending: Optional[bool] = None
+    llmThinking: Optional[str] = Field(default=None, max_length=500)
     claimedIdentity: Optional[str] = None
     claimedRole: Optional[str] = None
     # F11: must stay empty on live FeatureFrame wire (demo fixtures only).

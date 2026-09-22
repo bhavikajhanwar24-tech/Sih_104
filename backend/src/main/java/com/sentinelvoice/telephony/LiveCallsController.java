@@ -109,7 +109,7 @@ public class LiveCallsController {
 
             String liveLevel = null;
             Double liveScore = null;
-            if (row.active() && row.svSessionUuid() != null) {
+            if (row.svSessionUuid() != null) {
                 Optional<CallSession> mem = callSessionManager.getSession(row.svSessionUuid().toString());
                 if (mem.isPresent()) {
                     CallSession s = mem.get();
@@ -120,12 +120,16 @@ public class LiveCallsController {
                         lingStatus = "pending";
                     } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
                         lingStatus = "live";
+                    } else if (s.getLastLlmThinking() != null && !s.getLastLlmThinking().isBlank()) {
+                        lingStatus = "live";
                     }
                     m.put("linguisticStatus", lingStatus);
                     m.put("linguisticSource", s.getLastLinguisticSource());
                     m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
                     m.put("linguisticConfidence", s.getLastLinguisticConfidence());
                     m.put("matchedKeywords", s.getLastMatchedKeywords());
+                    m.put("llmThinking", s.getLastLlmThinking());
+                    m.put("asrTranscript", s.getLastAsrTranscript());
                     m.put("brokenRuleIds", s.getLastBrokenRuleIds());
                     m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
                 }

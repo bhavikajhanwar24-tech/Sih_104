@@ -6,7 +6,7 @@ import { Badge, Button, EmptyState } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
 const POLL_MS = 2500;
-const STALE_AFTER_MS = 8000;
+const POLL_TIMEOUT_MS = 60_000;
 
 /**
  * Play a short alert tone when a call enters L3 (operator workspace).
@@ -46,7 +46,7 @@ function effectiveLevel(row) {
 
 /**
  * F10 — Multi-call operator workspace: Live Calls with L3 amber rows,
- * callback / approval panel, Bridge RBAC, and stale-data banner.
+ * callback / approval panel, and Bridge RBAC.
  */
 export function LiveCallsPage() {
   const { hasPermission, me } = useAuth();
@@ -55,15 +55,17 @@ export function LiveCallsPage() {
   const [activeCount, setActiveCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
-  const [stale, setStale] = useState(false);
   const [lastOkAt, setLastOkAt] = useState(null);
   const [forceBusy, setForceBusy] = useState(false);
   const [bridgeBusy, setBridgeBusy] = useState(false);
   const [callbackBusy, setCallbackBusy] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
   const [approveResult, setApproveResult] = useState(/** @type {string | null} */ (null));
+  /** @type {React.MutableRefObject<Record<string, string>>} */
+  const thinkingByCallRef = useRef({});
+  /** @type {React.MutableRefObject<Record<string, string>>} */
+  const transcriptByCallRef = useRef({});
   const prevL3Ref = useRef(/** @type {Set<string>} */ (new Set()));
-  const consecutiveFailsRef = useRef(0);
 
   const canRead = hasPermission('calls:read');
   const canAct = hasPermission('calls:act');
@@ -71,13 +73,30 @@ export function LiveCallsPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiJson('/api/v2/calls?limit=50', { skipErrorToast: true });
+      const data = await apiJson('/api/v2/calls?limit=50', {
+        skipErrorToast: true,
+        timeoutMs: POLL_TIMEOUT_MS,
+      });
       const next = Array.isArray(data.items) ? data.items : [];
+      // Cache LLM thinking so a later poll without the field doesn't wipe the panel.
+      for (const row of next) {
+        const key = String(row.id || row.svSessionUuid || '');
+        const think = typeof row.llmThinking === 'string' ? row.llmThinking.trim() : '';
+        if (key && think) {
+          thinkingByCallRef.current[key] = think;
+        } else if (key && thinkingByCallRef.current[key]) {
+          row.llmThinking = thinkingByCallRef.current[key];
+        }
+        const asr = typeof row.asrTranscript === 'string' ? row.asrTranscript.trim() : '';
+        if (key && asr) {
+          transcriptByCallRef.current[key] = asr;
+        } else if (key && transcriptByCallRef.current[key]) {
+          row.asrTranscript = transcriptByCallRef.current[key];
+        }
+      }
       setItems(next);
       setActiveCount(data.activeCount ?? 0);
       setLastOkAt(Date.now());
-      consecutiveFailsRef.current = 0;
-      setStale(false);
 
       const nowL3 = new Set(
         next
@@ -91,11 +110,8 @@ export function LiveCallsPage() {
         }
       }
       prevL3Ref.current = nowL3;
-    } catch (err) {
-      consecutiveFailsRef.current += 1;
-      if (consecutiveFailsRef.current >= 2) {
-        setStale(true);
-      }
+    } catch {
+      // Keep last good rows; never toast timeouts on the Live Calls poll.
     } finally {
       setLoading(false);
     }
@@ -119,17 +135,6 @@ export function LiveCallsPage() {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [canRead, load]);
-
-  // Stale if last successful poll is old even when errors were intermittent.
-  useEffect(() => {
-    if (!canRead) return undefined;
-    const id = window.setInterval(() => {
-      if (lastOkAt != null && Date.now() - lastOkAt > STALE_AFTER_MS) {
-        setStale(true);
-      }
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [canRead, lastOkAt]);
 
   if (!canRead) {
     return <Navigate to="/app" replace />;
@@ -230,38 +235,12 @@ export function LiveCallsPage() {
 
   return (
     <div className="space-y-4 p-6">
-      {stale ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-100"
-        >
-          <div>
-            <p className="font-semibold text-red-200">Stale data</p>
-            <p className="mt-0.5 text-red-200/80">
-              Live Calls poll failed or timed out. Rows may be outdated until the Decision Plane
-              reconnects.
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            className="border-red-400/40 text-red-100"
-            onClick={() => {
-              consecutiveFailsRef.current = 0;
-              void load();
-            }}
-          >
-            Reconnect
-          </Button>
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-sv-muted">Telephony</p>
           <h1 className="mt-1 text-xl font-semibold text-sv-fg">Live Calls</h1>
           <p className="mt-1 text-sm text-sv-muted">
-            Multi-call operator workspace — departments, L3 step-up panel, bridge, and stale
-            detection.
+            Multi-call operator workspace — departments, L3 step-up panel, and bridge.
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm text-sv-muted">
@@ -382,49 +361,83 @@ export function LiveCallsPage() {
                   </p>
                 </div>
 
-                {selected.active ? (
-                  <div className="rounded border border-sv-border bg-sv-bg/60 px-3 py-2 text-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
-                      Keywords triggered
+                <div className="rounded border border-sv-border bg-sv-bg/60 px-3 py-2 text-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                    More info
+                  </p>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                    Spoken (ASR)
+                  </p>
+                  <p className="mt-1 min-h-[2.5rem] whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-sv-fg/80">
+                    {selected.asrTranscript
+                      || transcriptByCallRef.current[String(selected.id || selected.svSessionUuid || '')]
+                      || (selected.active
+                        ? 'Waiting for speech…'
+                        : 'No transcript retained for this call.')}
+                  </p>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                    LLM thinking
+                    {selected.linguisticStatus === 'pending' || selected.llmPending ? (
+                      <span className="ml-1 font-normal normal-case text-sv-muted">(running…)</span>
+                    ) : null}
+                  </p>
+                    <p className="mt-1 min-h-[3rem] whitespace-pre-wrap text-xs leading-relaxed text-sv-fg/90">
+                      {selected.llmThinking
+                        || thinkingByCallRef.current[String(selected.id || selected.svSessionUuid || '')]
+                        || (selected.linguisticStatus === 'pending'
+                          ? 'Waiting for LLM judgment on ACTIVE rules…'
+                          : selected.active
+                            ? 'No LLM judgment yet — speak about a policy topic (password, OTP, callback, transfer…). Keywords not required; LLM matches ACTIVE rules. ~30–60s.'
+                            : 'No LLM judgment was stored for this call (hang up only after More info shows thinking).')}
                     </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {(Array.isArray(selected.matchedKeywords) ? selected.matchedKeywords : [])
-                        .length === 0 ? (
-                        <span className="text-xs text-sv-muted">None yet</span>
-                      ) : (
-                        selected.matchedKeywords.map((k) => (
-                          <Badge key={k} tone="warning">
-                            {k}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
-                      Rules broken
-                    </p>
-                    <ul className="mt-1 space-y-1 text-xs text-sv-fg">
-                      {(
-                        (Array.isArray(selected.brokenRuleTitles) &&
-                        selected.brokenRuleTitles.length
-                          ? selected.brokenRuleTitles
-                          : Array.isArray(selected.brokenRuleIds)
-                            ? selected.brokenRuleIds
-                            : []) || []
-                      ).length === 0 ? (
-                        <li className="text-sv-muted">None yet</li>
-                      ) : (
-                        (selected.brokenRuleTitles?.length
-                          ? selected.brokenRuleTitles
-                          : selected.brokenRuleIds
-                        ).map((t) => (
-                          <li key={t} className="font-mono text-[11px]">
-                            {t}
-                          </li>
-                        ))
-                      )}
-                    </ul>
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                    Keywords triggered
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {(Array.isArray(selected.matchedKeywords) ? selected.matchedKeywords : [])
+                      .length === 0 ? (
+                      <span className="text-xs text-sv-muted">None yet</span>
+                    ) : (
+                      selected.matchedKeywords.map((k) => (
+                        <Badge key={k} tone="warning">
+                          {k}
+                        </Badge>
+                      ))
+                    )}
                   </div>
-                ) : null}
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                    Rules broken
+                  </p>
+                  <ul className="mt-1 space-y-1 text-xs text-sv-fg">
+                    {(
+                      (Array.isArray(selected.brokenRuleTitles) &&
+                      selected.brokenRuleTitles.length
+                        ? selected.brokenRuleTitles
+                        : Array.isArray(selected.brokenRuleIds)
+                          ? selected.brokenRuleIds
+                          : []) || []
+                    ).length === 0 ? (
+                      <li className="text-sv-muted">None yet</li>
+                    ) : (
+                      (selected.brokenRuleTitles?.length
+                        ? selected.brokenRuleTitles
+                        : selected.brokenRuleIds
+                      ).map((t) => (
+                        <li key={t} className="font-mono text-[11px]">
+                          {t}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                  {selected.linguisticSource ? (
+                    <p className="mt-1 text-[10px] text-sv-muted">
+                      source {selected.linguisticSource}
+                      {selected.linguisticConfidence != null
+                        ? ` · conf ${(Number(selected.linguisticConfidence) * 100).toFixed(0)}%`
+                        : ''}
+                    </p>
+                  ) : null}
+                </div>
 
                 {showCallback ? (
                   <div className="rounded-md border border-amber-500/40 bg-amber-950/30 px-3 py-3">

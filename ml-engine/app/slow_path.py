@@ -107,7 +107,7 @@ class SlowPathRunner:
         lexicon = tenant_lexicon.get_lexicon(session.tenant_id)
         raw = asr_mod.raw_rolling_text(session.asr_state)
 
-        if result.available and raw.strip():
+        if raw.strip() or float(getattr(result, "speech_ratio", 0.0) or 0.0) >= 0.2:
             self._last_speech_mono[session.session_id] = time.monotonic()
 
         stage_a = run_stage_a(raw, lexicon=lexicon) if raw.strip() else None
@@ -151,35 +151,45 @@ class SlowPathRunner:
                     llm_pending=pending,
                 )
 
-        # Stage B judges ACTIVE rules via LLM (paraphrases). Still run when keywords
-        # already hit so semantic rule breaks are not skipped.
+        # Stage B: ALWAYS judge transcript against ACTIVE live rules when we have
+        # speech text + rules. Keywords are optional hints only — never a gate.
         silence_end = False
         last_speech = self._last_speech_mono.get(session.session_id)
         if last_speech is not None and (time.monotonic() - last_speech) >= 0.6:
             if result.skipped_reason == "vad_gate" or not result.available:
                 silence_end = True
 
-        already_hit = bool(stage_a and (stage_a.matched_keywords or stage_a.matched_rule_ids))
+        schedule_text = raw.strip()
         has_rules = bool(lexicon and getattr(lexicon, "rules", None))
-        if stage_a is not None and raw.strip() and (has_rules or not already_hit):
+        if schedule_text and has_rules:
             try:
                 from app.llm_gateway.gateway import gateway as llm_gateway
 
-                force = silence_end or already_hit
                 stage_b_runner.maybe_schedule(
                     session.session_id,
-                    raw,
-                    stage_a=stage_a,
+                    schedule_text,
+                    stage_a=stage_a or run_stage_a(schedule_text, lexicon=lexicon),
                     lexicon=lexicon,
                     gateway=_GatewayAdapter(llm_gateway),
-                    force=force,
+                    force=True,  # never wait on keywords
                 )
             except Exception:
                 logger.debug("stage_b_schedule_failed", exc_info=True)
+        elif schedule_text and silence_end and not has_rules:
+            logger.info(
+                "stage_b_skip_no_active_rules session_id=%s raw_chars=%s",
+                session.session_id,
+                len(schedule_text),
+            )
 
         # Push frames when keywords OR LLM-matched rules are present on the linguistic overlay.
         ling_now = session.slow_path_linguistic or {}
-        if ling_now.get("matchedKeywords") or ling_now.get("matchedRuleIds"):
+        if (
+            ling_now.get("matchedKeywords")
+            or ling_now.get("matchedRuleIds")
+            or ling_now.get("llmThinking")
+            or pending
+        ):
             session.force_emit = True
 
         logger.info(

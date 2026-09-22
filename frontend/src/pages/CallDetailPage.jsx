@@ -230,6 +230,25 @@ export function CallDetailPage() {
       </div>
 
       <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
+        <h2 className="text-sm font-semibold text-sv-fg">More info · LLM thinking</h2>
+        <p className="mt-0.5 text-xs text-sv-muted">
+          Stage B / Ollama rationale for ACTIVE Live Rules on this call
+        </p>
+        {(() => {
+          const cats = data?.extractionsLatest?.categories || {};
+          const thinking =
+            (typeof cats.llmThinking === 'string' && cats.llmThinking.trim()) ||
+            (typeof data?.llmThinking === 'string' && data.llmThinking.trim()) ||
+            '';
+          return (
+            <p className="mt-3 min-h-[4rem] whitespace-pre-wrap text-sm leading-relaxed text-sv-fg">
+              {thinking || 'No LLM judgment was retained for this call.'}
+            </p>
+          );
+        })()}
+      </section>
+
+      <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
         <h2 className="text-sm font-semibold text-sv-fg">Keywords triggered</h2>
         <p className="mt-0.5 text-xs text-sv-muted">
           ACTIVE lexicon terms heard on this call (from your Live Rules / PDF keywords)

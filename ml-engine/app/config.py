@@ -68,13 +68,21 @@ class Settings(BaseSettings):
     asr_compute_type: str = "default"  # default → int8 (cpu) / float16 (cuda)
     asr_window_seconds: float = 6.0
     asr_interval_ms: int = 2500
-    asr_vad_speech_ratio_min: float = 0.3
+    # Softphone / AudioSocket levels are often low; 0.3 blocked almost every tick.
+    asr_vad_speech_ratio_min: float = 0.12
+    # RMS floor — if energy is present, still run Whisper even when webrtcvad is shy.
+    asr_vad_rms_min: float = 0.006
+    # Soft gain for PSTN/snoop before ASR (clipped to [-1,1]).
+    asr_pcm_gain: float = 2.5
     asr_snippet_chars: int = 160
     asr_latency_budget_ms: float = 900.0
     # F11 — in-memory rolling transcript horizon (seconds); zeroised on session close.
     asr_rolling_seconds: float = 20.0
     # Tenant-allowed ASR languages (Whisper codes). Hinglish = code-switch hi+en.
     asr_languages: str = "en,hi"
+    # Lab / operator workspace: put a short redacted ASR transcript on FeatureFrame
+    # so Live Calls can show what was heard (F11 wire strip is skipped for this).
+    lab_mode: bool = False
 
 
 settings = Settings()
@@ -84,3 +92,8 @@ if not settings.service_token:
     alt = os.environ.get("ML_SERVICE_TOKEN") or os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN") or ""
     if alt:
         object.__setattr__(settings, "service_token", alt)
+
+# LAB_MODE is set in repo-root .env without the SENTINELVOICE_ML_ prefix.
+_lab = (os.environ.get("LAB_MODE") or os.environ.get("SENTINELVOICE_ML_LAB_MODE") or "").strip().lower()
+if _lab in {"1", "true", "yes", "on"}:
+    object.__setattr__(settings, "lab_mode", True)

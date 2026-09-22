@@ -26,7 +26,9 @@ logger = logging.getLogger("sentinelvoice.ml.llm_gateway")
 TASK_LIMITS = {
     # 90s per policy chunk for small local models on CPU/GPU
     "policy_compile": {"timeout_ms": 90_000, "max_tokens": 2048, "priority": 1},
-    "runtime_intent": {"timeout_ms": 2500, "max_tokens": 256, "priority": 0},
+    # Wait for Ollama to finish — never abort a live call judgment early.
+    # Concurrency=1 queues the next request until this one returns.
+    "runtime_intent": {"timeout_ms": 180_000, "max_tokens": 256, "priority": 0},
     "selftest": {"timeout_ms": 60_000, "max_tokens": 64, "priority": 0},
 }
 
@@ -69,8 +71,9 @@ class LlmGateway:
         self._workers: list[asyncio.Task[None]] = []
         self._workers_lock = asyncio.Lock()
         self._ollama_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-        self._ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-        self._ollama_num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+        # Prefer a small local model — gemma3:4b was 30–50s/call and always timed out.
+        self._ollama_model = os.getenv("OLLAMA_MODEL", "JIO_AI2:latest")
+        self._ollama_num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
         self._ollama_keep_alive = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
         self._openai_enabled = os.getenv("LLM_OPENAI_COMPAT_ENABLED", "false").lower() in {
             "1",

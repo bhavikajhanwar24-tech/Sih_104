@@ -26,9 +26,11 @@ import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.model.CallSession;
+import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.RelationshipQuery;
+import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.policy.engine.PolicyRuntimeService;
@@ -36,6 +38,8 @@ import com.sentinelvoice.policy.engine.RuleEvaluation;
 import com.sentinelvoice.scenario.ScenarioSessionContext;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
+import com.sentinelvoice.telephony.CallSessionRepository;
+import com.sentinelvoice.telephony.TelephonyModels;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
 import com.sentinelvoice.transcript.BreakGlassTranscriptService;
@@ -53,6 +57,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Per-frame Decision Plane pipeline (P5.4 / F8):
@@ -65,6 +75,7 @@ public class FeatureFrameIngestService {
     private static final long EPOCH_MS_THRESHOLD = 1_000_000_000_000L;
 
     private final CallSessionManager callSessionManager;
+    private final CallSessionRepository callSessionRepository;
     private final SentinelProperties properties;
     private final FusionRuntimeService fusionRuntimeService;
     private final ReasonGenerator reasonGenerator;
@@ -86,9 +97,17 @@ public class FeatureFrameIngestService {
     private final Counter dropped;
     private final Counter stale;
     private final Timer pipelineTimer;
+    private final Map<String, AtomicReference<FeatureFrame>> pendingFrames = new ConcurrentHashMap<>();
+    private final Set<String> draining = ConcurrentHashMap.newKeySet();
+    private Executor pipelineExecutor = Executors.newFixedThreadPool(4, runnable -> {
+        Thread t = new Thread(runnable, "frame-pipeline");
+        t.setDaemon(true);
+        return t;
+    });
 
     public FeatureFrameIngestService(
             CallSessionManager callSessionManager,
+            CallSessionRepository callSessionRepository,
             SentinelProperties properties,
             FusionRuntimeService fusionRuntimeService,
             ReasonGenerator reasonGenerator,
@@ -109,6 +128,7 @@ public class FeatureFrameIngestService {
             Clock clock
     ) {
         this.callSessionManager = callSessionManager;
+        this.callSessionRepository = callSessionRepository;
         this.properties = properties;
         this.fusionRuntimeService = fusionRuntimeService;
         this.reasonGenerator = reasonGenerator;
@@ -153,6 +173,9 @@ public class FeatureFrameIngestService {
         }
         Optional<CallSession> existing = callSessionManager.getSession(frame.sessionId());
         if (existing.isEmpty()) {
+            existing = reviveMemorySession(frame.sessionId());
+        }
+        if (existing.isEmpty()) {
             dropped.increment();
             log.warn("feature_frame_drop reason=unknown_session sessionId={} seq={}", frame.sessionId(), frame.seq());
             return;
@@ -164,7 +187,65 @@ public class FeatureFrameIngestService {
         });
     }
 
+    /**
+     * After a Decision Plane restart, FeatureFrames still arrive with the AudioSocket UUID
+     * but in-memory CallSession is gone — rebuild from call_sessions so Live Calls keeps
+     * receiving keywords / broken rules / LLM thinking.
+     */
+    private Optional<CallSession> reviveMemorySession(String sessionId) {
+        UUID sv;
+        try {
+            sv = UUID.fromString(sessionId);
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+        Optional<TelephonyModels.CallSessionView> row = callSessionRepository.findBySvSessionAnyTenant(sv);
+        if (row.isEmpty() || row.get().endedAt() != null) {
+            return Optional.empty();
+        }
+        TelephonyModels.CallSessionView call = row.get();
+        try {
+            return TenantContext.runAs(call.tenantId(), () -> {
+                try {
+                    CallSession created = callSessionManager.createSession(new SessionStartRequest(
+                            "sentinelvoice.SessionStartRequest/1",
+                            sessionId,
+                            call.callerNumber() == null || call.callerNumber().isBlank()
+                                    ? "sip-caller" : call.callerNumber(),
+                            call.calleeNumber() == null || call.calleeNumber().isBlank()
+                                    ? "sip-agent" : call.calleeNumber(),
+                            ChannelProfile.PSTN_NARROWBAND,
+                            "telephony-revive"
+                    ));
+                    log.info(
+                            "session_revived_from_telephony sessionId={} tenantId={} callSessionId={}",
+                            sessionId,
+                            call.tenantId(),
+                            call.id()
+                    );
+                    return Optional.of(created);
+                } catch (IllegalArgumentException already) {
+                    return callSessionManager.getSession(sessionId);
+                } catch (RuntimeException ex) {
+                    log.warn(
+                            "session_revive_failed sessionId={} cause={}",
+                            sessionId,
+                            ex.toString()
+                    );
+                    return Optional.empty();
+                }
+            });
+        } catch (RuntimeException ex) {
+            log.warn("session_revive_failed sessionId={} cause={}", sessionId, ex.toString());
+            return Optional.empty();
+        }
+    }
+
     private void ingestUnderTenant(CallSession session, FeatureFrame frame) {
+        // Live Calls "More info" must survive every drop gate below: the Decision Plane pipeline
+        // runs against a remote DB and lags seconds behind ml-engine, so the frame that finally
+        // carries the LLM judgment is usually discarded as out_of_order/stale.
+        applyLiveExplainMeta(session, frame);
         if (frame.seq() <= session.getLastFeatureSeq()) {
             dropped.increment();
             log.warn(
@@ -192,9 +273,56 @@ public class FeatureFrameIngestService {
         session.storeFeatureFrame(frame);
         received.increment();
 
+        submitPipeline(session, frame);
+    }
+
+    private void applyLiveExplainMeta(CallSession session, FeatureFrame frame) {
+        if (frame.linguistic() == null) {
+            return;
+        }
+        session.recordLinguisticMeta(frame.linguistic());
+        List<String> ruleIds = frame.linguistic().matchedRuleIds();
+        if (ruleIds != null && !ruleIds.isEmpty()) {
+            session.recordBrokenRules(ruleIds, List.of());
+        }
+    }
+
+    /**
+     * Hand the heavy pipeline to a worker and keep only the newest frame per session. The WS
+     * thread must never block on it, otherwise ml-engine's send buffer fills, the socket is
+     * aborted (1006) and the reconnect replays an old seq that we then drop as out_of_order.
+     */
+    private void submitPipeline(CallSession session, FeatureFrame frame) {
+        String sessionId = session.getSessionId();
+        pendingFrames.computeIfAbsent(sessionId, k -> new AtomicReference<>()).set(frame);
+        if (!draining.add(sessionId)) {
+            return;
+        }
+        pipelineExecutor.execute(() -> {
+            try {
+                AtomicReference<FeatureFrame> slot = pendingFrames.get(sessionId);
+                FeatureFrame next;
+                while (slot != null && (next = slot.getAndSet(null)) != null) {
+                    runPipelineGuarded(session, next);
+                }
+            } finally {
+                draining.remove(sessionId);
+            }
+        });
+    }
+
+    /** Tests run the pipeline inline so every frame is measured, not coalesced. */
+    void setPipelineExecutor(Executor executor) {
+        this.pipelineExecutor = executor;
+    }
+
+    private void runPipelineGuarded(CallSession session, FeatureFrame frame) {
         Timer.Sample sample = Timer.start();
         try {
-            runPipeline(session, frame);
+            TenantContext.runAs(session.getTenantId(), () -> {
+                runPipeline(session, frame);
+                return null;
+            });
         } catch (Exception ex) {
             log.error(
                     "pipeline_failed sessionId={} seq={} cause={}",
@@ -204,9 +332,12 @@ public class FeatureFrameIngestService {
                     ex
             );
             try {
-                telemetryBroadcaster.publish(
-                        telemetryFrameBuilder.buildDegraded(session, frame, nowMs(), ex.getMessage())
-                );
+                TenantContext.runAs(session.getTenantId(), () -> {
+                    telemetryBroadcaster.publish(
+                            telemetryFrameBuilder.buildDegraded(session, frame, nowMs(), ex.getMessage())
+                    );
+                    return null;
+                });
             } catch (Exception broadcastEx) {
                 log.error(
                         "degraded_broadcast_failed sessionId={} seq={}",

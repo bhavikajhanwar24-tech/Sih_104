@@ -123,6 +123,43 @@ class StageAResult:
         return out
 
 
+def _score_active_rules(
+    text: str, lexicon: Optional[TenantLexicon]
+) -> list[str]:
+    """Strict Stage-A hint: only strong phrase / multi-token overlap with firesWhen."""
+    if not lexicon or not lexicon.rules or not (text or "").strip():
+        return []
+    raw_lower = unicodedata.normalize("NFKC", text or "").lower()
+    tokens = set(
+        _norm(t) for t in re.findall(r"[\w\u0900-\u097f]+", text or "") if len(_norm(t)) >= 4
+    )
+    hit_ids: list[str] = []
+    strong_anchors = (
+        "password", "otp", "pin", "cvv", "passcode", "callback", "call back",
+        "wire transfer", "account number", "share the otp", "don't tell anyone",
+    )
+    for r in lexicon.rules:
+        rid = r.get("ruleId") or r.get("id")
+        if not rid:
+            continue
+        fires = str(r.get("firesWhen") or r.get("plainEnglish") or r.get("title") or "").lower()
+        if not fires.strip():
+            continue
+        phrases = [p.strip() for p in re.split(r"[;.|]", fires) if len(p.strip()) >= 12]
+        phrase_hit = any(p in raw_lower for p in phrases[:4])
+        fire_toks = {
+            _norm(t)
+            for t in re.findall(r"[\w\u0900-\u097f]+", fires)
+            if len(_norm(t)) >= 5
+        }
+        overlap = tokens & fire_toks
+        anchor_hit = any(a in raw_lower and a in fires for a in strong_anchors)
+        # Strict: phrase hit, OR strong anchor in both, OR ≥3 significant token overlap.
+        if phrase_hit or anchor_hit or len(overlap) >= 3:
+            hit_ids.append(str(rid))
+    return hit_ids[:16]
+
+
 def _score_tenant_keywords(
     text: str, lexicon: Optional[TenantLexicon]
 ) -> tuple[dict[str, float], list[str], list[str]]:
@@ -216,12 +253,16 @@ def run_stage_a(
         logger.exception("stage_a_base_lexicon_failed")
 
     cats, matched_ids, matched_terms = _score_tenant_keywords(text, lexicon)
+    # ACTIVE rules vs transcript (keywords optional — rule text is enough).
+    for rid in _score_active_rules(text, lexicon):
+        if rid not in matched_ids:
+            matched_ids.append(rid)
     # Merge base scores into categories
     cats["URGENCY"] = max(cats["URGENCY"], result.urgency, result.emotional_coercion * 0.7)
     cats["SECRECY"] = max(cats["SECRECY"], result.secrecy)
     cats["AUTHORITY"] = max(cats["AUTHORITY"], result.authority)
     result.categories = cats
-    result.matched_rule_ids = matched_ids
+    result.matched_rule_ids = matched_ids[:16]
     result.matched_keywords = matched_terms
 
     # Sync continuous scores from categories when tenant lexicon fires harder

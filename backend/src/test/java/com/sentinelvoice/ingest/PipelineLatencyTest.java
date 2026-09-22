@@ -140,6 +140,7 @@ class PipelineLatencyTest {
 
         ingest = new FeatureFrameIngestService(
                 sessions,
+                mock(com.sentinelvoice.telephony.CallSessionRepository.class),
                 properties,
                 fusion,
                 ladder,
@@ -156,9 +157,11 @@ class PipelineLatencyTest {
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
+                mock(com.sentinelvoice.explain.SessionExplainRecorder.class),
                 meters,
                 clock
         );
+        ingest.setPipelineExecutor(Runnable::run);
     }
 
     private static CrossChannelCorrelationService mockCrossChannel() {

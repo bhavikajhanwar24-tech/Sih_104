@@ -20,6 +20,85 @@ _TTL_S = 60.0
 _FAIL_TTL_S = 5.0  # don't stick an empty lexicon for a full minute after a timeout
 _last_fail_at: dict[str, float] = {}
 
+# Always seed these when ACTIVE rules exist — Stage A must not depend on a tiny
+# policy_keywords table to wake the LLM / show UI hits.
+_SEED_TERMS = (
+    ("password", "CREDENTIAL"),
+    ("otp", "CREDENTIAL"),
+    ("pin", "CREDENTIAL"),
+    ("cvv", "CREDENTIAL"),
+    ("passcode", "CREDENTIAL"),
+    ("secret", "SECRECY"),
+    ("callback", "AUTHORITY"),
+    ("call back", "AUTHORITY"),
+    ("transfer", "PAYMENT"),
+    ("wire", "PAYMENT"),
+    ("urgent", "URGENCY"),
+    ("immediately", "URGENCY"),
+    ("verify", "AUTHORITY"),
+    ("account number", "PAYMENT"),
+    ("share", "CREDENTIAL"),
+    ("don't tell", "SECRECY"),
+    ("do not tell", "SECRECY"),
+)
+
+_STOP = frozenset(
+    {
+        "the", "and", "or", "a", "an", "to", "of", "in", "on", "for", "is", "are",
+        "be", "when", "must", "never", "not", "with", "from", "that", "this", "call",
+        "caller", "agent", "employee", "should", "shall", "will", "may", "if", "then",
+        "rule", "policy", "level", "active", "does", "doesn", "don", "any", "all",
+    }
+)
+
+
+def _norm_term(term: str) -> str:
+    return "".join(ch for ch in (term or "").lower() if ch.isalnum() or ch.isspace()).strip()
+
+
+def _seed_keywords_from_rules(
+    keywords: list[dict[str, Any]], rules: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Derive Stage-A keywords from ACTIVE rule text so paraphrases still hit."""
+    out = list(keywords)
+    seen = {_norm_term(str(k.get("term") or k.get("keyword") or "")) for k in out}
+    seen.discard("")
+
+    def _add(term: str, category: str, rule_id: Any) -> None:
+        t = (term or "").strip()
+        key = _norm_term(t)
+        if not key or key in seen or len(key) < 3:
+            return
+        seen.add(key)
+        row: dict[str, Any] = {
+            "term": t,
+            "category": category,
+            "weight": 0.45,
+        }
+        if rule_id:
+            row["sourceRuleId"] = str(rule_id)
+        out.append(row)
+
+    if rules:
+        for term, cat in _SEED_TERMS:
+            _add(term, cat, None)
+        for r in rules:
+            rid = r.get("ruleId") or r.get("id")
+            blob = " ".join(
+                str(r.get(k) or "")
+                for k in ("title", "firesWhen", "plainEnglish", "doesNotFireWhen")
+            ).lower()
+            for term, cat in _SEED_TERMS:
+                if term in blob:
+                    _add(term, cat, rid)
+            # Significant tokens from firesWhen (≥5 chars) become soft keywords.
+            fires = str(r.get("firesWhen") or r.get("plainEnglish") or "")
+            for tok in fires.replace("/", " ").replace("-", " ").split():
+                clean = "".join(ch for ch in tok.lower() if ch.isalnum())
+                if len(clean) >= 5 and clean not in _STOP:
+                    _add(clean, "CUSTOM", rid)
+    return out[:120]
+
 
 def invalidate(tenant_id: str | None = None) -> None:
     if tenant_id is None:
@@ -107,6 +186,7 @@ def get_lexicon(tenant_id: str | None) -> TenantLexicon:
 
     keywords = list(data.get("keywords") or [])
     rules = list(data.get("rules") or [])[:24]
+    keywords = _seed_keywords_from_rules(keywords, rules)
     lex = TenantLexicon(
         tenant_id=tenant_id,
         policy_set_id=str(data["policySetId"]) if data.get("policySetId") else None,

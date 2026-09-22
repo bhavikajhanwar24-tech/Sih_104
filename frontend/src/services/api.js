@@ -178,10 +178,12 @@ export async function apiFetch(input, init = {}) {
     if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
       const timedOut =
         err.name === 'TimeoutError' || String(err.message || '').includes('timed out');
-      throw Object.assign(new Error(timedOut ? 'Request timed out' : 'Request aborted'), {
+      const out = Object.assign(new Error(timedOut ? 'Request timed out' : 'Request aborted'), {
         code: timedOut ? 'timeout' : 'aborted',
         status: 0,
       });
+      // Never toast client-side aborts — callers that care will handle.
+      throw out;
     }
     throw err;
   }

@@ -34,7 +34,8 @@ public record LinguisticFamily(
         List<String> matchedRuleIds,
         List<String> matchedKeywords,
         Boolean injectionAttempt,
-        Boolean llmPending
+        Boolean llmPending,
+        String llmThinking
 ) {
     /** Back-compat when only pre-F11 fields are present. */
     public LinguisticFamily(
@@ -54,7 +55,7 @@ public record LinguisticFamily(
         this(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
-                redactedSnippet, null, null, null, null, null, null, null, null, null
+                redactedSnippet, null, null, null, null, null, null, null, null, null, null
         );
     }
 
@@ -77,7 +78,7 @@ public record LinguisticFamily(
         this(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
-                redactedSnippet, redactedDelta, null, null, null, null, null, null, null, null
+                redactedSnippet, redactedDelta, null, null, null, null, null, null, null, null, null
         );
     }
 
@@ -108,7 +109,39 @@ public record LinguisticFamily(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
                 redactedSnippet, redactedDelta, source, observedAt, confidence,
-                categories, matchedRuleIds, null, injectionAttempt, llmPending
+                categories, matchedRuleIds, null, injectionAttempt, llmPending, null
+        );
+    }
+
+    /** Back-compat before llmThinking. */
+    public LinguisticFamily(
+            boolean available,
+            Long ageMs,
+            String language,
+            Double urgency,
+            Double secrecy,
+            Double authorityInvocation,
+            Double emotionalCoercion,
+            Boolean askDetected,
+            Ask ask,
+            String claimedIdentity,
+            String claimedRole,
+            String redactedSnippet,
+            String redactedDelta,
+            String source,
+            Long observedAt,
+            Double confidence,
+            Map<String, Double> categories,
+            List<String> matchedRuleIds,
+            List<String> matchedKeywords,
+            Boolean injectionAttempt,
+            Boolean llmPending
+    ) {
+        this(
+                available, ageMs, language, urgency, secrecy, authorityInvocation,
+                emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
+                redactedSnippet, redactedDelta, source, observedAt, confidence,
+                categories, matchedRuleIds, matchedKeywords, injectionAttempt, llmPending, null
         );
     }
 

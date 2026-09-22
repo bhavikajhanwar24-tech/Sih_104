@@ -290,6 +290,9 @@ public class SessionExplainRecorder {
         if (linguistic.matchedKeywords() != null && !linguistic.matchedKeywords().isEmpty()) {
             categories.put("matchedKeywords", linguistic.matchedKeywords());
         }
+        if (linguistic.llmThinking() != null && !linguistic.llmThinking().isBlank()) {
+            categories.put("llmThinking", linguistic.llmThinking().trim());
+        }
         if (Boolean.TRUE.equals(linguistic.injectionAttempt())) {
             categories.put("injectionAttempt", true);
         }

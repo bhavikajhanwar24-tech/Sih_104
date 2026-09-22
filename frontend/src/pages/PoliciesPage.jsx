@@ -1908,7 +1908,10 @@ function LiveRulesTab({ canWrite, engineStatus, onEngineReload, onEngineStatus }
         onEngineStatusRef.current?.(d.engine);
       }
     } catch (err) {
-      push(err.message || 'Failed to load live rules');
+      // Quiet on timeout — live-rules against remote DB can exceed the client abort.
+      if (err?.code !== 'timeout' && !/timed out/i.test(String(err?.message || ''))) {
+        push(err.message || 'Failed to load live rules');
+      }
       setData(null);
     } finally {
       setLoading(false);

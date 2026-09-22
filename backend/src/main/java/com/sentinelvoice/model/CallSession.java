@@ -67,6 +67,10 @@ public class CallSession {
     private volatile Double lastLinguisticConfidence;
     /** Spoken ACTIVE lexicon terms that matched (not a transcript). */
     private volatile List<String> lastMatchedKeywords = List.of();
+    /** Latest Stage B / LLM rationale for operators (Live Calls). */
+    private volatile String lastLlmThinking;
+    /** Lab: short redacted ASR rolling transcript for Live Calls More info. */
+    private volatile String lastAsrTranscript;
     /** ACTIVE policy rule ids that RuleEngine / keyword path marked broken. */
     private volatile List<String> lastBrokenRuleIds = List.of();
     private volatile List<String> lastBrokenRuleTitles = List.of();
@@ -322,6 +326,14 @@ public class CallSession {
         return lastMatchedKeywords == null ? List.of() : lastMatchedKeywords;
     }
 
+    public String getLastLlmThinking() {
+        return lastLlmThinking;
+    }
+
+    public String getLastAsrTranscript() {
+        return lastAsrTranscript;
+    }
+
     public List<String> getLastBrokenRuleIds() {
         return lastBrokenRuleIds == null ? List.of() : lastBrokenRuleIds;
     }
@@ -340,6 +352,13 @@ public class CallSession {
         this.lastLinguisticConfidence = ling.confidence();
         if (ling.matchedKeywords() != null && !ling.matchedKeywords().isEmpty()) {
             this.lastMatchedKeywords = List.copyOf(ling.matchedKeywords());
+        }
+        if (ling.llmThinking() != null && !ling.llmThinking().isBlank()) {
+            this.lastLlmThinking = ling.llmThinking().trim();
+        }
+        if (ling.redactedSnippet() != null && !ling.redactedSnippet().isBlank()) {
+            String snip = ling.redactedSnippet().trim();
+            this.lastAsrTranscript = snip.length() > 400 ? snip.substring(snip.length() - 400) : snip;
         }
     }
 

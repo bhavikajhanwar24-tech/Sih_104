@@ -435,12 +435,27 @@ def _transcribe_sync(
 ) -> AsrTickResult:
     """Blocking Whisper call — must run in a worker thread, never on the event loop."""
     audio = np.asarray(samples, dtype=np.float32).reshape(-1)
+    gain = float(getattr(settings, "asr_pcm_gain", 1.0) or 1.0)
+    if gain != 1.0 and audio.size:
+        audio = np.clip(audio * gain, -1.0, 1.0)
     ratio = float(speech_ratio(audio)) if audio.size else 0.0
+    rms = (
+        float(np.sqrt(np.mean(np.square(audio, dtype=np.float32))))
+        if audio.size
+        else 0.0
+    )
     t0 = time.perf_counter()
 
-    if ratio <= settings.asr_vad_speech_ratio_min:
+    rms_min = float(getattr(settings, "asr_vad_rms_min", 0.006) or 0.006)
+    if ratio <= settings.asr_vad_speech_ratio_min and rms < rms_min:
         ms = (time.perf_counter() - t0) * 1000.0
         state.last_latency_ms = ms
+        logger.debug(
+            "asr_vad_gate session_id=%s ratio=%.3f rms=%.5f",
+            state.session_id,
+            ratio,
+            rms,
+        )
         return AsrTickResult(
             available=False,
             delta_redacted="",
@@ -492,10 +507,15 @@ def _transcribe_sync(
         segments_iter, info = _model.transcribe(
             audio,
             language=force_lang,  # None = auto; en preferred for keyword lexicon
-            condition_on_previous_text=True,
+            condition_on_previous_text=False,
             word_timestamps=True,
-            vad_filter=False,  # we gate on our own VAD speech_ratio
+            vad_filter=False,  # we gate on our own VAD speech_ratio / RMS
             initial_prompt=prompt or None,
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            no_speech_threshold=0.4,
+            compression_ratio_threshold=2.8,
         )
         segments = list(segments_iter)
     except Exception as exc:
@@ -598,6 +618,16 @@ def _transcribe_sync(
             settings.asr_latency_budget_ms,
             _model_size,
         )
+    elif not snippet and ratio >= 0.2:
+        logger.info(
+            "asr_empty session_id=%s latency_ms=%.1f speech_ratio=%.2f rms=%.5f "
+            "raw_seg_chars=%d",
+            state.session_id,
+            ms,
+            ratio,
+            rms,
+            len(window_raw or ""),
+        )
     else:
         logger.info(
             "asr_tick session_id=%s latency_ms=%.1f speech_ratio=%.2f lang=%s "
@@ -669,11 +699,12 @@ def linguistic_from_state(
         language=state.last_language_label or "und",
         age_ms=age_ms,
     )
-    if stage_b_overlay and stage_b_overlay.get("available"):
-        # Prefer merged Stage B when fresher — keep Stage A keyword hits.
+    if stage_b_overlay:
+        # Prefer Stage B judgment whenever present (don't require available=True only).
         merged = dict(stage_b_overlay)
         merged["ageMs"] = age_ms
         merged["language"] = state.last_language_label or merged.get("language") or "und"
+        merged["available"] = True if merged.get("available") is not False else True
         mk = list(merged.get("matchedKeywords") or [])
         for t in stage_a.matched_keywords:
             if t not in mk:
@@ -686,9 +717,35 @@ def linguistic_from_state(
         merged["matchedRuleIds"] = mr[:16]
         cats = dict(merged.get("categories") or {})
         for k, v in (stage_a.categories or {}).items():
-            cats[k] = max(float(cats.get(k) or 0.0), float(v or 0.0))
-        merged["categories"] = cats
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                cats[k] = max(float(cats.get(k) or 0.0), float(v or 0.0))
+        merged["categories"] = {
+            str(k): float(v)
+            for k, v in cats.items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+        # Preserve prior thinking if overlay briefly lacks it.
+        if not merged.get("llmThinking") and ling.get("llmThinking"):
+            merged["llmThinking"] = ling["llmThinking"]
         ling = merged
     ling["llmPending"] = bool(llm_pending)
+    if llm_pending:
+        ling["llmThinking"] = (
+            ling.get("llmThinking")
+            or "LLM judging ACTIVE rules against the latest transcript…"
+        )
+    elif not ling.get("llmThinking"):
+        mk = list(ling.get("matchedKeywords") or [])
+        mr = list(ling.get("matchedRuleIds") or [])
+        if mk or mr:
+            bits = []
+            if mk:
+                bits.append("keywords " + ", ".join(mk[:6]))
+            if mr:
+                bits.append("rules " + ", ".join(mr[:6]))
+            ling["llmThinking"] = "Stage A hit: " + "; ".join(bits)
+    # Lab: surface what ASR heard (redacted) so operators can see keyword/LLM gaps.
+    if settings.lab_mode and raw.strip():
+        ling["redactedSnippet"] = redact(raw)[-settings.asr_snippet_chars :]
     return strip_transcript_fields(ling)
 
