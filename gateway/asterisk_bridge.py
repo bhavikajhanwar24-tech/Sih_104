@@ -77,13 +77,24 @@ SERVICE_TOKEN = (
 _sid_tenant: dict[str, str] = {}
 
 
-def _service_headers(extra: Optional[dict[str, str]] = None) -> dict[str, str]:
+def _service_headers(
+    extra: Optional[dict[str, str]] = None,
+    *,
+    tenant_id: Optional[str] = None,
+) -> dict[str, str]:
     headers: dict[str, str] = {}
     if SERVICE_TOKEN:
         headers["X-ML-Service-Token"] = SERVICE_TOKEN
+    tid = tenant_id or None
+    if tid:
+        headers["X-Tenant-Id"] = tid
     if extra:
         headers.update(extra)
     return headers
+
+
+def _tenant_for(sid: str) -> Optional[str]:
+    return _sid_tenant.get(sid) or DEFAULT_TENANT_ID or None
 
 
 ENABLE_ARI_SNOOP = os.environ.get("AUDIOSOCKET_ARI_SNOOP", "1") not in {
@@ -141,10 +152,14 @@ class MlEngineClient:
     def __init__(self, base_url: str, metrics: Metrics) -> None:
         self.base_url = base_url.rstrip("/")
         self.metrics = metrics
-        self._client = httpx.AsyncClient(timeout=2.0)
+        # Open must finish before AudioSocket audio is forwarded; keep headroom
+        # above cold lexicon/cache work without hanging the call forever.
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=2.0))
+        self._pcm_client = httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=1.0))
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        await self._pcm_client.aclose()
 
     async def open_session(self, sid: str) -> bool:
         # channelProfile=PSTN_NARROWBAND (query name on the FastAPI handler is `profile`)
@@ -200,7 +215,7 @@ class MlEngineClient:
         """Write float32 mono @ 16 kHz into the ml-engine ring buffer."""
         url = f"{self.base_url}/session/{sid}/pcm"
         try:
-            r = await self._client.post(
+            r = await self._pcm_client.post(
                 url,
                 content=pcm.astype(np.float32, copy=False).tobytes(),
                 headers=_service_headers({"Content-Type": "application/octet-stream"}),
@@ -239,7 +254,11 @@ class DecisionPlaneClient:
             "scenarioId": "pstn-narrowband",
         }
         try:
-            r = await self._client.post(url, json=body, headers=_service_headers())
+            r = await self._client.post(
+                url,
+                json=body,
+                headers=_service_headers(tenant_id=_tenant_for(sid)),
+            )
             if r.status_code == 200:
                 LOG.info("decision_session_open sid=%s profile=PSTN_NARROWBAND", sid)
                 return True
@@ -247,23 +266,18 @@ class DecisionPlaneClient:
             if r.status_code == 400 and "already exists" in (r.text or "").lower():
                 LOG.info("decision_session_exists sid=%s", sid)
                 return True
-            # F10 AGI already opened via /internal/v2/sessions/start — treat auth/exists as soft ok.
-            if r.status_code in (401, 403, 409):
-                LOG.info(
-                    "decision_session_open soft-ok status=%s sid=%s (AGI may own session)",
-                    r.status_code,
-                    sid,
-                )
+            if r.status_code == 409:
+                LOG.info("decision_session_exists sid=%s status=409", sid)
                 return True
             LOG.error(
-                "FAIL-OPEN: Decision Plane open returned %s ΓÇö gauge will not move sid=%s body=%s",
+                "FAIL-OPEN: Decision Plane open returned %s — gauge will not move sid=%s body=%s",
                 r.status_code,
                 sid,
                 (r.text or "")[:200],
             )
         except Exception:
             LOG.exception(
-                "FAIL-OPEN: Decision Plane unreachable on open ΓÇö call continues, no gauge sid=%s",
+                "FAIL-OPEN: Decision Plane unreachable on open — call continues, no gauge sid=%s",
                 sid,
             )
         return False
@@ -271,7 +285,9 @@ class DecisionPlaneClient:
     async def close_session(self, sid: str) -> None:
         url = f"{self.base_url}/api/v1/session/{sid}/close"
         try:
-            r = await self._client.post(url, headers=_service_headers())
+            r = await self._client.post(
+                url, headers=_service_headers(tenant_id=_tenant_for(sid))
+            )
             if r.status_code in (200, 404):
                 LOG.info("decision_session_close sid=%s status=%s", sid, r.status_code)
                 return
@@ -284,7 +300,9 @@ class DecisionPlaneClient:
         url = f"{self.base_url}/api/v1/actuation/{sid}/channel"
         body = {"channelId": channel_id, "role": role}
         try:
-            r = await self._client.post(url, json=body, headers=_service_headers())
+            r = await self._client.post(
+                url, json=body, headers=_service_headers(tenant_id=_tenant_for(sid))
+            )
             if r.status_code == 200:
                 LOG.info(
                     "decision_channel_bound sid=%s channel=%s role=%s",
@@ -432,9 +450,19 @@ async def handle_client(
             if ml_open:
                 ok = await ml.push_pcm(sid, pcm)
                 if not ok:
-                    ml_open = False  # stay fail-open; stop hammering a dead engine
+                    # One recovery attempt — open may have timed out while the
+                    # server still created the session (or engine briefly blipped).
+                    if await ml.open_session(sid):
+                        ml_open = True
+                        await ml.push_pcm(sid, pcm)
+                    else:
+                        ml_open = False
             else:
-                await metrics.bump_drop()
+                if await ml.open_session(sid):
+                    ml_open = True
+                    await ml.push_pcm(sid, pcm)
+                else:
+                    await metrics.bump_drop()
 
     finally:
         if sid and decision_open and decision is not None:

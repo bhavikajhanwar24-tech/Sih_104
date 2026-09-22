@@ -81,6 +81,8 @@ public class SecurityConfig {
                                 "/api/v2/auth/refresh",
                                 "/api/v2/auth/logout",
                                 "/internal/v2/**",
+                                "/api/v1/session/**",
+                                "/api/v1/actuation/**",
                                 "/ws/features",
                                 "/ws/features/**",
                                 "/actuator/health",
@@ -95,6 +97,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v2/auth/login", "/api/v2/auth/refresh", "/api/v2/auth/csrf", "/api/v2/auth/logout").permitAll()
                         .requestMatchers("/ws/features", "/ws/features/**").permitAll()
                         .requestMatchers("/internal/v2/**").hasRole("ML_SERVICE")
+                        .requestMatchers("/api/v1/session/**", "/api/v1/actuation/**").hasAnyRole("ML_SERVICE", "TENANT_ADMIN", "ANALYST", "AUDITOR", "POLICY_APPROVER")
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )

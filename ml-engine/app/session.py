@@ -22,6 +22,7 @@ class PipelineSession:
     emit_seq: int = 0
     cumulative_speech_ms: int = 0
     last_emitted_samples: int = -1
+    force_emit: bool = False
     created_at: float = field(default_factory=time.time)
     fast_path: FastPathState = field(init=False)
     asr_state: AsrSessionState = field(init=False)
@@ -91,6 +92,10 @@ class SessionRegistry:
     def active_count(self) -> int:
         with self._lock:
             return len(self._sessions)
+
+    def list_ids(self) -> list[str]:
+        with self._lock:
+            return list(self._sessions.keys())
 
     def active_count_for_tenant(self, tenant_id: str) -> int:
         with self._lock:

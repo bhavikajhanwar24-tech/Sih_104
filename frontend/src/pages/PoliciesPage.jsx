@@ -116,8 +116,7 @@ export function PoliciesPage() {
         tab === 'versions' ||
         tab === 'approvals' ||
         tab === 'keywords' ||
-        tab === 'simulate' ||
-        tab === 'live-rules'
+        tab === 'simulate'
       ) {
         tasks.push(
           Promise.all([
@@ -135,8 +134,9 @@ export function PoliciesPage() {
           }),
         );
       }
-      // Engine status only where it is shown — skip on pure document browsing.
-      if (tab === 'documents' || tab === 'rules' || tab === 'live-rules' || tab === 'versions') {
+      // Live Rules embeds engine status — skip the duplicate round-trip (and the
+      // sets/compilations fan-out above) so the tab does not time out on Supabase.
+      if (tab === 'documents' || tab === 'rules' || tab === 'versions') {
         tasks.push(
           apiJson('/api/v2/policy/engine/status', { skipErrorToast: true })
             .catch(() => null)
@@ -1899,7 +1899,10 @@ function LiveRulesTab({ canWrite, engineStatus, onEngineReload, onEngineStatus }
   const load = useCallback(async ({ soft = false } = {}) => {
     if (!soft) setLoading(true);
     try {
-      const d = await apiJson('/api/v2/policy/live-rules', { skipErrorToast: true });
+      const d = await apiJson('/api/v2/policy/live-rules', {
+        skipErrorToast: true,
+        timeoutMs: 45_000,
+      });
       setData(d);
       if (d?.engine) {
         onEngineStatusRef.current?.(d.engine);

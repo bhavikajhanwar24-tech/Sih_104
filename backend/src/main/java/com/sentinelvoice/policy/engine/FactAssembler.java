@@ -226,10 +226,50 @@ public class FactAssembler {
                         FactValue.of(true, source, 1.0, observed, false));
             }
         }
+        // Bridge ACTIVE keyword categories → catalogue facts so compiled if/else rules can fire.
+        Map<String, Double> cats = ling.categories();
+        if (cats != null) {
+            double cred = catScore(cats, "CREDENTIAL");
+            double pay = catScore(cats, "PAYMENT");
+            double urg = catScore(cats, "URGENCY");
+            double sec = catScore(cats, "SECRECY");
+            double auth = catScore(cats, "AUTHORITY");
+            if (cred >= 0.35) {
+                b.put("ask.sharesCredential", FactValue.of(true, source, Math.max(conf, cred), observed, true));
+                b.put("ask.sharesCredential.assertedByCaller",
+                        FactValue.of(true, source, 1.0, observed, false));
+                if (ask == null || ask.type() == null || ask.type().isBlank()) {
+                    putCallerAsserted(b, "ask.type", "OTP_SHARE", observed, Math.max(conf, cred), source);
+                }
+            }
+            if (pay >= 0.35 && (ask == null || ask.type() == null || ask.type().isBlank())) {
+                putCallerAsserted(b, "ask.type", "WIRE_TRANSFER", observed, Math.max(conf, pay), source);
+            }
+            if (urg >= 0.35 && ling.urgency() == null) {
+                b.put("ask.urgencyLevel", FactValue.of(urg, source, Math.max(conf, urg), observed, true));
+            }
+            if (sec >= 0.35 && ling.secrecy() == null) {
+                b.put("ask.secrecyRequested", FactValue.of(true, source, sec, observed, true));
+            }
+            if (auth >= 0.35 && ling.authorityInvocation() == null) {
+                b.put("ask.authorityClaimed", FactValue.of(true, source, auth, observed, true));
+            }
+        }
         String type = ask == null || ask.type() == null ? null : normalizeAskType(ask.type());
         if ("OTP_SHARE".equals(type) || "PIN_SHARE".equals(type) || "PASSWORD_RESET".equals(type)) {
             b.put("ask.sharesCredential", FactValue.of(true, source, conf, observed, true));
         }
+    }
+
+    private static double catScore(Map<String, Double> cats, String key) {
+        if (cats == null || key == null) {
+            return 0.0;
+        }
+        Double v = cats.get(key);
+        if (v == null) {
+            v = cats.get(key.toLowerCase(Locale.ROOT));
+        }
+        return v == null ? 0.0 : v;
     }
 
     private static void putCallerAsserted(

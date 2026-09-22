@@ -130,22 +130,24 @@ class SessionScheduler:
         written = session.ring_buffer.total_samples_written
         if written < needed:
             return None
-        # Skip when the ring has not advanced — re-emitting the same windowEndMs
-        # makes Java ageMs climb while the mic is paused.
+        # Skip when the ring has not advanced — unless a keyword hit forced a push
+        # so matchedKeywords reach Live Calls while PCM is briefly stalled.
         last_emitted = session.last_emitted_samples
-        if written == last_emitted:
+        if written == last_emitted and not session.force_emit:
             return None
         window = session.ring_buffer.read_window(settings.window_seconds, hop_offset_s=0.0)
         # DSP releases the GIL; keep the event loop free.
         frame = await asyncio.to_thread(build_feature_frame, session, window)
         session.last_emitted_samples = written
+        session.force_emit = False
         await self.emitter.emit(frame)
         logger.info(
-            "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s",
+            "feature_emit session_id=%s seq=%s fastPathMs=%.1f speechPresent=%s keywords=%s",
             session.session_id,
             frame.seq,
             frame.latencyMs.fastPath,
             frame.speechPresent,
+            (frame.linguistic.matchedKeywords if frame.linguistic else None) or [],
         )
         return frame
 

@@ -481,9 +481,17 @@ def _transcribe_sync(
         prompt = state._rolling_raw[-220:]
 
     try:
+        # Prefer English when configured — auto-detect on softphone often flips to zh/noise
+        # and empties the transcript, so ACTIVE keywords never match.
+        allowed = {
+            x.strip().lower()
+            for x in (settings.asr_languages or "en,hi").split(",")
+            if x.strip()
+        }
+        force_lang = "en" if "en" in allowed else (next(iter(allowed), None))
         segments_iter, info = _model.transcribe(
             audio,
-            language=None,  # auto-detect — required for Hinglish code-switch
+            language=force_lang,  # None = auto; en preferred for keyword lexicon
             condition_on_previous_text=True,
             word_timestamps=True,
             vad_filter=False,  # we gate on our own VAD speech_ratio
@@ -662,10 +670,24 @@ def linguistic_from_state(
         age_ms=age_ms,
     )
     if stage_b_overlay and stage_b_overlay.get("available"):
-        # Prefer merged Stage B when fresher
+        # Prefer merged Stage B when fresher — keep Stage A keyword hits.
         merged = dict(stage_b_overlay)
         merged["ageMs"] = age_ms
         merged["language"] = state.last_language_label or merged.get("language") or "und"
+        mk = list(merged.get("matchedKeywords") or [])
+        for t in stage_a.matched_keywords:
+            if t not in mk:
+                mk.append(t)
+        merged["matchedKeywords"] = mk[:16]
+        mr = list(merged.get("matchedRuleIds") or [])
+        for rid in stage_a.matched_rule_ids:
+            if rid not in mr:
+                mr.append(rid)
+        merged["matchedRuleIds"] = mr[:16]
+        cats = dict(merged.get("categories") or {})
+        for k, v in (stage_a.categories or {}).items():
+            cats[k] = max(float(cats.get(k) or 0.0), float(v or 0.0))
+        merged["categories"] = cats
         ling = merged
     ling["llmPending"] = bool(llm_pending)
     return strip_transcript_fields(ling)

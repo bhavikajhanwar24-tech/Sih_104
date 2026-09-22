@@ -528,6 +528,12 @@
           "items": { "type": "string" },
           "maxItems": 16
         },
+        "matchedKeywords": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 64 },
+          "maxItems": 16,
+          "description": "ACTIVE lexicon terms that matched spoken audio (not a transcript)."
+        },
         "injectionAttempt": {
           "type": "boolean",
           "description": "True when transcript contained instruction-like phrases aimed at an AI."

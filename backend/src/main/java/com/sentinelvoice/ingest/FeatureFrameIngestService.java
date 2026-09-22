@@ -380,6 +380,25 @@ public class FeatureFrameIngestService {
                 .map(RuleEvaluation.FiredRule::ruleId)
                 .filter(id -> id != null && !id.isBlank())
                 .toList();
+        List<String> firedTitles = policyEval.firedRules().stream()
+                .map(fr -> {
+                    if (fr.title() != null && !fr.title().isBlank()) {
+                        return fr.title();
+                    }
+                    return fr.ruleId() == null ? "" : fr.ruleId();
+                })
+                .filter(t -> t != null && !t.isBlank())
+                .toList();
+        // Also treat keyword-matched ACTIVE rule ids as broken-rule signals for the UI.
+        if (working.linguistic() != null && working.linguistic().matchedRuleIds() != null) {
+            java.util.LinkedHashSet<String> mergedIds = new java.util.LinkedHashSet<>(firedRuleIds);
+            mergedIds.addAll(working.linguistic().matchedRuleIds().stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .toList());
+            firedRuleIds = List.copyOf(mergedIds);
+        }
+        session.recordBrokenRules(firedRuleIds, firedTitles);
+
         String llmState = working.linguistic() != null && working.linguistic().available()
                 ? "AVAILABLE" : "MISSING";
         sessionExplainRecorder.onTick(

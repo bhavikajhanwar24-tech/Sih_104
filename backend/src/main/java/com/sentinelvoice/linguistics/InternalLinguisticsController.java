@@ -61,10 +61,58 @@ public class InternalLinguisticsController {
             }
             out.put("keywords", keywords);
             out.put("facts", compactFacts(facts));
-            out.put("nameTokens", directoryNameTokens(tenantId));
+            // ACTIVE runtime rules for Stage B LLM rule-break judgment (not keywords only).
+            List<Map<String, Object>> rules = List.of();
+            if (active != null && active.get("id") != null) {
+                UUID setId = toUuid(active.get("id"));
+                rules = compactRules(policySetRepository.listRuntimeRules(tenantId, setId));
+            }
+            out.put("rules", rules);
+            // Skip directory name scan on the hot lexicon path — remote DB made this ~5s+
+            // and caused ml-engine's 3s lexicon timeout → lexicon_kw=0 (no keyword hits).
+            out.put("nameTokens", List.of());
             out.put("languages", enabledLanguages(tenantId));
             return out;
         });
+    }
+
+    private List<Map<String, Object>> compactRules(List<Map<String, Object>> rules) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : rules) {
+            if (out.size() >= 24) {
+                break;
+            }
+            Object rid = r.get("ruleId");
+            if (rid == null || String.valueOf(rid).isBlank()) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("ruleId", String.valueOf(rid));
+            row.put("title", r.get("title") == null ? "" : String.valueOf(r.get("title")));
+            String fires = r.get("firesWhen") == null ? "" : String.valueOf(r.get("firesWhen"));
+            String plain = r.get("plainEnglish") == null ? "" : String.valueOf(r.get("plainEnglish"));
+            String doesNot = r.get("doesNotFireWhen") == null ? "" : String.valueOf(r.get("doesNotFireWhen"));
+            if (fires.length() > 320) {
+                fires = fires.substring(0, 320);
+            }
+            if (plain.length() > 320) {
+                plain = plain.substring(0, 320);
+            }
+            if (doesNot.length() > 240) {
+                doesNot = doesNot.substring(0, 240);
+            }
+            row.put("firesWhen", fires);
+            row.put("doesNotFireWhen", doesNot);
+            row.put("plainEnglish", plain);
+            Object then = r.get("then");
+            if (then instanceof Map<?, ?> m && m.get("minLevel") != null) {
+                row.put("minLevel", m.get("minLevel"));
+            } else if (r.get("minLevel") != null) {
+                row.put("minLevel", r.get("minLevel"));
+            }
+            out.add(row);
+        }
+        return out;
     }
 
     private List<String> enabledLanguages(UUID tenantId) {

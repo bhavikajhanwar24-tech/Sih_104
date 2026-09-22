@@ -382,6 +382,50 @@ export function LiveCallsPage() {
                   </p>
                 </div>
 
+                {selected.active ? (
+                  <div className="rounded border border-sv-border bg-sv-bg/60 px-3 py-2 text-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                      Keywords triggered
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {(Array.isArray(selected.matchedKeywords) ? selected.matchedKeywords : [])
+                        .length === 0 ? (
+                        <span className="text-xs text-sv-muted">None yet</span>
+                      ) : (
+                        selected.matchedKeywords.map((k) => (
+                          <Badge key={k} tone="warning">
+                            {k}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">
+                      Rules broken
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs text-sv-fg">
+                      {(
+                        (Array.isArray(selected.brokenRuleTitles) &&
+                        selected.brokenRuleTitles.length
+                          ? selected.brokenRuleTitles
+                          : Array.isArray(selected.brokenRuleIds)
+                            ? selected.brokenRuleIds
+                            : []) || []
+                      ).length === 0 ? (
+                        <li className="text-sv-muted">None yet</li>
+                      ) : (
+                        (selected.brokenRuleTitles?.length
+                          ? selected.brokenRuleTitles
+                          : selected.brokenRuleIds
+                        ).map((t) => (
+                          <li key={t} className="font-mono text-[11px]">
+                            {t}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                ) : null}
+
                 {showCallback ? (
                   <div className="rounded-md border border-amber-500/40 bg-amber-950/30 px-3 py-3">
                     <p className="text-sm font-semibold text-amber-200">

@@ -548,9 +548,10 @@ public class LiveRulesService {
         Map<String, Object> then = asMap(rule.get("then"));
         int minLevel = then.get("minLevel") instanceof Number n ? n.intValue() : 0;
         row.put("minLevel", minLevel);
-        String chunkText = loadCitedChunkText(tenantId, source);
+        // List view: band from stored quote only — loading every PDF chunk over remote
+        // Postgres was making GET /live-rules exceed the UI request timeout.
         String quote = source.get("quote") == null ? null : String.valueOf(source.get("quote"));
-        RuleValidator.LevelBand band = RuleValidator.levelBand(chunkText, quote);
+        RuleValidator.LevelBand band = RuleValidator.levelBand(null, quote);
         row.put("band", Map.of("floor", band.floor(), "cap", band.cap()));
         row.put("severity", severityFromLevel(minLevel));
         row.put("origin", rule.get("origin"));

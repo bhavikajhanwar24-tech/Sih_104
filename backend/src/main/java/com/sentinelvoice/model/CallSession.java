@@ -65,6 +65,11 @@ public class CallSession {
     private volatile Long lastLinguisticAgeMs;
     private volatile Boolean lastLinguisticPending;
     private volatile Double lastLinguisticConfidence;
+    /** Spoken ACTIVE lexicon terms that matched (not a transcript). */
+    private volatile List<String> lastMatchedKeywords = List.of();
+    /** ACTIVE policy rule ids that RuleEngine / keyword path marked broken. */
+    private volatile List<String> lastBrokenRuleIds = List.of();
+    private volatile List<String> lastBrokenRuleTitles = List.of();
 
     /** One evidence row retained on the Decision Plane (scores / enums / narratives only). */
     public record FiredReason(
@@ -135,6 +140,14 @@ public class CallSession {
         this.lastFrameAt = Instant.now();
         if (this.state == SessionState.INITIALISING) {
             this.state = SessionState.ACTIVE;
+        }
+        // Surface keywords/rule ids to Live Calls even when fusion/policy pipeline fails later.
+        if (frame != null && frame.linguistic() != null) {
+            recordLinguisticMeta(frame.linguistic());
+            if (frame.linguistic().matchedRuleIds() != null
+                    && !frame.linguistic().matchedRuleIds().isEmpty()) {
+                recordBrokenRules(frame.linguistic().matchedRuleIds(), List.of());
+            }
         }
     }
 
@@ -305,6 +318,18 @@ public class CallSession {
         return lastLinguisticConfidence;
     }
 
+    public List<String> getLastMatchedKeywords() {
+        return lastMatchedKeywords == null ? List.of() : lastMatchedKeywords;
+    }
+
+    public List<String> getLastBrokenRuleIds() {
+        return lastBrokenRuleIds == null ? List.of() : lastBrokenRuleIds;
+    }
+
+    public List<String> getLastBrokenRuleTitles() {
+        return lastBrokenRuleTitles == null ? List.of() : lastBrokenRuleTitles;
+    }
+
     public void recordLinguisticMeta(LinguisticFamily ling) {
         if (ling == null) {
             return;
@@ -313,5 +338,17 @@ public class CallSession {
         this.lastLinguisticAgeMs = ling.ageMs();
         this.lastLinguisticPending = ling.llmPending();
         this.lastLinguisticConfidence = ling.confidence();
+        if (ling.matchedKeywords() != null && !ling.matchedKeywords().isEmpty()) {
+            this.lastMatchedKeywords = List.copyOf(ling.matchedKeywords());
+        }
+    }
+
+    public void recordBrokenRules(List<String> ruleIds, List<String> titles) {
+        if (ruleIds != null && !ruleIds.isEmpty()) {
+            this.lastBrokenRuleIds = List.copyOf(ruleIds);
+        }
+        if (titles != null && !titles.isEmpty()) {
+            this.lastBrokenRuleTitles = List.copyOf(titles);
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.sentinelvoice.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.List;
 import java.util.Map;
 
@@ -7,8 +9,10 @@ import java.util.Map;
  * Frozen FeatureFrame.linguistic block (F11).
  *
  * <p>Live sessions must not carry transcript text ({@code redactedSnippet}/{@code redactedDelta}
- * empty). Structured extraction is numbers/enums only.
+ * empty). Structured extraction is numbers/enums only — plus matched keyword terms from the
+ * ACTIVE tenant lexicon (not a transcript).
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record LinguisticFamily(
         boolean available,
         Long ageMs,
@@ -28,6 +32,7 @@ public record LinguisticFamily(
         Double confidence,
         Map<String, Double> categories,
         List<String> matchedRuleIds,
+        List<String> matchedKeywords,
         Boolean injectionAttempt,
         Boolean llmPending
 ) {
@@ -49,7 +54,7 @@ public record LinguisticFamily(
         this(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
-                redactedSnippet, null, null, null, null, null, null, null, null
+                redactedSnippet, null, null, null, null, null, null, null, null, null
         );
     }
 
@@ -72,7 +77,38 @@ public record LinguisticFamily(
         this(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
-                redactedSnippet, redactedDelta, null, null, null, null, null, null, null
+                redactedSnippet, redactedDelta, null, null, null, null, null, null, null, null
+        );
+    }
+
+    /** Back-compat before matchedKeywords (F12 keyword UI). */
+    public LinguisticFamily(
+            boolean available,
+            Long ageMs,
+            String language,
+            Double urgency,
+            Double secrecy,
+            Double authorityInvocation,
+            Double emotionalCoercion,
+            Boolean askDetected,
+            Ask ask,
+            String claimedIdentity,
+            String claimedRole,
+            String redactedSnippet,
+            String redactedDelta,
+            String source,
+            Long observedAt,
+            Double confidence,
+            Map<String, Double> categories,
+            List<String> matchedRuleIds,
+            Boolean injectionAttempt,
+            Boolean llmPending
+    ) {
+        this(
+                available, ageMs, language, urgency, secrecy, authorityInvocation,
+                emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
+                redactedSnippet, redactedDelta, source, observedAt, confidence,
+                categories, matchedRuleIds, null, injectionAttempt, llmPending
         );
     }
 

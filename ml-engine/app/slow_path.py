@@ -114,6 +114,27 @@ class SlowPathRunner:
         overlay = stage_b_runner.latest(session.session_id)
         pending = stage_b_runner.pending(session.session_id)
 
+        if stage_a is not None and (stage_a.matched_keywords or stage_a.matched_rule_ids):
+            logger.info(
+                "keyword_hit session_id=%s terms=%s rules=%s raw_chars=%s lexicon_kw=%s",
+                session.session_id,
+                stage_a.matched_keywords[:8],
+                stage_a.matched_rule_ids[:8],
+                len(raw),
+                len(lexicon.keywords) if lexicon else 0,
+            )
+            # Push a FeatureFrame even if the PCM ring has not advanced — otherwise
+            # keyword hits never reach Live Calls when AudioSocket stalls.
+            session.force_emit = True
+        elif raw.strip():
+            logger.info(
+                "stage_a_no_keyword_hit session_id=%s raw_chars=%s lexicon_kw=%s sample=%r",
+                session.session_id,
+                len(raw),
+                len(lexicon.keywords) if lexicon else 0,
+                (raw[:80] + "…") if len(raw) > 80 else raw,
+            )
+
         if result.available or session.asr_state._rolling_raw.strip():
             session.slow_path_linguistic = asr_mod.linguistic_from_state(
                 session.asr_state,
@@ -130,18 +151,21 @@ class SlowPathRunner:
                     llm_pending=pending,
                 )
 
-        # Stage B trigger: utterance end (VAD silence >= 600ms) OR Stage A ambiguous/high-risk
+        # Stage B judges ACTIVE rules via LLM (paraphrases). Still run when keywords
+        # already hit so semantic rule breaks are not skipped.
         silence_end = False
         last_speech = self._last_speech_mono.get(session.session_id)
         if last_speech is not None and (time.monotonic() - last_speech) >= 0.6:
             if result.skipped_reason == "vad_gate" or not result.available:
                 silence_end = True
 
-        if stage_a is not None and raw.strip():
+        already_hit = bool(stage_a and (stage_a.matched_keywords or stage_a.matched_rule_ids))
+        has_rules = bool(lexicon and getattr(lexicon, "rules", None))
+        if stage_a is not None and raw.strip() and (has_rules or not already_hit):
             try:
                 from app.llm_gateway.gateway import gateway as llm_gateway
 
-                force = silence_end
+                force = silence_end or already_hit
                 stage_b_runner.maybe_schedule(
                     session.session_id,
                     raw,
@@ -152,6 +176,11 @@ class SlowPathRunner:
                 )
             except Exception:
                 logger.debug("stage_b_schedule_failed", exc_info=True)
+
+        # Push frames when keywords OR LLM-matched rules are present on the linguistic overlay.
+        ling_now = session.slow_path_linguistic or {}
+        if ling_now.get("matchedKeywords") or ling_now.get("matchedRuleIds"):
+            session.force_emit = True
 
         logger.info(
             "slow_path_tick session_id=%s latency_ms=%.1f available=%s "

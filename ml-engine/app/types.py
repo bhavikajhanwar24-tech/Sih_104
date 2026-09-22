@@ -100,6 +100,7 @@ class LinguisticFamily(BaseModel):
     ask: Optional[Ask] = None
     categories: Optional[dict[str, float]] = None
     matchedRuleIds: Optional[list[str]] = None
+    matchedKeywords: Optional[list[str]] = None
     injectionAttempt: Optional[bool] = None
     llmPending: Optional[bool] = None
     claimedIdentity: Optional[str] = None

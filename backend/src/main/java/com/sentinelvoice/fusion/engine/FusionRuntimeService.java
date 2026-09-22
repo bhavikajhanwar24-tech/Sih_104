@@ -8,6 +8,7 @@ import com.sentinelvoice.fusion.FusionResult;
 import com.sentinelvoice.fusion.config.ActiveFusionConfigCache;
 import com.sentinelvoice.fusion.config.FusionConfigDocument;
 import com.sentinelvoice.intervention.InterventionDecision;
+import com.sentinelvoice.model.Ask;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.FeatureFrame;
@@ -15,6 +16,8 @@ import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.model.LinguisticFamily;
 import com.sentinelvoice.model.TelemetryEntry;
 import com.sentinelvoice.policy.engine.RuleEvaluation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -29,6 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class FusionRuntimeService {
+
+    private static final Logger log = LoggerFactory.getLogger(FusionRuntimeService.class);
 
     private final ConcurrentHashMap<String, FusionTickState> states = new ConcurrentHashMap<>();
     private final ActiveFusionConfigCache fusionConfigCache;
@@ -178,7 +183,25 @@ public class FusionRuntimeService {
         if (session.getFusionConfigSnapshot() != null) {
             return session.getFusionConfigSnapshot();
         }
-        return fusionConfigCache.requireDocument(session.getTenantId());
+        var cached = fusionConfigCache.get(session.getTenantId());
+        if (cached.isPresent()) {
+            FusionConfigDocument doc = cached.get().document();
+            session.setFusionConfigSnapshot(doc);
+            session.setFusionConfigVersion(cached.get().version());
+            return doc;
+        }
+        // Tenant missing ACTIVE fusion_configs — fail-open so keyword/rule UI still works.
+        log.warn(
+                "fusion_config_fallback tenantId={} sessionId={} using=platformDefault",
+                session.getTenantId(),
+                session.getSessionId()
+        );
+        FusionConfigDocument fallback = FusionConfigDocument.platformDefault();
+        session.setFusionConfigSnapshot(fallback);
+        if (session.getFusionConfigVersion() == null) {
+            session.setFusionConfigVersion(0);
+        }
+        return fallback;
     }
 
     public Integer resolveFusionVersion(CallSession session) {
@@ -339,6 +362,21 @@ public class FusionRuntimeService {
         }
         if (linguistic.emotionalCoercion() != null) {
             max = Math.max(max, linguistic.emotionalCoercion());
+        }
+        // ACTIVE PDF keyword categories (CREDENTIAL / PAYMENT / …) must move the gauge.
+        if (linguistic.categories() != null) {
+            for (Object raw : linguistic.categories().values()) {
+                if (raw instanceof Number n) {
+                    max = Math.max(max, n.doubleValue());
+                }
+            }
+        }
+        Ask ask = linguistic.ask();
+        if (ask != null && Boolean.TRUE.equals(ask.sharesCredential())) {
+            max = Math.max(max, 0.7);
+        }
+        if (Boolean.TRUE.equals(linguistic.injectionAttempt())) {
+            max = Math.max(max, 0.85);
         }
         return Math.max(0.0, Math.min(1.0, max));
     }

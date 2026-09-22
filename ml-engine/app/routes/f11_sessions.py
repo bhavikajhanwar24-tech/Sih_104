@@ -56,5 +56,20 @@ async def linguistic_stats(
         "ageMs": ling.get("ageMs"),
         "confidence": ling.get("confidence"),
         "injectionAttempt": ling.get("injectionAttempt"),
+        "matchedKeywords": ling.get("matchedKeywords") or [],
+        "matchedRuleIds": ling.get("matchedRuleIds") or [],
+        "categories": ling.get("categories") or {},
+        "ask": ling.get("ask"),
+        "tenantId": getattr(session, "tenant_id", None) if session else None,
+        "lexiconKeywordCount": (
+            len(__import__("app.modules.tenant_lexicon", fromlist=["get_lexicon"]).get_lexicon(
+                getattr(session, "tenant_id", None)
+            ).keywords)
+            if session
+            else 0
+        ),
+        "rollingRawChars": len(getattr(getattr(session, "asr_state", None), "_rolling_raw", "") or "")
+        if session
+        else 0,
         "llm": stats,
     }

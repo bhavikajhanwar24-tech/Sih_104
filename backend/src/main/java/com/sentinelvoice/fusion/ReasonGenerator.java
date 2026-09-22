@@ -29,6 +29,7 @@ public class ReasonGenerator {
     private static final double DOUBLE_COMPRESSION_MIN = 0.55;
     private static final double VOICE_DRIFT_MIN = 0.15;
     private static final double URGENCY_FLAG_MIN = 0.70;
+    private static final double CATEGORY_REASON_MIN = 0.35;
     private static final double RIR_PLAUSIBLE_MIN_T60_MS = 30.0;
     private static final int HIERARCHY_ANOMALY_MIN_DISTANCE = 3;
     private static final int TOP_N = 8;
@@ -264,22 +265,186 @@ public class ReasonGenerator {
         if (linguistic == null || !linguistic.available()) {
             return;
         }
+        // Dedup keys so scalar + category paths don't double-emit the same code.
+        java.util.HashSet<String> emitted = new java.util.HashSet<>();
+
         if (linguistic.secrecy() != null && linguistic.secrecy() > thresholds.secrecy()) {
+            emitted.add("SECRECY_REQUESTED");
             out.add(cand(ReasonCode.SECRECY_REQUESTED, templates.detail(
                     ReasonCode.SECRECY_REQUESTED, loc, fmt(linguistic.secrecy()), fmt(thresholds.secrecy())
             ), linguistic.secrecy()));
         }
         if (linguistic.urgency() != null && linguistic.urgency() >= URGENCY_FLAG_MIN) {
+            emitted.add("URGENCY");
             out.add(cand(ReasonCode.URGENCY, templates.detail(
                     ReasonCode.URGENCY, loc, fmt(linguistic.urgency()), fmt(URGENCY_FLAG_MIN)
             ), linguistic.urgency()));
         }
         if (linguistic.authorityInvocation() != null && linguistic.authorityInvocation() > thresholds.authority()) {
+            emitted.add("AUTHORITY_INVOCATION");
             out.add(cand(ReasonCode.AUTHORITY_INVOCATION, templates.detail(
                     ReasonCode.AUTHORITY_INVOCATION, loc,
                     fmt(linguistic.authorityInvocation()), fmt(thresholds.authority())
             ), linguistic.authorityInvocation()));
         }
+
+        // Generalized: EVERY elevated category from ACTIVE PDF keywords / Stage A / Stage B.
+        // Categories are produced at compile-time (LLM + KeywordExtractor) from user rules —
+        // runtime only maps those scores onto typed ReasonCodes (i18n templates).
+        Ask ask = linguistic.ask();
+        if (ask != null && Boolean.TRUE.equals(ask.sharesCredential())) {
+            emitCategoryReason(out, emitted, loc, "CREDENTIAL", 0.7, linguistic, ask);
+        }
+        if (linguistic.categories() != null) {
+            for (Map.Entry<String, Double> e : linguistic.categories().entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) {
+                    continue;
+                }
+                // Skip non-score bookkeeping keys persisted into categories JSON.
+                String rawKey = e.getKey().trim();
+                if ("matchedRuleIds".equalsIgnoreCase(rawKey) || "injectionAttempt".equalsIgnoreCase(rawKey)
+                        || "claimedRole".equalsIgnoreCase(rawKey)) {
+                    continue;
+                }
+                double score = e.getValue();
+                if (score < CATEGORY_REASON_MIN) {
+                    continue;
+                }
+                emitCategoryReason(out, emitted, loc, rawKey, score, linguistic, ask);
+            }
+        }
+
+        // Generalized: each ACTIVE rule id matched via keyword harvest → POLICY_RULE_FIRED citation.
+        if (linguistic.matchedRuleIds() != null) {
+            for (String rid : linguistic.matchedRuleIds()) {
+                if (rid == null || rid.isBlank()) {
+                    continue;
+                }
+                String dedupe = "POLICY_RULE_FIRED|" + rid;
+                if (!emitted.add(dedupe)) {
+                    continue;
+                }
+                String quote = rid.length() > 200 ? rid.substring(0, 197) + "..." : rid;
+                out.add(new Candidate(
+                        ReasonCode.POLICY_RULE_FIRED,
+                        templates.detail(ReasonCode.POLICY_RULE_FIRED, loc, rid, "ACTIVE keyword", quote),
+                        0.6,
+                        rid,
+                        null,
+                        Map.of("title", "ACTIVE keyword / rule match", "quote", quote),
+                        Map.of("matchedRuleId", rid, "source", "tenant_lexicon")
+                ));
+            }
+        }
+
+        if (Boolean.TRUE.equals(linguistic.injectionAttempt())) {
+            out.add(cand(ReasonCode.PROMPT_INJECTION_ATTEMPT,
+                    templates.detail(ReasonCode.PROMPT_INJECTION_ATTEMPT, loc), 0.9));
+        }
+    }
+
+    /**
+     * Map a free-form / LLM keyword category onto a typed ReasonCode.
+     * Unknown categories fall through to {@link ReasonCode#POLICY_RULE_FIRED} so user-defined
+     * PDF vocabulary still surfaces without new hard-coded scripts.
+     */
+    private void emitCategoryReason(
+            List<Candidate> out,
+            java.util.Set<String> emitted,
+            Locale loc,
+            String rawCategory,
+            double score,
+            LinguisticFamily linguistic,
+            Ask ask
+    ) {
+        String cat = normalizeCategoryKey(rawCategory);
+        ReasonCode code = reasonCodeForCategory(cat);
+        if (!emitted.add(code.name())) {
+            return;
+        }
+        String ruleId = firstMatchedRuleId(linguistic);
+        String detail;
+        Map<String, Object> evidence = new java.util.LinkedHashMap<>();
+        evidence.put("category", cat);
+        evidence.put("score", score);
+        if (code == ReasonCode.CREDENTIAL_REQUEST) {
+            String label = ask != null && ask.type() != null && !ask.type().isBlank() ? ask.type() : cat;
+            detail = templates.detail(ReasonCode.CREDENTIAL_REQUEST, loc, label);
+        } else if (code == ReasonCode.SECRECY_REQUESTED) {
+            detail = templates.detail(ReasonCode.SECRECY_REQUESTED, loc, fmt(score), fmt(CATEGORY_REASON_MIN));
+        } else if (code == ReasonCode.URGENCY) {
+            detail = templates.detail(ReasonCode.URGENCY, loc, fmt(score), fmt(CATEGORY_REASON_MIN));
+        } else if (code == ReasonCode.AUTHORITY_INVOCATION) {
+            detail = templates.detail(ReasonCode.AUTHORITY_INVOCATION, loc, fmt(score), fmt(CATEGORY_REASON_MIN));
+        } else {
+            String quote = cat + " score " + fmt(score);
+            detail = templates.detail(ReasonCode.POLICY_RULE_FIRED, loc,
+                    ruleId == null ? cat : ruleId, cat, quote);
+            out.add(new Candidate(
+                    ReasonCode.POLICY_RULE_FIRED,
+                    detail,
+                    score,
+                    ruleId,
+                    null,
+                    Map.of("title", "Keyword category " + cat, "quote", quote),
+                    evidence
+            ));
+            return;
+        }
+        out.add(new Candidate(code, detail, score, ruleId, null, null, evidence));
+    }
+
+    private static String normalizeCategoryKey(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "CUSTOM";
+        }
+        String c = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return switch (c) {
+            case "URGENCY", "URGENT" -> "URGENCY";
+            case "SECRECY", "SECRET", "CONFIDENTIAL", "SECRECY_REQUESTED" -> "SECRECY";
+            case "AUTHORITY", "AUTHORITATIVE" -> "AUTHORITY";
+            case "PAYMENT", "PAYMENTS", "AMOUNT", "FINANCIAL", "WIRE", "MONEY" -> "PAYMENT";
+            case "CREDENTIAL", "CREDENTIALS", "OTP", "PASSWORD", "PIN" -> "CREDENTIAL";
+            case "CUSTOM" -> "CUSTOM";
+            default -> "CUSTOM".equals(c) ? "CUSTOM" : c;
+        };
+    }
+
+    private static ReasonCode reasonCodeForCategory(String cat) {
+        return switch (cat) {
+            case "URGENCY" -> ReasonCode.URGENCY;
+            case "SECRECY" -> ReasonCode.SECRECY_REQUESTED;
+            case "AUTHORITY" -> ReasonCode.AUTHORITY_INVOCATION;
+            case "CREDENTIAL" -> ReasonCode.CREDENTIAL_REQUEST;
+            // PAYMENT / CUSTOM / anything LLM invents → cite as policy/keyword fire
+            default -> ReasonCode.POLICY_RULE_FIRED;
+        };
+    }
+
+    private static double categoryScore(LinguisticFamily linguistic, String key) {
+        if (linguistic.categories() == null || key == null) {
+            return 0.0;
+        }
+        Object raw = linguistic.categories().get(key);
+        if (raw == null) {
+            raw = linguistic.categories().get(key.toLowerCase(Locale.ROOT));
+        }
+        if (raw instanceof Number n) {
+            return n.doubleValue();
+        }
+        return 0.0;
+    }
+
+    private static String firstMatchedRuleId(LinguisticFamily linguistic) {
+        if (linguistic.matchedRuleIds() == null || linguistic.matchedRuleIds().isEmpty()) {
+            return null;
+        }
+        for (String rid : linguistic.matchedRuleIds()) {
+            if (rid != null && !rid.isBlank()) {
+                return rid;
+            }
+        }
+        return null;
     }
 
     private void evaluateTransactionPolicy(FusionContext context, List<Candidate> out, Locale loc) {

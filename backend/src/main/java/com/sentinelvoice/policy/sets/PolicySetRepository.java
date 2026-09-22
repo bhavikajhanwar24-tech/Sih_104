@@ -62,6 +62,20 @@ public class PolicySetRepository {
      * ACCEPTED/EDITED rules only — PROPOSED and REJECTED are never evaluated at runtime.
      * Hallucination / value-not-in-source rejects stay excluded (same gate as approval).
      */
+    /** Count only — avoids pulling full rule JSONB for engine-status checks. */
+    public int countRuntimeRules(UUID tenantId, UUID setId) {
+        Integer n = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM policy_rules
+                WHERE tenant_id = ? AND policy_set_id = ?
+                  AND deleted_at IS NULL
+                  AND status IN ('ACCEPTED', 'EDITED')
+                  AND NOT (warnings @> '[{"code":"HALLUCINATED_QUOTE"}]'::jsonb)
+                  AND NOT (warnings @> '[{"code":"VALUE_NOT_IN_SOURCE"}]'::jsonb)
+                  AND NOT (warnings @> '[{"code":"REJECTED_VALUE_NOT_IN_SOURCE"}]'::jsonb)
+                """, Integer.class, tenantId, setId);
+        return n == null ? 0 : n;
+    }
+
     public List<Map<String, Object>> listRuntimeRules(UUID tenantId, UUID setId) {
         return jdbc.query("""
                 SELECT * FROM policy_rules

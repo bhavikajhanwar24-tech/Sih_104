@@ -256,19 +256,42 @@ public class SessionExplainRecorder {
             if (a.type() != null) {
                 ask.put("type", a.type());
             }
+            if (a.sharesCredential() != null) {
+                ask.put("sharesCredential", a.sharesCredential());
+            }
+            if (a.beneficiaryMentioned() != null) {
+                ask.put("beneficiaryMentioned", a.beneficiaryMentioned());
+            }
         }
         Map<String, Object> categories = new LinkedHashMap<>();
+        if (linguistic.categories() != null) {
+            for (Map.Entry<String, Double> e : linguistic.categories().entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    categories.put(e.getKey(), e.getValue());
+                }
+            }
+        }
+        // Keep scalar summaries for older readers.
         if (linguistic.secrecy() != null) {
-            categories.put("secrecy", linguistic.secrecy());
+            categories.putIfAbsent("secrecy", linguistic.secrecy());
         }
         if (linguistic.urgency() != null) {
-            categories.put("urgency", linguistic.urgency());
+            categories.putIfAbsent("urgency", linguistic.urgency());
         }
         if (linguistic.authorityInvocation() != null) {
-            categories.put("authority", linguistic.authorityInvocation());
+            categories.putIfAbsent("authority", linguistic.authorityInvocation());
         }
         if (linguistic.claimedRole() != null) {
             categories.put("claimedRole", linguistic.claimedRole());
+        }
+        if (linguistic.matchedRuleIds() != null && !linguistic.matchedRuleIds().isEmpty()) {
+            categories.put("matchedRuleIds", linguistic.matchedRuleIds());
+        }
+        if (linguistic.matchedKeywords() != null && !linguistic.matchedKeywords().isEmpty()) {
+            categories.put("matchedKeywords", linguistic.matchedKeywords());
+        }
+        if (Boolean.TRUE.equals(linguistic.injectionAttempt())) {
+            categories.put("injectionAttempt", true);
         }
         if (ask.isEmpty() && categories.isEmpty()) {
             return;

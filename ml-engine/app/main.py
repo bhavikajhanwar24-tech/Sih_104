@@ -208,6 +208,24 @@ async def open_session(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+    # Do NOT block open on lexicon fetch — bridge open timeout is ~2s and a
+    # slow Supabase round-trip puts AudioSocket into degraded (drops all PCM).
+    async def _warm() -> None:
+        try:
+            from app.modules import tenant_lexicon as _tl
+
+            loop = asyncio.get_running_loop()
+            lex = await loop.run_in_executor(None, _tl.get_lexicon, str(tenant_id))
+            logger.info(
+                "session_lexicon_warm session_id=%s tenant_id=%s keywords=%s",
+                sid,
+                tenant_id,
+                len(lex.keywords),
+            )
+        except Exception:
+            logger.warning("session_lexicon_warm_failed session_id=%s", sid, exc_info=True)
+
+    asyncio.create_task(_warm())
     await scheduler.start(sid)
     await slow_path.start(sid)
     logger.info(
@@ -244,6 +262,22 @@ async def close_session(sid: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="session_not_found")
     logger.info("session_close session_id=%s", sid)
     return {"status": "closed", "sessionId": sid}
+
+
+@app.post("/session/close-all")
+async def close_all_sessions(request: Request) -> dict[str, Any]:
+    """Operator kill-switch: drop every in-memory ML session (zombies starve emit)."""
+    _require_service_token(request)
+    ids = registry.list_ids()
+    closed: list[str] = []
+    for sid in ids:
+        await slow_path.stop(sid)
+        await scheduler.stop(sid)
+        redteam_state.clear_config(sid)
+        if registry.close(sid):
+            closed.append(sid)
+            logger.info("session_close_all session_id=%s", sid)
+    return {"status": "closed", "closed": closed, "count": len(closed)}
 
 
 @app.post("/session/{sid}/pcm")

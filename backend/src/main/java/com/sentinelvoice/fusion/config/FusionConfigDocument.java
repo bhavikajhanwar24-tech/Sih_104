@@ -112,6 +112,49 @@ public record FusionConfigDocument(
         return band;
     }
 
+    /**
+     * In-process platform default used when a tenant has no ACTIVE fusion_configs row.
+     * Keeps FeatureFrame ingest / Live Calls alive instead of failing every tick.
+     */
+    public static FusionConfigDocument platformDefault() {
+        return parse(Map.of(
+                "weights", Map.of(
+                        "wideband", Map.of(
+                                "voice", 0.24, "channel", 0.08, "prosody", 0.13,
+                                "linguistic", 0.25, "transaction", 0.18, "relationship", 0.12
+                        ),
+                        "narrowband", Map.of(
+                                "voice", 0.15, "channel", 0.10, "prosody", 0.12,
+                                "linguistic", 0.29, "transaction", 0.20, "relationship", 0.14
+                        )
+                ),
+                "smoothing", Map.of(
+                        "lambdaUp", 0.55, "lambdaDown", 0.88, "linguisticStalenessTauMs", 3000
+                ),
+                "familyThresholds", Map.of(
+                        "voice", 0.60, "channel", 0.55, "prosody", 0.60,
+                        "linguistic", 0.65, "transaction", 0.60, "relationship", 0.60
+                ),
+                "corroboration", Map.of(
+                        "minIndependentFamiliesForL3", 2, "minForL4", 3
+                ),
+                "levels", Map.of(
+                        "L1", Map.of("enter", 0.30, "exit", 0.25, "minDwellMs", 1000),
+                        "L2", Map.of("enter", 0.35, "exit", 0.28, "minDwellMs", 1000),
+                        "L3", Map.of("enter", 0.55, "exit", 0.46, "minDwellMs", 1000),
+                        "L4", Map.of("enter", 0.73, "exit", 0.66, "minDwellMs", 1000)
+                ),
+                "insufficientEvidence", Map.of("minSpeechMs", 3000),
+                "missingEvidence", Map.of(
+                        "llmUnavailable", "CONTINUE_RULES_ONLY",
+                        "directoryEmpty", "CONTINUE_RULES_ONLY"
+                ),
+                "hardFloors", Map.of("acousticAloneMaxLevel", 2),
+                "emergency", Map.of("enabled", true, "rules", List.of()),
+                "overridePinDurationMs", 120000
+        ));
+    }
+
     public static FusionConfigDocument parse(Object raw) {
         return parse(raw, DEFAULT_MAPPER);
     }

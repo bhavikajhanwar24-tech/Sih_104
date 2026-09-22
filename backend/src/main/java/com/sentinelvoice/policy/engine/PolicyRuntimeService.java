@@ -74,10 +74,13 @@ public class PolicyRuntimeService {
             Map<String, Object> set = dbActive.get();
             dbVersion = ((Number) set.get("version")).intValue();
             UUID setId = UUID.fromString(String.valueOf(set.get("id")));
-            dbSha = set.get("contentSha256") == null
-                    ? policySetRepository.computeContentSha(tenantId, setId)
-                    : String.valueOf(set.get("contentSha256"));
-            dbRuleCount = policySetRepository.listRuntimeRules(tenantId, setId).size();
+            Object storedSha = set.get("contentSha256");
+            if (storedSha != null && !String.valueOf(storedSha).isBlank()) {
+                dbSha = String.valueOf(storedSha);
+            } else {
+                dbSha = policySetRepository.computeContentSha(tenantId, setId);
+            }
+            dbRuleCount = policySetRepository.countRuntimeRules(tenantId, setId);
         }
 
         if (policy.isEmpty()) {

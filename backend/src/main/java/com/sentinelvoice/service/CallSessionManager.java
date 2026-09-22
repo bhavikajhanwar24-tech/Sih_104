@@ -85,10 +85,16 @@ public class CallSessionManager {
 
             Optional<ActiveFusionConfigCache.CachedFusionConfig> fusion =
                     fusionConfigCache.get(tenantId);
-            fusion.ifPresent(c -> {
-                session.setFusionConfigVersion(c.version());
-                session.setFusionConfigSnapshot(c.document());
-            });
+            if (fusion.isPresent()) {
+                session.setFusionConfigVersion(fusion.get().version());
+                session.setFusionConfigSnapshot(fusion.get().document());
+            } else {
+                // Avoid mid-call "No ACTIVE fusion config" on every FeatureFrame.
+                session.setFusionConfigVersion(0);
+                session.setFusionConfigSnapshot(
+                        com.sentinelvoice.fusion.config.FusionConfigDocument.platformDefault()
+                );
+            }
             policyCache.get(tenantId).ifPresent(p -> session.setPolicyVersion(p.version()));
             Optional<ActiveResponsePlanCache.CachedResponsePlan> plan = responsePlanCache.get(tenantId);
             if (plan.isPresent()) {

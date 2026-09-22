@@ -230,6 +230,89 @@ export function CallDetailPage() {
       </div>
 
       <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
+        <h2 className="text-sm font-semibold text-sv-fg">Keywords triggered</h2>
+        <p className="mt-0.5 text-xs text-sv-muted">
+          ACTIVE lexicon terms heard on this call (from your Live Rules / PDF keywords)
+        </p>
+        {(() => {
+          const fromExtract =
+            data?.extractionsLatest?.categories?.matchedKeywords || [];
+          const uniq = [];
+          if (Array.isArray(fromExtract)) {
+            uniq.push(...fromExtract);
+          }
+          // Flatten matchedKeywords from any nested category maps on reasons' evidence
+          for (const r of reasons) {
+            const mk = r?.evidence?.matchedKeywords || r?.evidence?.keywords;
+            if (Array.isArray(mk)) uniq.push(...mk);
+          }
+          const terms = [...new Set(uniq.map(String).filter(Boolean))];
+          if (!terms.length) {
+            return (
+              <p className="mt-3 text-sm text-sv-muted">
+                No ACTIVE keywords matched yet. Speak terms from Policies → Keywords / Live Rules.
+              </p>
+            );
+          }
+          return (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {terms.map((t) => (
+                <Badge key={t} tone="warning">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          );
+        })()}
+      </section>
+
+      <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
+        <h2 className="text-sm font-semibold text-sv-fg">Rules broken</h2>
+        <p className="mt-0.5 text-xs text-sv-muted">
+          Compiled Live Rules if/else that fired (plus keyword→rule links)
+        </p>
+        {(() => {
+          const ruleReasons = reasons.filter(
+            (r) =>
+              r.code === 'POLICY_RULE_FIRED' ||
+              r.code === 'CREDENTIAL_REQUEST' ||
+              r.code === 'SECRECY_REQUESTED' ||
+              r.code === 'URGENCY' ||
+              r.code === 'AUTHORITY_INVOCATION' ||
+              r.code === 'PROMPT_INJECTION_ATTEMPT' ||
+              r.ruleId,
+          );
+          if (!ruleReasons.length) {
+            return (
+              <p className="mt-3 text-sm text-sv-muted">
+                No policy/keyword rules broken on retained ticks. Acoustic-only reasons are listed
+                under Why below.
+              </p>
+            );
+          }
+          return (
+            <ul className="mt-3 space-y-2">
+              {ruleReasons.map((r) => (
+                <li
+                  key={`rule-${r.seq}-${r.code}-${r.ruleId || ''}`}
+                  className="rounded border border-sv-border bg-sv-bg px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="warning">{r.code}</Badge>
+                    {r.ruleId ? (
+                      <span className="font-mono text-[11px] text-sv-muted">rule {r.ruleId}</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-sm text-sv-fg">{r.title || r.detail}</p>
+                  <ClauseCitation sourceClause={r.sourceClause} ruleId={r.ruleId} />
+                </li>
+              ))}
+            </ul>
+          );
+        })()}
+      </section>
+
+      <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
         <h2 className="text-sm font-semibold text-sv-fg">Why</h2>
         <p className="mt-0.5 text-xs text-sv-muted">
           Typed reason codes from session_reasons (titles via reasons*.properties · lang={lang})

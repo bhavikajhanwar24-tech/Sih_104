@@ -123,41 +123,6 @@ public class ScenarioTrajectoryRunner {
     }
 
     private static FusionConfigDocument platformDefaultDocument() {
-        return FusionConfigDocument.parse(java.util.Map.of(
-                "weights", java.util.Map.of(
-                        "wideband", java.util.Map.of(
-                                "voice", 0.24, "channel", 0.08, "prosody", 0.13,
-                                "linguistic", 0.25, "transaction", 0.18, "relationship", 0.12
-                        ),
-                        "narrowband", java.util.Map.of(
-                                "voice", 0.15, "channel", 0.10, "prosody", 0.12,
-                                "linguistic", 0.29, "transaction", 0.20, "relationship", 0.14
-                        )
-                ),
-                "smoothing", java.util.Map.of(
-                        "lambdaUp", 0.55, "lambdaDown", 0.88, "linguisticStalenessTauMs", 3000
-                ),
-                "familyThresholds", java.util.Map.of(
-                        "voice", 0.60, "channel", 0.55, "prosody", 0.60,
-                        "linguistic", 0.65, "transaction", 0.60, "relationship", 0.60
-                ),
-                "corroboration", java.util.Map.of(
-                        "minIndependentFamiliesForL3", 2, "minForL4", 3
-                ),
-                "levels", java.util.Map.of(
-                        "L1", java.util.Map.of("enter", 0.30, "exit", 0.25, "minDwellMs", 1000),
-                        "L2", java.util.Map.of("enter", 0.35, "exit", 0.28, "minDwellMs", 1000),
-                        "L3", java.util.Map.of("enter", 0.55, "exit", 0.46, "minDwellMs", 1000),
-                        "L4", java.util.Map.of("enter", 0.73, "exit", 0.66, "minDwellMs", 1000)
-                ),
-                "insufficientEvidence", java.util.Map.of("minSpeechMs", 3000),
-                "missingEvidence", java.util.Map.of(
-                        "llmUnavailable", "CONTINUE_RULES_ONLY",
-                        "directoryEmpty", "CONTINUE_RULES_ONLY"
-                ),
-                "hardFloors", java.util.Map.of("acousticAloneMaxLevel", 2),
-                "emergency", java.util.Map.of("enabled", true, "rules", java.util.List.of()),
-                "overridePinDurationMs", 120000
-        ));
+        return FusionConfigDocument.platformDefault();
     }
 }

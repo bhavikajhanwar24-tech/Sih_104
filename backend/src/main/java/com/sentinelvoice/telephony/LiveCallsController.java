@@ -125,6 +125,9 @@ public class LiveCallsController {
                     m.put("linguisticSource", s.getLastLinguisticSource());
                     m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
                     m.put("linguisticConfidence", s.getLastLinguisticConfidence());
+                    m.put("matchedKeywords", s.getLastMatchedKeywords());
+                    m.put("brokenRuleIds", s.getLastBrokenRuleIds());
+                    m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
                 }
             }
             m.put("liveLevel", liveLevel);
