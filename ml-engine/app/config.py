@@ -67,10 +67,14 @@ class Settings(BaseSettings):
     asr_device: str = "auto"  # auto | cpu | cuda
     asr_compute_type: str = "default"  # default → int8 (cpu) / float16 (cuda)
     asr_window_seconds: float = 6.0
-    asr_interval_ms: int = 4000
+    asr_interval_ms: int = 2500
     asr_vad_speech_ratio_min: float = 0.3
     asr_snippet_chars: int = 160
     asr_latency_budget_ms: float = 900.0
+    # F11 — in-memory rolling transcript horizon (seconds); zeroised on session close.
+    asr_rolling_seconds: float = 20.0
+    # Tenant-allowed ASR languages (Whisper codes). Hinglish = code-switch hi+en.
+    asr_languages: str = "en,hi"
 
 
 settings = Settings()

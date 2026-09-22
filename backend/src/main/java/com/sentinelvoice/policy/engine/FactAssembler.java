@@ -173,41 +173,62 @@ public class FactAssembler {
         if (ling == null || !ling.available()) {
             return;
         }
-        Double conf = 0.8;
+        Double conf = ling.confidence() != null ? ling.confidence() : 0.8;
+        Instant observed = now;
+        if (ling.observedAt() != null && ling.observedAt() > 0) {
+            observed = Instant.ofEpochMilli(ling.observedAt());
+        }
+        String source = ling.source() == null ? "linguistic" : "linguistic:" + ling.source();
+
+        if (Boolean.TRUE.equals(ling.injectionAttempt())) {
+            b.put("caller.promptInjectionAttempt",
+                    FactValue.of(true, source, 1.0, observed, false));
+        }
         if (ling.claimedRole() != null && !ling.claimedRole().isBlank()) {
-            putCallerAsserted(b, "caller.claimedRole", ling.claimedRole().trim(), now, conf);
+            putCallerAsserted(b, "caller.claimedRole", ling.claimedRole().trim(), observed, conf, source);
         }
         if (ling.urgency() != null) {
             b.put("ask.urgencyLevel",
-                    FactValue.of(ling.urgency(), "linguistic", conf, now, true));
+                    FactValue.of(ling.urgency(), source, conf, observed, true));
+            b.put("ask.urgencyLevel.assertedByCaller",
+                    FactValue.of(true, source, 1.0, observed, false));
         }
         if (ling.secrecy() != null) {
             b.put("ask.secrecyRequested",
-                    FactValue.of(ling.secrecy() >= 0.5, "linguistic", ling.secrecy(), now, true));
+                    FactValue.of(ling.secrecy() >= 0.5, source, ling.secrecy(), observed, true));
+            b.put("ask.secrecyRequested.assertedByCaller",
+                    FactValue.of(true, source, 1.0, observed, false));
         }
         if (ling.authorityInvocation() != null) {
             b.put("ask.authorityClaimed",
-                    FactValue.of(ling.authorityInvocation() >= 0.5, "linguistic",
-                            ling.authorityInvocation(), now, true));
+                    FactValue.of(ling.authorityInvocation() >= 0.5, source,
+                            ling.authorityInvocation(), observed, true));
+            b.put("ask.authorityClaimed.assertedByCaller",
+                    FactValue.of(true, source, 1.0, observed, false));
         }
         Ask ask = ling.ask();
         if (ask != null) {
             if (ask.type() != null && !ask.type().isBlank()) {
-                putCallerAsserted(b, "ask.type", normalizeAskType(ask.type()), now, conf);
+                putCallerAsserted(b, "ask.type", normalizeAskType(ask.type()), observed, conf, source);
             }
             if (ask.amount() != null) {
-                putCallerAsserted(b, "ask.amountInr", ask.amount(), now, conf);
+                putCallerAsserted(b, "ask.amountInr", ask.amount(), observed, conf, source);
             }
-            if (ask.beneficiaryHint() != null && !ask.beneficiaryHint().isBlank()) {
-                // Presence of a hint ≠ verified; leave beneficiaryVerified unknown
+            boolean beneficiary = Boolean.TRUE.equals(ask.beneficiaryMentioned())
+                    || (ask.beneficiaryHint() != null && !ask.beneficiaryHint().isBlank());
+            if (beneficiary) {
                 b.put("ask.beneficiaryKnown",
-                        FactValue.of(false, "linguistic", conf, now, true));
+                        FactValue.of(false, source, conf, observed, true));
+            }
+            if (Boolean.TRUE.equals(ask.sharesCredential())) {
+                b.put("ask.sharesCredential", FactValue.of(true, source, conf, observed, true));
+                b.put("ask.sharesCredential.assertedByCaller",
+                        FactValue.of(true, source, 1.0, observed, false));
             }
         }
-        // Credential ask types
         String type = ask == null || ask.type() == null ? null : normalizeAskType(ask.type());
         if ("OTP_SHARE".equals(type) || "PIN_SHARE".equals(type) || "PASSWORD_RESET".equals(type)) {
-            b.put("ask.sharesCredential", FactValue.of(true, "linguistic", conf, now, true));
+            b.put("ask.sharesCredential", FactValue.of(true, source, conf, observed, true));
         }
     }
 
@@ -218,8 +239,19 @@ public class FactAssembler {
             Instant now,
             Double conf
     ) {
-        b.put(path, FactValue.of(value, "linguistic", conf, now, true));
-        b.put(path + ".assertedByCaller", FactValue.of(true, "linguistic", 1.0, now, false));
+        putCallerAsserted(b, path, value, now, conf, "linguistic");
+    }
+
+    private static void putCallerAsserted(
+            FactSet.Builder b,
+            String path,
+            Object value,
+            Instant now,
+            Double conf,
+            String source
+    ) {
+        b.put(path, FactValue.of(value, source, conf, now, true));
+        b.put(path + ".assertedByCaller", FactValue.of(true, source, 1.0, now, false));
     }
 
     private static String normalizeAskType(String raw) {

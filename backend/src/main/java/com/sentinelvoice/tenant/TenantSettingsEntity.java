@@ -112,6 +112,22 @@ public class TenantSettingsEntity {
         this.extras = extras == null ? new LinkedHashMap<>() : new LinkedHashMap<>(extras);
     }
 
+    /** F11 — comma-separated Whisper language codes in extras.asrLanguages (default en,hi). */
+    public String getAsrLanguages() {
+        Object v = extras == null ? null : extras.get("asrLanguages");
+        if (v == null || String.valueOf(v).isBlank()) {
+            return "en,hi";
+        }
+        return String.valueOf(v).trim();
+    }
+
+    public void setAsrLanguages(String languages) {
+        if (extras == null) {
+            extras = new LinkedHashMap<>();
+        }
+        extras.put("asrLanguages", languages == null || languages.isBlank() ? "en,hi" : languages.trim());
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

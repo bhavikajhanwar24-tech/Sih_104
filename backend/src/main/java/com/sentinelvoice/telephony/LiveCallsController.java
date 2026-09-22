@@ -69,6 +69,16 @@ public class LiveCallsController {
                 mem.ifPresent(s -> {
                     m.put("liveLevel", s.getCurrentLevel() == null ? null : s.getCurrentLevel().name());
                     m.put("liveScore", s.getSmoothedRisk());
+                    String lingStatus = "unavailable";
+                    if (Boolean.TRUE.equals(s.getLastLinguisticPending())) {
+                        lingStatus = "pending";
+                    } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
+                        lingStatus = "live";
+                    }
+                    m.put("linguisticStatus", lingStatus);
+                    m.put("linguisticSource", s.getLastLinguisticSource());
+                    m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
+                    m.put("linguisticConfidence", s.getLastLinguisticConfidence());
                 });
             }
             return m;

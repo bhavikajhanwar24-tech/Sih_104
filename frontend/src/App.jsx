@@ -1,23 +1,53 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { AuthProvider } from '@/context/AuthContext.jsx';
 import { RequireAuth } from '@/components/auth/RequireAuth.jsx';
 import { AppShell } from '@/components/layout/AppShell.jsx';
 import { ToastProvider } from '@/ui/Toast.jsx';
 import { LoginPage } from '@/pages/LoginPage.jsx';
 import { RegisterPage } from '@/pages/RegisterPage.jsx';
-import { UsersPage } from '@/pages/UsersPage.jsx';
-import { AuditPage } from '@/pages/AuditPage.jsx';
-import { DirectoryPage } from '@/pages/DirectoryPage.jsx';
-import {
-  DashboardPage,
-} from '@/pages/ComingSoonPages.jsx';
-import { LiveCallsPage } from '@/pages/LiveCallsPage.jsx';
-import { ResponsePlansPage } from '@/pages/ResponsePlansPage.jsx';
-import { PoliciesPage } from '@/pages/PoliciesPage.jsx';
-import { PolicyReviewPage } from '@/pages/PolicyReviewPage.jsx';
-import { SettingsPage } from '@/pages/SettingsPage.jsx';
-import { RiskTuningPage } from '@/pages/RiskTuningPage.jsx';
-import { TelephonySettingsPage } from '@/pages/TelephonySettingsPage.jsx';
+
+const UsersPage = lazy(() =>
+  import('@/pages/UsersPage.jsx').then((m) => ({ default: m.UsersPage })),
+);
+const AuditPage = lazy(() =>
+  import('@/pages/AuditPage.jsx').then((m) => ({ default: m.AuditPage })),
+);
+const DirectoryPage = lazy(() =>
+  import('@/pages/DirectoryPage.jsx').then((m) => ({ default: m.DirectoryPage })),
+);
+const DashboardPage = lazy(() =>
+  import('@/pages/ComingSoonPages.jsx').then((m) => ({ default: m.DashboardPage })),
+);
+const LiveCallsPage = lazy(() =>
+  import('@/pages/LiveCallsPage.jsx').then((m) => ({ default: m.LiveCallsPage })),
+);
+const ResponsePlansPage = lazy(() =>
+  import('@/pages/ResponsePlansPage.jsx').then((m) => ({ default: m.ResponsePlansPage })),
+);
+const PoliciesPage = lazy(() =>
+  import('@/pages/PoliciesPage.jsx').then((m) => ({ default: m.PoliciesPage })),
+);
+const PolicyReviewPage = lazy(() =>
+  import('@/pages/PolicyReviewPage.jsx').then((m) => ({ default: m.PolicyReviewPage })),
+);
+const SettingsPage = lazy(() =>
+  import('@/pages/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })),
+);
+const RiskTuningPage = lazy(() =>
+  import('@/pages/RiskTuningPage.jsx').then((m) => ({ default: m.RiskTuningPage })),
+);
+const TelephonySettingsPage = lazy(() =>
+  import('@/pages/TelephonySettingsPage.jsx').then((m) => ({ default: m.TelephonySettingsPage })),
+);
+
+function RouteFallback() {
+  return (
+    <div className="flex h-full min-h-[12rem] items-center justify-center p-6 text-sm text-sv-muted">
+      Loading…
+    </div>
+  );
+}
 
 /**
  * V2 application root — router + cookie auth. Replaces v1 four-view AppShell switcher.
@@ -32,28 +62,30 @@ export default function App() {
     >
       <ToastProvider>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={<Navigate to="/app" replace />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route element={<RequireAuth />}>
-              <Route path="/app" element={<AppShell />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="calls" element={<LiveCallsPage />} />
-                <Route path="directory" element={<DirectoryPage />} />
-                <Route path="policies" element={<PoliciesPage />} />
-                <Route path="policies/review" element={<PolicyReviewPage />} />
-                <Route path="response" element={<ResponsePlansPage />} />
-                <Route path="response-plans" element={<ResponsePlansPage />} />
-                <Route path="audit" element={<AuditPage />} />
-                <Route path="settings" element={<SettingsPage />} />
-                <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
-                <Route path="settings/telephony" element={<TelephonySettingsPage />} />
-                <Route path="users" element={<UsersPage />} />
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/app" replace />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route element={<RequireAuth />}>
+                <Route path="/app" element={<AppShell />}>
+                  <Route index element={<DashboardPage />} />
+                  <Route path="calls" element={<LiveCallsPage />} />
+                  <Route path="directory" element={<DirectoryPage />} />
+                  <Route path="policies" element={<PoliciesPage />} />
+                  <Route path="policies/review" element={<PolicyReviewPage />} />
+                  <Route path="response" element={<ResponsePlansPage />} />
+                  <Route path="response-plans" element={<ResponsePlansPage />} />
+                  <Route path="audit" element={<AuditPage />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                  <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
+                  <Route path="settings/telephony" element={<TelephonySettingsPage />} />
+                  <Route path="users" element={<UsersPage />} />
+                </Route>
               </Route>
-            </Route>
-            <Route path="*" element={<Navigate to="/app" replace />} />
-          </Routes>
+              <Route path="*" element={<Navigate to="/app" replace />} />
+            </Routes>
+          </Suspense>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

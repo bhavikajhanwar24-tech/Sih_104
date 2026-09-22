@@ -420,28 +420,56 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "type",
-        "amount",
-        "currency",
-        "beneficiaryHint",
-        "deadline"
+        "type"
       ],
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "description": "Ask type enum (WIRE_TRANSFER, OTP_SHARE, PIN_SHARE, PASSWORD_RESET, INFO, OTHER)."
         },
         "amount": {
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "currency": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "beneficiaryHint": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Deprecated for F11 wire (prefer beneficiaryMentioned bool). Optional for back-compat fixtures."
         },
         "deadline": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sharesCredential": {
+          "type": "boolean"
+        },
+        "beneficiaryMentioned": {
+          "type": "boolean"
         }
+      }
+    },
+    "LinguisticCategories": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "URGENCY": { "$ref": "#/$defs/UnitInterval" },
+        "SECRECY": { "$ref": "#/$defs/UnitInterval" },
+        "AUTHORITY": { "$ref": "#/$defs/UnitInterval" },
+        "PAYMENT": { "$ref": "#/$defs/UnitInterval" },
+        "CREDENTIAL": { "$ref": "#/$defs/UnitInterval" },
+        "CUSTOM": { "$ref": "#/$defs/UnitInterval" }
       }
     },
     "LinguisticFamily": {
@@ -454,9 +482,22 @@
         "available": {
           "type": "boolean"
         },
+        "source": {
+          "type": "string",
+          "enum": ["STAGE_A", "STAGE_B", "MERGED"],
+          "description": "F11 — which extractor produced this snapshot."
+        },
+        "observedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix epoch milliseconds when extraction was observed."
+        },
         "ageMs": {
           "type": "integer",
           "minimum": 0
+        },
+        "confidence": {
+          "$ref": "#/$defs/UnitInterval"
         },
         "language": {
           "type": "string"
@@ -479,11 +520,28 @@
         "ask": {
           "$ref": "#/$defs/Ask"
         },
+        "categories": {
+          "$ref": "#/$defs/LinguisticCategories"
+        },
+        "matchedRuleIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 16
+        },
+        "injectionAttempt": {
+          "type": "boolean",
+          "description": "True when transcript contained instruction-like phrases aimed at an AI."
+        },
+        "llmPending": {
+          "type": "boolean",
+          "description": "True while an async Stage B call is in flight."
+        },
         "claimedIdentity": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Deprecated on wire for F11 privacy — prefer role tokens only."
         },
         "claimedRole": {
           "type": [
@@ -492,11 +550,12 @@
           ]
         },
         "redactedSnippet": {
-          "type": "string"
+          "type": "string",
+          "description": "F11: MUST NOT be emitted on live sessions (in-memory only). Optional for demo fixtures."
         },
         "redactedDelta": {
           "type": "string",
-          "description": "Redacted transcript delta since the previous slow-path emission. Optional; rolling context remains in redactedSnippet."
+          "description": "F11: MUST NOT be emitted on live sessions."
         }
       },
       "allOf": [
@@ -520,9 +579,9 @@
               "authorityInvocation",
               "emotionalCoercion",
               "askDetected",
-              "claimedIdentity",
-              "claimedRole",
-              "redactedSnippet"
+              "source",
+              "confidence",
+              "injectionAttempt"
             ]
           }
         }

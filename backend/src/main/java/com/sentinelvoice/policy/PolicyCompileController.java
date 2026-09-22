@@ -264,6 +264,14 @@ public class PolicyCompileController {
         return setService.getSet(ctx.tenantId(), id);
     }
 
+    @PostMapping("/sets/{id}/keywords/rebuild")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','POLICY_APPROVER')")
+    public Map<String, Object> rebuildKeywords(@PathVariable UUID id) {
+        TenantContext ctx = TenantContext.require();
+        setService.rebuildKeywordsFromRules(ctx.tenantId(), id);
+        return setService.getSet(ctx.tenantId(), id);
+    }
+
     @DeleteMapping("/keywords/{keywordId}")
     @PreAuthorize("hasRole('TENANT_ADMIN')")
     public ResponseEntity<Void> deleteKeyword(@PathVariable UUID keywordId) {

@@ -233,21 +233,29 @@ public class PolicySetService {
         if (body.get("simulationExamples") != null) {
             setRepository.updateSimulationExamples(tenantId, rulePk, body.get("simulationExamples"));
         }
-        // Refresh keywords when condition/text changes
-        String rid = String.valueOf(body.get("ruleId"));
-        setRepository.deleteKeywordsForRule(tenantId, setId, rid);
-        String harvestText = isAdminDirective(asMap(body.get("source")))
-                ? String.valueOf(asMap(body.get("source")).getOrDefault("basis", ""))
-                : String.valueOf(asMap(body.get("source")).getOrDefault("quote", ""));
-        for (Map<String, Object> km : KeywordExtractor.merge(body.get("keywords"), harvestText)) {
-            setRepository.addKeywordForRule(
-                    tenantId, setId,
-                    String.valueOf(km.get("term")),
-                    String.valueOf(km.getOrDefault("lang", "en")),
-                    String.valueOf(km.getOrDefault("category", "CUSTOM")),
-                    km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
-                    rid
-            );
+        // Accept/reject status-only must NOT wipe compile-time policy_keywords.
+        // Only re-harvest when the operator changed the clause content or keyword list.
+        boolean keywordRelevant = patch.containsKey("when")
+                || patch.containsKey("source")
+                || patch.containsKey("keywords")
+                || patch.containsKey("description")
+                || patch.containsKey("title");
+        if (keywordRelevant) {
+            String rid = String.valueOf(body.get("ruleId"));
+            setRepository.deleteKeywordsForRule(tenantId, setId, rid);
+            String harvestText = isAdminDirective(asMap(body.get("source")))
+                    ? String.valueOf(asMap(body.get("source")).getOrDefault("basis", ""))
+                    : String.valueOf(asMap(body.get("source")).getOrDefault("quote", ""));
+            for (Map<String, Object> km : KeywordExtractor.merge(body.get("keywords"), harvestText)) {
+                setRepository.addKeywordForRule(
+                        tenantId, setId,
+                        String.valueOf(km.get("term")),
+                        String.valueOf(km.getOrDefault("lang", "en")),
+                        String.valueOf(km.getOrDefault("category", "CUSTOM")),
+                        km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                        rid
+                );
+            }
         }
         auditLedgerService.append(
                 tenantId, null, AuditEventType.POLICY_RULE_UPDATED, "USER", userId.toString(),
@@ -891,8 +899,22 @@ public class PolicySetService {
         if (submittedBy != null && userId.toString().equals(String.valueOf(submittedBy))) {
             throw new PolicyCompileException("SAME_USER", "Approver must differ from submitter");
         }
+        // Append: keep every live rule from the current ACTIVE set that this draft
+        // does not already carry. Operator resolves contradictions via Conflicts —
+        // approving a new version must never wipe the prior rulebook.
+        int kept = 0;
+        Optional<Map<String, Object>> priorActive = setRepository.findActiveSet(tenantId);
+        if (priorActive.isPresent()) {
+            UUID priorId = UUID.fromString(String.valueOf(priorActive.get().get("id")));
+            if (!priorId.equals(setId)) {
+                kept = setRepository.appendMissingRuntimeRules(tenantId, priorId, setId);
+            }
+        }
         String sha = setRepository.computeContentSha(tenantId, setId);
         setRepository.approve(tenantId, setId, userId, comment, sha);
+        // Re-seed ACTIVE lexicon from accepted/edited rules so Accept-path wipes
+        // (and missing compile inserts) cannot leave Stage A with an empty keyword list.
+        rebuildKeywordsFromRules(tenantId, setId);
         Map<String, Object> activated = getSet(tenantId, setId);
         events.publishEvent(new PolicySetActivatedEvent(
                 this, tenantId, setId, ((Number) activated.get("version")).intValue()
@@ -900,9 +922,15 @@ public class PolicySetService {
         // Post-activation: engine reload is driven by PolicySetActivatedEvent; surface sync check
         Map<String, Object> sync = liveRulesService.postActivationCheck(tenantId);
         activated.put("engineSync", sync);
+        activated.put("appendedFromPriorActive", kept);
         auditLedgerService.append(
                 tenantId, null, AuditEventType.POLICY_SET_APPROVED, "USER", userId.toString(),
-                Map.of("policySetId", setId.toString(), "contentSha256", sha, "comment", comment == null ? "" : comment)
+                Map.of(
+                        "policySetId", setId.toString(),
+                        "contentSha256", sha,
+                        "comment", comment == null ? "" : comment,
+                        "appendedFromPriorActive", kept
+                )
         );
         return activated;
     }
@@ -962,18 +990,54 @@ public class PolicySetService {
     }
 
     public void addKeyword(UUID tenantId, UUID setId, Map<String, Object> body) {
+        String term = body.get("term") == null ? "" : String.valueOf(body.get("term")).trim();
+        if (term.isBlank()) {
+            throw new PolicyCompileException("BAD_REQUEST", "keyword term required");
+        }
         setRepository.addKeyword(
                 tenantId,
                 setId,
-                String.valueOf(body.get("term")),
+                term,
                 body.get("lang") == null ? "en" : String.valueOf(body.get("lang")),
-                String.valueOf(body.getOrDefault("category", "CUSTOM")),
+                KeywordExtractor.normalizeCategory(String.valueOf(body.getOrDefault("category", "CUSTOM"))),
                 body.get("weight") instanceof Number n ? n.doubleValue() : 1.0
         );
     }
 
     public void deleteKeyword(UUID tenantId, UUID keywordId) {
         setRepository.deleteKeyword(tenantId, keywordId);
+    }
+
+    /**
+     * Replace {@code policy_keywords} for a set from ACCEPTED/EDITED/PROPOSED rule bodies.
+     * Used on approve so the live lexicon matches what reviewers saw on the version.
+     */
+    public void rebuildKeywordsFromRules(UUID tenantId, UUID setId) {
+        setRepository.deleteAllKeywords(tenantId, setId);
+        for (Map<String, Object> rule : setRepository.listActiveRules(tenantId, setId)) {
+            String st = String.valueOf(rule.getOrDefault("status", "")).toUpperCase(Locale.ROOT);
+            if ("REJECTED".equals(st)) {
+                continue;
+            }
+            String rid = String.valueOf(rule.get("ruleId"));
+            String harvestText = isAdminDirective(asMap(rule.get("source")))
+                    ? String.valueOf(asMap(rule.get("source")).getOrDefault("basis", ""))
+                    : String.valueOf(asMap(rule.get("source")).getOrDefault("quote", ""));
+            for (Map<String, Object> km : KeywordExtractor.merge(rule.get("keywords"), harvestText)) {
+                String term = String.valueOf(km.getOrDefault("term", "")).trim();
+                if (term.isBlank()) {
+                    continue;
+                }
+                setRepository.addKeywordForRule(
+                        tenantId, setId,
+                        term,
+                        String.valueOf(km.getOrDefault("lang", "en")),
+                        KeywordExtractor.normalizeCategory(String.valueOf(km.getOrDefault("category", "CUSTOM"))),
+                        km.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                        rid
+                );
+            }
+        }
     }
 
     private Map<String, Map<String, Object>> indexByRuleId(List<Map<String, Object>> rules) {

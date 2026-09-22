@@ -54,13 +54,38 @@ LOG = logging.getLogger("sentinelvoice.audiosocket")
 DEFAULT_HOST = os.environ.get("AUDIOSOCKET_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.environ.get("AUDIOSOCKET_PORT", "9092"))
 DEFAULT_ML = os.environ.get("ML_ENGINE_URL", "http://127.0.0.1:8000")
-DEFAULT_DECISION = os.environ.get("DECISION_PLANE_URL", "http://127.0.0.1:8080")
+DEFAULT_DECISION = os.environ.get("DECISION_PLANE_URL", "http://127.0.0.1:8081")
 DEFAULT_ARI = os.environ.get("ARI_URL", "http://127.0.0.1:8088/ari")
 DEFAULT_ARI_USER = os.environ.get("ARI_USER", "sentinel")
 DEFAULT_ARI_PASS = os.environ.get("ARI_PASS", "sentineldemo")
+# Opaque tenant label for ml-engine /session open (F3). Prefer per-call resolve.
+DEFAULT_TENANT_ID = (
+    os.environ.get("SV_TENANT_ID")
+    or os.environ.get("ML_TENANT_ID")
+    or ""
+)
 ARI_APP = os.environ.get("ARI_APP", "sentinel-tap")
 READ_TIMEOUT_S = float(os.environ.get("AUDIOSOCKET_READ_TIMEOUT_S", "30"))
 METRICS_INTERVAL_S = float(os.environ.get("AUDIOSOCKET_METRICS_INTERVAL_S", "10"))
+# Shared with ml-engine / Java (repo .env ML_SERVICE_TOKEN).
+SERVICE_TOKEN = (
+    os.environ.get("ML_SERVICE_TOKEN")
+    or os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN")
+    or ""
+)
+# sid → tenantId (filled by ARI snoop / AGI SV_TENANT before AudioSocket open).
+_sid_tenant: dict[str, str] = {}
+
+
+def _service_headers(extra: Optional[dict[str, str]] = None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if SERVICE_TOKEN:
+        headers["X-ML-Service-Token"] = SERVICE_TOKEN
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 ENABLE_ARI_SNOOP = os.environ.get("AUDIOSOCKET_ARI_SNOOP", "1") not in {
     "0",
     "false",
@@ -124,15 +149,33 @@ class MlEngineClient:
     async def open_session(self, sid: str) -> bool:
         # channelProfile=PSTN_NARROWBAND (query name on the FastAPI handler is `profile`)
         url = f"{self.base_url}/session/{sid}/open"
+        tenant_id = _sid_tenant.get(sid) or DEFAULT_TENANT_ID
+        if not tenant_id:
+            LOG.error(
+                "FAIL-OPEN: no tenantId for sid=%s (set SV_TENANT_ID or ensure ARI resolve)",
+                sid,
+            )
+            await self.metrics.bump_drop()
+            return False
         try:
-            r = await self._client.post(url, params={"profile": "PSTN_NARROWBAND"})
+            r = await self._client.post(
+                url,
+                params={"profile": "PSTN_NARROWBAND", "tenantId": tenant_id},
+                headers=_service_headers({"Content-Type": "application/json"}),
+                json={"tenantId": tenant_id},
+            )
             if r.status_code == 200:
-                LOG.info("ml_session_open sid=%s profile=PSTN_NARROWBAND", sid)
+                LOG.info(
+                    "ml_session_open sid=%s tenant=%s profile=PSTN_NARROWBAND",
+                    sid,
+                    tenant_id,
+                )
                 return True
             LOG.error(
-                "FAIL-OPEN: ml-engine open returned %s ΓÇö discarding audio for sid=%s",
+                "FAIL-OPEN: ml-engine open returned %s ΓÇö discarding audio for sid=%s body=%s",
                 r.status_code,
                 sid,
+                (r.text or "")[:200],
             )
         except Exception:
             LOG.exception(
@@ -145,7 +188,7 @@ class MlEngineClient:
     async def close_session(self, sid: str) -> None:
         url = f"{self.base_url}/session/{sid}/close"
         try:
-            r = await self._client.post(url)
+            r = await self._client.post(url, headers=_service_headers())
             if r.status_code in (200, 404):
                 LOG.info("ml_session_close sid=%s status=%s", sid, r.status_code)
                 return
@@ -160,7 +203,7 @@ class MlEngineClient:
             r = await self._client.post(
                 url,
                 content=pcm.astype(np.float32, copy=False).tobytes(),
-                headers={"Content-Type": "application/octet-stream"},
+                headers=_service_headers({"Content-Type": "application/octet-stream"}),
             )
             if r.status_code == 200:
                 return True
@@ -196,13 +239,21 @@ class DecisionPlaneClient:
             "scenarioId": "pstn-narrowband",
         }
         try:
-            r = await self._client.post(url, json=body)
+            r = await self._client.post(url, json=body, headers=_service_headers())
             if r.status_code == 200:
                 LOG.info("decision_session_open sid=%s profile=PSTN_NARROWBAND", sid)
                 return True
             # Idempotent: session may already exist from a prior attach / retry.
             if r.status_code == 400 and "already exists" in (r.text or "").lower():
                 LOG.info("decision_session_exists sid=%s", sid)
+                return True
+            # F10 AGI already opened via /internal/v2/sessions/start — treat auth/exists as soft ok.
+            if r.status_code in (401, 403, 409):
+                LOG.info(
+                    "decision_session_open soft-ok status=%s sid=%s (AGI may own session)",
+                    r.status_code,
+                    sid,
+                )
                 return True
             LOG.error(
                 "FAIL-OPEN: Decision Plane open returned %s ΓÇö gauge will not move sid=%s body=%s",
@@ -220,7 +271,7 @@ class DecisionPlaneClient:
     async def close_session(self, sid: str) -> None:
         url = f"{self.base_url}/api/v1/session/{sid}/close"
         try:
-            r = await self._client.post(url)
+            r = await self._client.post(url, headers=_service_headers())
             if r.status_code in (200, 404):
                 LOG.info("decision_session_close sid=%s status=%s", sid, r.status_code)
                 return
@@ -233,7 +284,7 @@ class DecisionPlaneClient:
         url = f"{self.base_url}/api/v1/actuation/{sid}/channel"
         body = {"channelId": channel_id, "role": role}
         try:
-            r = await self._client.post(url, json=body)
+            r = await self._client.post(url, json=body, headers=_service_headers())
             if r.status_code == 200:
                 LOG.info(
                     "decision_channel_bound sid=%s channel=%s role=%s",
@@ -250,6 +301,31 @@ class DecisionPlaneClient:
             )
         except Exception:
             LOG.exception("FAIL-OPEN: channel bind failed sid=%s channel=%s", sid, channel_id)
+
+    async def resolve_tenant(self, *, username: Optional[str] = None, extension: Optional[str] = None) -> Optional[str]:
+        """Look up opaque tenantId via Decision Plane internal telephony resolve."""
+        params: dict[str, str] = {}
+        if username:
+            params["username"] = username
+        elif extension:
+            params["extension"] = extension
+        else:
+            return None
+        url = f"{self.base_url}/internal/v2/telephony/resolve"
+        try:
+            r = await self._client.get(url, params=params, headers=_service_headers())
+            if r.status_code == 200:
+                tid = (r.json() or {}).get("tenantId")
+                return str(tid) if tid else None
+            LOG.warning(
+                "telephony_resolve status=%s params=%s body=%s",
+                r.status_code,
+                params,
+                (r.text or "")[:160],
+            )
+        except Exception:
+            LOG.exception("telephony_resolve failed params=%s", params)
+        return None
 
 
 # uuid (wire) -> sessionId (ml-engine). Same string: UUID hex.
@@ -395,13 +471,16 @@ async def metrics_logger(metrics: Metrics, interval: float) -> None:
 
 class AriSnoopController:
     """
-    Non-destructive media tap: ARI snoop ΓåÆ dialplan [sentinel-snoop] ΓåÆ AudioSocket.
+    Non-destructive media tap: ARI snoop → dialplan [sentinel-snoop] → AudioSocket.
 
-    Keeps PJSIP/caller Γåö PJSIP/agent on a normal bridge (two-way audio intact) while
-    a snoop channel carries a copy into AudioSocket toward this process :9092.
+    Keeps softphone legs on ConfBridge (two-way audio intact) while a snoop channel
+    carries a copy into AudioSocket toward this process :9092.
 
     Event WS + HTTP poll fallback: Docker Desktop / ARI WS often delivers no
     BridgeEnter events; polling /channels catches live caller legs reliably.
+
+    F10 REALTIME endpoints are named ``PJSIP/2001`` / ``PJSIP/2002`` (not the
+    legacy ``PJSIP/caller`` / ``PJSIP/agent`` lab names).
     """
 
     def __init__(
@@ -424,9 +503,31 @@ class AriSnoopController:
         )
         self._snooped: set[str] = set()
         self._agent_bound: set[str] = set()
+        self._bound: set[str] = set()
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    @staticmethod
+    def _is_talk_leg(name: str) -> bool:
+        """True for softphone media legs we may snoop (legacy + F10 REALTIME)."""
+        if not name.startswith("PJSIP/"):
+            return False
+        lower = name.lower()
+        if "snoop" in lower or name.startswith("AudioSocket/"):
+            return False
+        # PJSIP/2001-0000000a → endpoint "2001"
+        endpoint = name[6:].split("-", 1)[0]
+        if endpoint in ("caller", "agent"):
+            return True
+        # F10: numeric extension endpoints
+        return endpoint.isdigit()
+
+    @staticmethod
+    def _role_for(name: str) -> str:
+        if name.startswith("PJSIP/agent"):
+            return "agent"
+        return "caller"
 
     async def _get_var(self, channel_id: str, name: str) -> Optional[str]:
         try:
@@ -439,6 +540,27 @@ class AriSnoopController:
         except Exception:
             LOG.exception("ari_get_var_failed channel=%s var=%s", channel_id, name)
         return None
+
+    async def _remember_tenant(self, sid: str, channel_id: str, name: str) -> None:
+        """Stash tenantId for ml-engine open before AudioSocket UUID handshake."""
+        if sid in _sid_tenant:
+            return
+        tid = await self._get_var(channel_id, "SV_TENANT")
+        if not tid and self.decision is not None:
+            endpoint = ""
+            if name.startswith("PJSIP/"):
+                endpoint = name[6:].split("-", 1)[0]
+            if endpoint and endpoint not in ("caller", "agent"):
+                tid = await self.decision.resolve_tenant(username=endpoint)
+            if not tid and endpoint:
+                tid = await self.decision.resolve_tenant(extension=endpoint)
+        if not tid:
+            tid = DEFAULT_TENANT_ID or None
+        if tid:
+            _sid_tenant[sid] = tid
+            LOG.info("ari_tenant_bound sid=%s tenant=%s channel=%s", sid, tid, channel_id)
+        else:
+            LOG.warning("ari_tenant_unresolved sid=%s channel=%s name=%s", sid, channel_id, name)
 
     async def _snoop_channel(self, channel_id: str, name: str) -> None:
         if channel_id in self._snooped:
@@ -453,6 +575,7 @@ class AriSnoopController:
                 name,
             )
             return
+        await self._remember_tenant(sid, channel_id, name)
         snoop_id = str(uuid.uuid4())
         try:
             r = await self._http.post(
@@ -480,9 +603,7 @@ class AriSnoopController:
                 snoop_id,
                 sid,
             )
-            if self.decision is not None and sid:
-                role = "agent" if name.startswith("PJSIP/agent") else "caller"
-                await self.decision.bind_channel(sid, channel_id, role=role)
+            await self._bind_leg_once(channel_id, name, sid=sid)
         except Exception:
             LOG.exception("ari_snoop_exception channel=%s", channel_id)
 
@@ -524,24 +645,37 @@ class AriSnoopController:
         channel = event.get("channel") or event.get("peer") or {}
         channel_id = channel.get("id")
         name = channel.get("name") or ""
-        if not channel_id:
+        if not channel_id or not self._is_talk_leg(name):
             return
-        # One snoop on the caller leg is enough for mixed spy=both audio.
-        # Also register the agent leg for agent-only whisper (no second media snoop).
-        if name.startswith("PJSIP/caller"):
+        # One snoop with spy=both is enough for ConfBridge mixed audio.
+        if not self._snooped:
             await self._snoop_channel(channel_id, name)
-        elif name.startswith("PJSIP/agent") and self.decision is not None:
-            await self._bind_agent_once(channel_id)
+        else:
+            await self._bind_leg_once(channel_id, name)
 
-    async def _bind_agent_once(self, channel_id: str) -> None:
-        """Bind agent leg once — re-POSTing every 0.5s starves Java feature ingest."""
-        if channel_id in self._agent_bound or self.decision is None:
+    async def _bind_leg_once(
+        self, channel_id: str, name: str = "", *, sid: Optional[str] = None
+    ) -> None:
+        """Bind softphone leg once — re-POSTing every 0.5s starves Java feature ingest."""
+        if channel_id in self._bound or self.decision is None:
             return
-        sid = await self._get_var(channel_id, "SV_SESSION")
+        if sid is None:
+            sid = await self._get_var(channel_id, "SV_SESSION")
         if not sid:
             return
-        await self.decision.bind_channel(sid, channel_id, role="agent")
-        self._agent_bound.add(channel_id)
+        # Prefer "agent" for the second talk leg so hold/whisper has a peer target.
+        role = self._role_for(name)
+        if role == "caller" and any(
+            True for _ in self._bound
+        ) and not name.startswith("PJSIP/caller"):
+            role = "agent"
+        await self.decision.bind_channel(sid, channel_id, role=role)
+        self._bound.add(channel_id)
+        if role == "agent":
+            self._agent_bound.add(channel_id)
+
+    async def _bind_agent_once(self, channel_id: str) -> None:
+        await self._bind_leg_once(channel_id, "PJSIP/agent")
 
     async def _poll_channels_once(self) -> None:
         try:
@@ -556,21 +690,28 @@ class AriSnoopController:
         live_ids = {c.get("id") for c in channels if c.get("id")}
         self._snooped &= live_ids  # drop hung-up ids
         self._agent_bound &= live_ids
+        self._bound &= live_ids
 
+        talk_legs: list[tuple[str, str]] = []
         for ch in channels:
             name = ch.get("name") or ""
             channel_id = ch.get("id")
             state = ch.get("state") or ""
-            if not channel_id:
+            if not channel_id or state != "Up":
                 continue
-            if state != "Up":
+            if not self._is_talk_leg(name):
                 continue
-            # Tap caller when up (bridged or ringing-answered).
-            if name.startswith("PJSIP/caller"):
-                if channel_id not in self._snooped:
-                    await self._snoop_channel(channel_id, name)
-            elif name.startswith("PJSIP/agent") and self.decision is not None:
-                await self._bind_agent_once(channel_id)
+            talk_legs.append((channel_id, name))
+
+        # Media: snoop the first Up talk leg that has SV_SESSION (spy=both).
+        if not self._snooped:
+            for channel_id, name in talk_legs:
+                await self._snoop_channel(channel_id, name)
+                if channel_id in self._snooped:
+                    break
+        # Actuation: bind every talk leg once.
+        for channel_id, name in talk_legs:
+            await self._bind_leg_once(channel_id, name)
 
     async def _poll_loop(self) -> None:
         LOG.info("ARI channel poller started (0.5s)")

@@ -44,28 +44,42 @@ def build_feature_frame(session: PipelineSession, window: np.ndarray) -> Feature
     linguistic_payload = session.slow_path_linguistic or extracted.get("linguistic") or {
         "available": False
     }
+    from app.modules.privacy import assert_no_transcript_on_wire, strip_transcript_fields
+
+    linguistic_payload = strip_transcript_fields(dict(linguistic_payload))
     slow_ms = float(session.slow_path_latency_ms or 0.0)
     sr = session.ring_buffer.sample_rate
     window_end_ms = int(session.ring_buffer.total_samples_written * 1000 / sr)
     window_start_ms = max(0, window_end_ms - int(settings.window_seconds * 1000))
-    session.emit_seq += 1
-    return FeatureFrame(
+    frame = FeatureFrame(
+        schema="sentinelvoice.FeatureFrame/1",
         sessionId=session.session_id,
-        seq=session.emit_seq,
+        seq=state.emit_seq,
         windowStartMs=window_start_ms,
         windowEndMs=window_end_ms,
         channelProfile=session.profile,
-        speechPresent=bool(extracted["speechPresent"]),
-        cumulativeSpeechMs=session.cumulative_speech_ms,
-        voice=_family(VoiceFamily, extracted["voice"]),
-        channel=_family(ChannelFamily, extracted["channel"]),
-        prosody=_family(ProsodyFamily, extracted["prosody"]),
-        speaker=_family(SpeakerFamily, extracted["speaker"]),
-        watermark=_family(WatermarkFamily, extracted["watermark"]),
+        speechPresent=bool(extracted.get("speechPresent")),
+        cumulativeSpeechMs=int(session.cumulative_speech_ms),
+        voice=_family(VoiceFamily, extracted.get("voice") or {"available": False}),
+        channel=_family(ChannelFamily, extracted.get("channel") or {"available": False}),
+        prosody=_family(ProsodyFamily, extracted.get("prosody") or {"available": False}),
+        speaker=_family(SpeakerFamily, extracted.get("speaker") or {"available": False}),
+        watermark=_family(WatermarkFamily, extracted.get("watermark") or {"available": False}),
         linguistic=_family(LinguisticFamily, linguistic_payload),
-        # Frozen schema: only fastPath/slowPath — module breakdown is on /diagnostics.
         latencyMs=LatencyMs(fastPath=fast_ms, slowPath=slow_ms),
     )
+    # Privacy guard before emit
+    try:
+        assert_no_transcript_on_wire(frame.model_dump(mode="json", exclude_none=True))
+    except Exception:
+        logger.exception("privacy_guard_failed session=%s — stripping linguistic text", session.session_id)
+        linguistic_payload = strip_transcript_fields(linguistic_payload)
+        linguistic_payload.pop("claimedIdentity", None)
+        frame = frame.model_copy(
+            update={"linguistic": _family(LinguisticFamily, linguistic_payload)}
+        )
+    session.emit_seq = state.emit_seq
+    return frame
 
 
 class SessionScheduler:

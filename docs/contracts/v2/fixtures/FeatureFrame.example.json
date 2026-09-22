@@ -50,6 +50,9 @@
   "linguistic": {
     "ageMs": 900,
     "language": "hi-en",
+    "source": "MERGED",
+    "observedAt": 1727000000900,
+    "confidence": 0.82,
     "urgency": 0.93,
     "secrecy": 0.88,
     "authorityInvocation": 0.9,
@@ -59,12 +62,24 @@
       "type": "WIRE_TRANSFER",
       "amount": 5000000,
       "currency": "INR",
-      "beneficiaryHint": "vendor account ending 4471",
-      "deadline": "immediate"
+      "beneficiaryHint": null,
+      "deadline": null,
+      "sharesCredential": false,
+      "beneficiaryMentioned": true
     },
-    "claimedIdentity": "Rajesh Kumar",
+    "categories": {
+      "URGENCY": 0.93,
+      "SECRECY": 0.88,
+      "AUTHORITY": 0.9,
+      "PAYMENT": 0.85,
+      "CREDENTIAL": 0.0,
+      "CUSTOM": 0.0
+    },
+    "matchedRuleIds": ["kw-urgency-immediate", "kw-payment-transfer"],
+    "injectionAttempt": false,
+    "llmPending": false,
+    "claimedIdentity": null,
     "claimedRole": "CFO",
-    "redactedSnippet": "\u2026this is [NAME], [ROLE]. Transfer [AMOUNT] immediately, don't tell [PERSON]\u2026",
     "available": true
   },
   "latencyMs": {

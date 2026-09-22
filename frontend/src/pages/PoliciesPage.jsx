@@ -73,6 +73,10 @@ export function PoliciesPage() {
   const [engineStatus, setEngineStatus] = useState(null);
   const fileRef = useRef(null);
   const pollRef = useRef(null);
+  const compileBusyRef = useRef(false);
+  const compilationsRef = useRef([]);
+  compileBusyRef.current = compileBusy;
+  compilationsRef.current = compilations;
 
   const canWrite = hasPermission('policies:write');
   const canApprove = hasPermission('policies:approve');
@@ -86,31 +90,59 @@ export function PoliciesPage() {
 
   const load = useCallback(async () => {
     try {
+      const tasks = [];
       if (docsTab) {
         const q = archivedTab ? 'archived=true' : 'includeArchived=false';
-        const data = await apiJson(`/api/v2/policies/documents?${q}`);
-        setItems(data.items || []);
+        tasks.push(
+          apiJson(`/api/v2/policies/documents?${q}`).then((data) => {
+            setItems(data.items || []);
+          }),
+        );
       }
       if (docsTab && !archivedTab) {
-        const limits = await apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true }).catch(
-          () => ({ maxDocumentsPerCompile: 5 }),
+        tasks.push(
+          apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true })
+            .catch(() => ({ maxDocumentsPerCompile: 5 }))
+            .then((limits) => {
+              if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
+            }),
         );
-        if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
       }
-      if (tab === 'rules' || tab === 'versions' || tab === 'approvals' || tab === 'keywords' || tab === 'simulate' || tab === 'live-rules') {
-        const [s, c, limits] = await Promise.all([
-          apiJson('/api/v2/policy/sets', { skipErrorToast: true }).catch(() => ({ items: [] })),
-          apiJson('/api/v2/policy/compilations', { skipErrorToast: true }).catch(() => ({ items: [] })),
-          apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true }).catch(() => ({
-            maxDocumentsPerCompile: 5,
-          })),
-        ]);
-        setSets(s.items || []);
-        setCompilations(c.items || []);
-        if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
+      if (
+        tab === 'rules' ||
+        tab === 'versions' ||
+        tab === 'approvals' ||
+        tab === 'keywords' ||
+        tab === 'simulate' ||
+        tab === 'live-rules'
+      ) {
+        tasks.push(
+          Promise.all([
+            apiJson('/api/v2/policy/sets', { skipErrorToast: true }).catch(() => ({ items: [] })),
+            apiJson('/api/v2/policy/compilations', { skipErrorToast: true }).catch(() => ({
+              items: [],
+            })),
+            apiJson('/api/v2/policy/compile-limits', { skipErrorToast: true }).catch(() => ({
+              maxDocumentsPerCompile: 5,
+            })),
+          ]).then(([s, c, limits]) => {
+            setSets(s.items || []);
+            setCompilations(c.items || []);
+            if (limits.maxDocumentsPerCompile) setMaxDocs(limits.maxDocumentsPerCompile);
+          }),
+        );
       }
-      const eng = await apiJson('/api/v2/policy/engine/status', { skipErrorToast: true }).catch(() => null);
-      if (eng) setEngineStatus(eng);
+      // Engine status only where it is shown — skip on pure document browsing.
+      if (tab === 'documents' || tab === 'rules' || tab === 'live-rules' || tab === 'versions') {
+        tasks.push(
+          apiJson('/api/v2/policy/engine/status', { skipErrorToast: true })
+            .catch(() => null)
+            .then((eng) => {
+              if (eng) setEngineStatus(eng);
+            }),
+        );
+      }
+      await Promise.all(tasks);
     } catch (err) {
       push(err.message || 'Failed to load');
     } finally {
@@ -129,9 +161,13 @@ export function PoliciesPage() {
     setLoading(true);
     load();
     pollRef.current = setInterval(() => {
-      // Silent refresh — never flip loading or remount tab inputs mid-typing.
+      if (document.visibilityState === 'hidden') return;
+      const busy = compileBusyRef.current;
+      const comps = compilationsRef.current || [];
+      const inFlight = busy || comps.some((c) => c.status === 'QUEUED' || c.status === 'RUNNING');
+      if (!inFlight) return;
       load();
-    }, 4000);
+    }, 2500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -519,7 +555,9 @@ export function PoliciesPage() {
             <div className="rounded border border-sv-border bg-sv-elevated/40 p-4">
               <p className="text-sm font-medium text-sv-fg">Compile rules</p>
               <p className="mt-1 text-xs text-sv-muted">
-                Select up to {maxDocs} extracted documents, then run FULL or INCREMENTAL compile
+                Select up to {maxDocs} extracted documents, then run FULL or INCREMENTAL compile.
+                New versions <strong>keep</strong> every live ACTIVE rule and append newly extracted
+                ones — resolve clashes in Conflicts (you choose which to keep).
                 (TENANT_ADMIN).
               </p>
               <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-sm">
@@ -1004,33 +1042,51 @@ function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
   const [term, setTerm] = useState('');
   const [category, setCategory] = useState('CUSTOM');
 
+  const activeId = useMemo(
+    () => (sets || []).find((s) => s.status === 'ACTIVE')?.id || '',
+    [sets],
+  );
+
+  // Prefer ACTIVE whenever it exists so Stage A lexicon matches what reviewers expect.
   useEffect(() => {
     if (!sets.length) return;
     const preferred =
       sets.find((s) => s.status === 'ACTIVE') ||
       sets.find((s) => s.status === 'DRAFT') ||
       sets[0];
-    setSetId((prev) => prev || preferred.id);
+    setSetId((prev) => {
+      if (preferred?.status === 'ACTIVE') return preferred.id;
+      if (prev && sets.some((s) => s.id === prev)) return prev;
+      return preferred.id;
+    });
   }, [sets]);
 
-  useEffect(() => {
-    if (!setId) {
+  const reloadKeywords = useCallback(async (id) => {
+    if (!id) {
       setKeywords([]);
-      return undefined;
+      return;
     }
+    try {
+      const s = await apiJson(`/api/v2/policy/sets/${id}`, { skipErrorToast: true });
+      setKeywords((s.keywords || []).filter((k) => String(k.term || '').trim()));
+    } catch {
+      setKeywords([]);
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const s = await apiJson(`/api/v2/policy/sets/${setId}`, { skipErrorToast: true });
-        if (!cancelled) setKeywords(s.keywords || []);
-      } catch {
+      if (!setId) {
         if (!cancelled) setKeywords([]);
+        return;
       }
+      await reloadKeywords(setId);
     })();
     return () => {
       cancelled = true;
     };
-  }, [setId]);
+  }, [setId, reloadKeywords]);
 
   // Keep form mounted once we have sets — parent poll must not blank the term input.
   if (loading && sets.length === 0) return <p className="text-sm text-sv-muted">Loading…</p>;
@@ -1038,6 +1094,7 @@ function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
     return <p className="text-sm text-sv-muted">No policy sets yet — compile a document first.</p>;
   }
 
+  const selected = sets.find((s) => s.id === setId);
   const byCategory = KEYWORD_CATEGORIES.map((cat) => ({
     category: cat,
     items: keywords.filter((k) => k.category === cat),
@@ -1045,6 +1102,10 @@ function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-sv-muted">
+        Live Stage A uses keywords on the <strong>ACTIVE</strong> set only. Terms seen on a draft /
+        older version land here after that version is approved — or click Sync from rules.
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-sm text-sv-muted">Policy set</label>
         <select
@@ -1055,9 +1116,37 @@ function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
           {sets.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name || 'Set'} · v{s.version} ({s.status})
+              {s.id === activeId ? ' ← live' : ''}
             </option>
           ))}
         </select>
+        {canWrite ? (
+          <Button
+            className="px-2 py-1 text-xs"
+            variant="ghost"
+            disabled={busy || !setId}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const s = await apiJson(`/api/v2/policy/sets/${setId}/keywords/rebuild`, {
+                  method: 'POST',
+                });
+                setKeywords((s.keywords || []).filter((k) => String(k.term || '').trim()));
+                push(`Synced ${s.keywords?.length ?? 0} keywords from rules`);
+                onRefresh();
+              } catch (err) {
+                push(err.message || 'Sync failed');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Sync from rules
+          </Button>
+        ) : null}
+        {selected?.status && selected.status !== 'ACTIVE' ? (
+          <Badge tone="warn">Not live — switch to ACTIVE for Stage A</Badge>
+        ) : null}
       </div>
 
       {byCategory.map((g) => (
@@ -1127,8 +1216,7 @@ function KeywordsTab({ loading, sets, canWrite, onRefresh }) {
                   body: JSON.stringify({ term: term.trim(), category, lang: 'en' }),
                 });
                 setTerm('');
-                const s = await apiJson(`/api/v2/policy/sets/${setId}`);
-                setKeywords(s.keywords || []);
+                await reloadKeywords(setId);
                 onRefresh();
               } catch (err) {
                 push(err.message || 'Add failed');

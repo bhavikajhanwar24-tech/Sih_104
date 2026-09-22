@@ -13,6 +13,9 @@ let refreshFlight = null;
 /** @type {((err: ApiError) => void) | null} */
 let onApiError = null;
 
+/** Default abort so a hung backend (down mirror DB, etc.) cannot freeze the UI. */
+const DEFAULT_TIMEOUT_MS = 12_000;
+
 /**
  * @param {(err: ApiError) => void | null} handler
  */
@@ -47,6 +50,7 @@ export async function ensureCsrf() {
   const res = await fetch('/api/v2/auth/csrf', {
     method: 'GET',
     credentials: 'include',
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) return;
   const data = await res.json().catch(() => ({}));
@@ -89,6 +93,7 @@ async function refreshSession() {
         method: 'POST',
         credentials: 'include',
         headers,
+        signal: AbortSignal.timeout(8_000),
       });
       if (res.ok) {
         csrfToken = readXsrfCookie() || csrfToken;
@@ -105,12 +110,50 @@ async function refreshSession() {
 }
 
 /**
+ * Merge caller AbortSignal with a timeout so hung APIs fail fast.
+ * @param {AbortSignal | null | undefined} userSignal
+ * @param {number} timeoutMs
+ * @returns {{ signal: AbortSignal | undefined, cleanup: () => void }}
+ */
+function withTimeout(userSignal, timeoutMs) {
+  if (timeoutMs <= 0) {
+    return { signal: userSignal || undefined, cleanup: () => {} };
+  }
+  const ctrl = new AbortController();
+  const onUserAbort = () => ctrl.abort(userSignal?.reason);
+  if (userSignal) {
+    if (userSignal.aborted) {
+      ctrl.abort(userSignal.reason);
+    } else {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+  }
+  const timer = setTimeout(
+    () => ctrl.abort(new DOMException('Request timed out', 'TimeoutError')),
+    timeoutMs,
+  );
+  return {
+    signal: ctrl.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      if (userSignal) userSignal.removeEventListener('abort', onUserAbort);
+    },
+  };
+}
+
+/**
  * @param {string} input
- * @param {RequestInit & { skipAuthRefresh?: boolean, skipErrorToast?: boolean }} [init]
+ * @param {RequestInit & { skipAuthRefresh?: boolean, skipErrorToast?: boolean, timeoutMs?: number }} [init]
  * @returns {Promise<Response>}
  */
 export async function apiFetch(input, init = {}) {
-  const { skipAuthRefresh = false, skipErrorToast = false, ...rest } = init;
+  const {
+    skipAuthRefresh = false,
+    skipErrorToast = false,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal: userSignal,
+    ...rest
+  } = init;
   await ensureCsrf();
   const headers = new Headers(rest.headers || {});
   if (!headers.has('Content-Type') && rest.body && typeof rest.body === 'string') {
@@ -121,11 +164,27 @@ export async function apiFetch(input, init = {}) {
     headers.set(csrfHeaderName, token);
   }
 
-  let res = await fetch(input, {
-    ...rest,
-    headers,
-    credentials: 'include',
-  });
+  const { signal, cleanup } = withTimeout(userSignal, timeoutMs);
+  let res;
+  try {
+    res = await fetch(input, {
+      ...rest,
+      headers,
+      credentials: 'include',
+      signal,
+    });
+  } catch (err) {
+    cleanup();
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      const timedOut =
+        err.name === 'TimeoutError' || String(err.message || '').includes('timed out');
+      throw Object.assign(new Error(timedOut ? 'Request timed out' : 'Request aborted'), {
+        code: timedOut ? 'timeout' : 'aborted',
+        status: 0,
+      });
+    }
+    throw err;
+  }
 
   if (res.status === 401 && !skipAuthRefresh) {
     const ok = await refreshSession();
@@ -136,13 +195,21 @@ export async function apiFetch(input, init = {}) {
       }
       const retryToken = csrfToken || readXsrfCookie();
       if (retryToken) retryHeaders.set(csrfHeaderName, retryToken);
-      res = await fetch(input, {
-        ...rest,
-        headers: retryHeaders,
-        credentials: 'include',
-      });
+      const retry = withTimeout(userSignal, timeoutMs);
+      try {
+        res = await fetch(input, {
+          ...rest,
+          headers: retryHeaders,
+          credentials: 'include',
+          signal: retry.signal,
+        });
+      } finally {
+        retry.cleanup();
+      }
     }
   }
+
+  cleanup();
 
   if (!res.ok && !skipErrorToast && onApiError && res.status !== 401) {
     const err = await res.clone().json().catch(() => null);
@@ -159,7 +226,7 @@ export async function apiFetch(input, init = {}) {
 
 /**
  * @param {string} input
- * @param {RequestInit & { skipAuthRefresh?: boolean, skipErrorToast?: boolean }} [init]
+ * @param {RequestInit & { skipAuthRefresh?: boolean, skipErrorToast?: boolean, timeoutMs?: number }} [init]
  * @returns {Promise<any>}
  */
 export async function apiJson(input, init = {}) {

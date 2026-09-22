@@ -32,9 +32,22 @@ export function LiveCallsPage() {
 
   useEffect(() => {
     if (!canRead) return undefined;
-    load();
-    const id = window.setInterval(load, 2500);
-    return () => window.clearInterval(id);
+    let id = 0;
+    const tick = () => {
+      if (document.visibilityState === 'hidden') return;
+      void load();
+    };
+    tick();
+    // 5s when idle; skip when tab hidden so background tabs don't hammer APIs.
+    id = window.setInterval(tick, 5000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [canRead, load]);
 
   if (!canRead) {
@@ -83,7 +96,52 @@ export function LiveCallsPage() {
       render: (row) => {
         const level = row.liveLevel || row.peakLevel;
         if (!level) return <span className="text-xs text-sv-muted">—</span>;
-        return <Badge tone={row.active ? 'warning' : 'neutral'}>{level}</Badge>;
+        const score =
+          typeof row.liveScore === 'number'
+            ? row.liveScore
+            : typeof row.peakScore === 'number'
+              ? row.peakScore
+              : null;
+        const scoreLabel =
+          score == null ? '' : ` · ${score.toFixed(2)}`;
+        return (
+          <div>
+            <Badge tone={row.active ? 'warning' : 'neutral'}>
+              {level}
+              {scoreLabel}
+            </Badge>
+            {row.active && level.includes('SOFT_NUDGE') ? (
+              <div className="mt-0.5 text-[11px] text-sv-muted">Operator advisory / whisper</div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'linguistic',
+      header: 'Linguistic',
+      render: (row) => {
+        if (!row.active) return <span className="text-xs text-sv-muted">—</span>;
+        const status = row.linguisticStatus || 'unavailable';
+        const tone = status === 'live' ? 'success' : status === 'pending' ? 'warning' : 'neutral';
+        const age =
+          typeof row.linguisticAgeMs === 'number' ? ` · ${Math.round(row.linguisticAgeMs)}ms` : '';
+        const conf =
+          typeof row.linguisticConfidence === 'number'
+            ? ` · conf ${row.linguisticConfidence.toFixed(2)}`
+            : '';
+        return (
+          <div>
+            <Badge tone={tone}>
+              {status}
+              {age}
+              {conf}
+            </Badge>
+            {row.linguisticSource ? (
+              <div className="mt-0.5 font-mono text-[11px] text-sv-muted">{row.linguisticSource}</div>
+            ) : null}
+          </div>
+        );
       },
     },
     {

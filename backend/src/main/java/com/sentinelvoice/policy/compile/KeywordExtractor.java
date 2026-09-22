@@ -59,14 +59,31 @@ public final class KeywordExtractor {
                 } else if (item != null) {
                     term = String.valueOf(item).trim();
                 }
-                add(out, seen, term, lang, cat, weight);
+                add(out, seen, term, lang, normalizeCategory(cat), weight);
             }
         }
         for (Map<String, Object> h : fromText(clauseText)) {
             add(out, seen, String.valueOf(h.get("term")), "en",
-                    String.valueOf(h.get("category")), 1.0);
+                    normalizeCategory(String.valueOf(h.get("category"))), 1.0);
         }
         return out;
+    }
+
+    /** Map free-form / LLM categories onto the {@code policy_keywords} CHECK constraint. */
+    public static String normalizeCategory(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "CUSTOM";
+        }
+        String c = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        return switch (c) {
+            case "URGENCY", "URGENT" -> "URGENCY";
+            case "SECRECY", "SECRET", "CONFIDENTIAL" -> "SECRECY";
+            case "AUTHORITY", "AUTHORITATIVE" -> "AUTHORITY";
+            case "PAYMENT", "PAYMENTS", "AMOUNT", "FINANCIAL", "WIRE", "MONEY" -> "PAYMENT";
+            case "CREDENTIAL", "CREDENTIALS", "OTP", "PASSWORD", "PIN" -> "CREDENTIAL";
+            case "CUSTOM" -> "CUSTOM";
+            default -> "CUSTOM";
+        };
     }
 
     public static List<Map<String, Object>> fromText(String clauseText) {
@@ -101,7 +118,7 @@ public final class KeywordExtractor {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("term", term);
         m.put("lang", lang == null || lang.isBlank() ? "en" : lang);
-        m.put("category", cat == null || cat.isBlank() ? "CUSTOM" : cat);
+        m.put("category", normalizeCategory(cat));
         m.put("weight", weight);
         out.add(m);
     }

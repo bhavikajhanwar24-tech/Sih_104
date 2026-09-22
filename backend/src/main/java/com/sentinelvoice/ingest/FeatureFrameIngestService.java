@@ -297,6 +297,11 @@ public class FeatureFrameIngestService {
         InterventionDecision decision = eval.decision();
         RiskAssessment assessment = eval.assessment();
 
+        if (working.linguistic() != null) {
+            session.recordLinguisticMeta(working.linguistic());
+        }
+        decision = applyLlmUnavailablePolicy(session, config, working, decision);
+
         List<ReasonGenerator.GeneratedReason> reasons = reasonGenerator.generate(
                 fusionContext,
                 fusion.families(),
@@ -472,6 +477,63 @@ public class FeatureFrameIngestService {
             case "CHALLENGE_CONTENT_FAIL" -> "fuzzy phrase overlap ≥ 0.60";
             case "CHALLENGE_ACOUSTIC_FAIL" -> "speaker cosine ≥ 0.55 vs call baseline";
             default -> "see methodology appendix";
+        };
+    }
+
+    /**
+     * F11 — when Stage B LLM is unavailable and fusion policy says RAISE_ONE_LEVEL,
+     * bump the intervention level by one (capped at LEVEL_5). CONTINUE_RULES_ONLY is a no-op.
+     */
+    private InterventionDecision applyLlmUnavailablePolicy(
+            CallSession session,
+            FusionConfigDocument config,
+            FeatureFrame working,
+            InterventionDecision decision
+    ) {
+        if (decision == null || working == null || working.linguistic() == null) {
+            return decision;
+        }
+        String policy = "CONTINUE_RULES_ONLY";
+        if (config != null && config.missingEvidence() != null
+                && config.missingEvidence().llmUnavailable() != null) {
+            policy = config.missingEvidence().llmUnavailable().trim().toUpperCase();
+        }
+        if (!"RAISE_ONE_LEVEL".equals(policy)) {
+            return decision;
+        }
+        if (!working.linguistic().llmUnavailable()) {
+            return decision;
+        }
+        InterventionLevel bumped = bumpOne(decision.level());
+        if (bumped == decision.level()) {
+            return decision;
+        }
+        log.info(
+                "llm_unavailable_raise sessionId={} from={} to={}",
+                session.getSessionId(),
+                decision.level(),
+                bumped
+        );
+        return new InterventionDecision(
+                bumped,
+                true,
+                decision.dwellRemainingMs(),
+                decision.actionsToFire(),
+                (decision.rationale() == null ? "" : decision.rationale() + "; ")
+                        + "missingEvidence.llmUnavailable=RAISE_ONE_LEVEL",
+                decision.suppressedIntent()
+        );
+    }
+
+    private static InterventionLevel bumpOne(InterventionLevel level) {
+        if (level == null) {
+            return InterventionLevel.LEVEL_2_SOFT_NUDGE;
+        }
+        return switch (level) {
+            case LEVEL_1_SILENT -> InterventionLevel.LEVEL_2_SOFT_NUDGE;
+            case LEVEL_2_SOFT_NUDGE -> InterventionLevel.LEVEL_3_STEP_UP_MFA;
+            case LEVEL_3_STEP_UP_MFA -> InterventionLevel.LEVEL_4_AUTO_HOLD;
+            case LEVEL_4_AUTO_HOLD, LEVEL_5_TERMINATE -> InterventionLevel.LEVEL_5_TERMINATE;
         };
     }
 

@@ -138,15 +138,19 @@ def setup(extension: str, caller_endpoint: str, caller_num: str, sip_call_id: st
         sv_session = started.get("svSessionUuid") or sv_session
         conf = started.get("conf") or conf
         dest = started.get("destEndpoint") or dest
+        tenant = started.get("tenantId") or ""
     except Exception as exc:  # noqa: BLE001
         # Still ring the callee — Live Calls metadata can catch up later.
         agi_verbose(f"sessions/start failed (dial continues): {exc}", 2)
+        tenant = ""
 
     agi_set("SV_SESSION", sv_session)
+    if tenant:
+        agi_set("SV_TENANT", tenant)
     agi_set("CONF", conf)
     agi_set("DEST_ENDPOINT", dest)
     agi_set("AGI_STATUS", "OK")
-    agi_verbose(f"setup ok dest={dest} conf={conf} sid={sv_session}", 1)
+    agi_verbose(f"setup ok dest={dest} conf={conf} sid={sv_session} tenant={tenant}", 1)
 
 
 def end_call(sv_session: str) -> None:

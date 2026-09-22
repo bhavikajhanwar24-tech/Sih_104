@@ -60,6 +60,12 @@ public class CallSession {
     private volatile Integer responsePlanVersion;
     private volatile ResponsePlanDocument responsePlanSnapshot;
 
+    /** F11 — last linguistic extraction metadata for gate-check / UI. */
+    private volatile String lastLinguisticSource;
+    private volatile Long lastLinguisticAgeMs;
+    private volatile Boolean lastLinguisticPending;
+    private volatile Double lastLinguisticConfidence;
+
     /** One evidence row retained on the Decision Plane (scores / enums / narratives only). */
     public record FiredReason(
             String reasonCode,
@@ -281,5 +287,31 @@ public class CallSession {
 
     public void setResponsePlanSnapshot(ResponsePlanDocument responsePlanSnapshot) {
         this.responsePlanSnapshot = responsePlanSnapshot;
+    }
+
+    public String getLastLinguisticSource() {
+        return lastLinguisticSource;
+    }
+
+    public Long getLastLinguisticAgeMs() {
+        return lastLinguisticAgeMs;
+    }
+
+    public Boolean getLastLinguisticPending() {
+        return lastLinguisticPending;
+    }
+
+    public Double getLastLinguisticConfidence() {
+        return lastLinguisticConfidence;
+    }
+
+    public void recordLinguisticMeta(LinguisticFamily ling) {
+        if (ling == null) {
+            return;
+        }
+        this.lastLinguisticSource = ling.source();
+        this.lastLinguisticAgeMs = ling.ageMs();
+        this.lastLinguisticPending = ling.llmPending();
+        this.lastLinguisticConfidence = ling.confidence();
     }
 }

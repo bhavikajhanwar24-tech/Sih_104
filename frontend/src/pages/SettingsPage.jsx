@@ -26,7 +26,7 @@ export function SettingsPage() {
     try {
       const [s, h] = await Promise.all([
         apiJson('/api/v2/settings'),
-        apiJson('/api/v2/settings/llm-health', { skipErrorToast: true }).catch(() => ({
+        apiJson('/api/v2/settings/llm-health', { skipErrorToast: true, timeoutMs: 5_000 }).catch(() => ({
           ok: false,
           gateway: 'down',
           activeProvider: 'mock',
@@ -156,6 +156,51 @@ export function SettingsPage() {
           <p className="text-sm text-sv-muted">Loading…</p>
         ) : (
           <>
+            <div className="rounded border border-sv-border bg-sv-elevated/40 p-4">
+              <p className="text-sm font-medium text-sv-fg">ASR languages (F11)</p>
+              <p className="mt-1 text-xs text-sv-muted">
+                Whisper auto-detect is limited to these codes (comma-separated). Default{' '}
+                <span className="font-mono">en,hi</span>. Optional:{' '}
+                <span className="font-mono">te, ta, mr, bn</span>. Hinglish is handled via code-switching —
+                expected accuracy is lower for Hinglish and Indic languages than for clear English; we have
+                not published measured WER for this build.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  className="min-w-[12rem] flex-1 rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs text-sv-fg"
+                  value={settings.asrLanguages || 'en,hi'}
+                  disabled={!canWrite || saving}
+                  onChange={(e) =>
+                    setSettings((prev) => (prev ? { ...prev, asrLanguages: e.target.value } : prev))
+                  }
+                />
+                {canWrite ? (
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    variant="ghost"
+                    disabled={saving}
+                    onClick={async () => {
+                      setSaving(true);
+                      try {
+                        const updated = await apiJson('/api/v2/settings', {
+                          method: 'PATCH',
+                          body: JSON.stringify({ asrLanguages: settings.asrLanguages || 'en,hi' }),
+                        });
+                        setSettings(updated);
+                        push('ASR languages saved');
+                      } catch (err) {
+                        push(err.message || 'Save failed');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                  >
+                    Save
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
             <div className="rounded border border-sv-border bg-sv-elevated/40 p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>

@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -118,6 +119,24 @@ public class PolicyCompileService {
         UUID compilationId = compileRepository.insertCompilation(tenantId, m, userId, documentIds);
         int version = setRepository.nextVersion(tenantId);
         UUID setId = setRepository.createDraft(tenantId, userId, "Compiled v" + version, version);
+        // Append semantics: seed the draft with current ACTIVE live rules, then compile
+        // adds newly extracted rules on top. Operator resolves clashes in Conflicts.
+        int seeded = 0;
+        Optional<Map<String, Object>> active = setRepository.findActiveSet(tenantId);
+        if (active.isPresent()) {
+            UUID activeId = UUID.fromString(String.valueOf(active.get().get("id")));
+            seeded = setRepository.appendMissingRuntimeRules(tenantId, activeId, setId);
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("appendedFromActiveId", activeId.toString());
+            meta.put("appendedFromActiveVersion", active.get().get("version"));
+            meta.put("appendedRuleCount", seeded);
+            meta.put("compileMode", m);
+            setRepository.updateSetMeta(tenantId, setId, meta);
+            if (seeded > 0) {
+                setRepository.renameSet(tenantId, setId,
+                        "Compiled v" + version + " (keeps ACTIVE v" + active.get().get("version") + ")");
+            }
+        }
         compileRepository.bindPolicySet(compilationId, setId);
         String contentSha = setRepository.computeContentSha(tenantId, setId);
 
@@ -152,6 +171,7 @@ public class PolicyCompileService {
                         "compilationId", compilationId.toString(),
                         "policySetId", setId.toString(),
                         "mode", m,
+                        "appendedFromActive", seeded,
                         "contentSha256", contentSha == null ? "" : contentSha
                 )
         );
@@ -1327,7 +1347,8 @@ public class PolicyCompileService {
                 continue;
             }
             String lang = km.get("lang") == null ? "en" : String.valueOf(km.get("lang"));
-            String cat = km.get("category") == null ? "CUSTOM" : String.valueOf(km.get("category"));
+            String cat = KeywordExtractor.normalizeCategory(
+                    km.get("category") == null ? "CUSTOM" : String.valueOf(km.get("category")));
             double w = km.get("weight") instanceof Number n ? n.doubleValue() : 1.0;
             compileRepository.insertKeyword(tenantId, setId, term, lang, cat, w, ruleId);
         }

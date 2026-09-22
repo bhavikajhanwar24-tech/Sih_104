@@ -75,3 +75,5 @@ Keep entries short (one line reason where possible).
 | 2026-09-20 | Ops | Supabase central DB + `migrate-to-supabase.ps1` local dump/restore; docs/v2/SUPABASE.md |
 | 2026-09-21 | F8 | Per-tenant fusion_configs + pure FusionEngine; Risk tuning UI; YAML fusion/intervention removed |
 | 2026-09-21 | F10 | Multi-tenant Asterisk PJSIP REALTIME; AGI dialplan; Directory/Settings telephony UI |
+| 2026-09-22 | F11 | Streaming ASR + Stage A/B intent; FeatureFrame linguistic (no transcript on wire); gate-check; languages settings |
+

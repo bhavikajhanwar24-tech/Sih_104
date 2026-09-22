@@ -18,6 +18,7 @@ from app.modules.adversarial import apply as apply_perturbation
 from app.routes.enrol import router as enrol_router
 from app.routes.redteam import router as redteam_router
 from app.routes.challenge import router as challenge_router
+from app.routes.f11_sessions import router as f11_sessions_router
 from app.llm_gateway.router import router as llm_gateway_router
 from app.scheduler import SessionScheduler
 from app.session import registry
@@ -137,6 +138,7 @@ app = FastAPI(title="SentinelVoice Inference Plane", version=__version__, lifesp
 app.include_router(enrol_router)
 app.include_router(redteam_router)
 app.include_router(challenge_router)
+app.include_router(f11_sessions_router)
 app.include_router(llm_gateway_router)
 
 
@@ -166,11 +168,12 @@ def diagnostics(sid: str) -> dict[str, Any]:
         ),
         "language": (session.slow_path_linguistic or {}).get("language"),
         "codeSwitchDetected": session.asr_state.code_switch_detected,
-        "redactedDelta": (session.slow_path_linguistic or {}).get("redactedDelta"),
-        "redactedSnippet": (session.slow_path_linguistic or {}).get("redactedSnippet"),
+        "source": (session.slow_path_linguistic or {}).get("source"),
+        "llmPending": (session.slow_path_linguistic or {}).get("llmPending"),
         "asr": {
             "modelSize": settings.asr_model_size,
             "enabled": settings.asr_enabled,
+            "rollingSeconds": settings.asr_rolling_seconds,
         },
     }
     return out

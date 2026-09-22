@@ -60,6 +60,9 @@ public class TenantSettingsController {
         if (body.containsKey("llmFailPolicy") && body.get("llmFailPolicy") != null) {
             s.setLlmFailPolicy(String.valueOf(body.get("llmFailPolicy")));
         }
+        if (body.containsKey("asrLanguages") && body.get("asrLanguages") != null) {
+            s.setAsrLanguages(String.valueOf(body.get("asrLanguages")));
+        }
         if (body.containsKey("consentNoticeText")) {
             s.setConsentNoticeText(body.get("consentNoticeText") == null
                     ? null : String.valueOf(body.get("consentNoticeText")));
@@ -102,6 +105,7 @@ public class TenantSettingsController {
         m.put("retentionDays", s.getRetentionDays());
         m.put("allowExternalLlm", s.isAllowExternalLlm());
         m.put("llmFailPolicy", s.getLlmFailPolicy());
+        m.put("asrLanguages", s.getAsrLanguages());
         m.put("consentNoticeText", s.getConsentNoticeText());
         m.put("maxConcurrentCalls", s.getMaxConcurrentCalls());
         m.put("extras", s.getExtras());

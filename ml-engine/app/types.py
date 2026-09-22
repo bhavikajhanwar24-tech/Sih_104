@@ -75,17 +75,22 @@ class Ask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: str
-    amount: float
-    currency: str
-    beneficiaryHint: str
-    deadline: str
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    beneficiaryHint: Optional[str] = None
+    deadline: Optional[str] = None
+    sharesCredential: Optional[bool] = None
+    beneficiaryMentioned: Optional[bool] = None
 
 
 class LinguisticFamily(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     available: bool
+    source: Optional[str] = None  # STAGE_A | STAGE_B | MERGED
+    observedAt: Optional[int] = Field(default=None, ge=0)
     ageMs: Optional[int] = Field(default=None, ge=0)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
     language: Optional[str] = None
     urgency: Optional[float] = Field(default=None, ge=0, le=1)
     secrecy: Optional[float] = Field(default=None, ge=0, le=1)
@@ -93,10 +98,14 @@ class LinguisticFamily(BaseModel):
     emotionalCoercion: Optional[float] = Field(default=None, ge=0, le=1)
     askDetected: Optional[bool] = None
     ask: Optional[Ask] = None
+    categories: Optional[dict[str, float]] = None
+    matchedRuleIds: Optional[list[str]] = None
+    injectionAttempt: Optional[bool] = None
+    llmPending: Optional[bool] = None
     claimedIdentity: Optional[str] = None
     claimedRole: Optional[str] = None
+    # F11: must stay empty on live FeatureFrame wire (demo fixtures only).
     redactedSnippet: Optional[str] = None
-    # New text since last slow-path emission (already redacted). Optional for back-compat.
     redactedDelta: Optional[str] = None
 
 

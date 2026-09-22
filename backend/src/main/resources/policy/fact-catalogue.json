@@ -23,6 +23,7 @@
     },
     { "path": "caller.authorityLimitInr", "type": "number", "description": "Verbal authority limit INR for the action type" },
     { "path": "caller.isHighAuthority", "type": "boolean", "description": "Caller is in a high-authority role" },
+    { "path": "caller.promptInjectionAttempt", "type": "boolean", "description": "F11 — transcript contained AI instruction-like phrases" },
     { "path": "callee.role", "type": "string", "description": "Role of the agent/callee side" },
     { "path": "relationship.isFirstContact", "type": "boolean", "description": "No prior contact between parties" },
     { "path": "relationship.daysSinceLastContact", "type": "number", "description": "Days since last verified contact" },

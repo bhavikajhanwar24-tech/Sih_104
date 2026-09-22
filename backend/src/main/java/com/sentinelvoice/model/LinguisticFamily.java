@@ -1,10 +1,13 @@
 package com.sentinelvoice.model;
 
+import java.util.List;
+import java.util.Map;
+
 /**
- * Frozen FeatureFrame.linguistic block. Context §8.1. Mapped, never keyword-scored, in Java.
+ * Frozen FeatureFrame.linguistic block (F11).
  *
- * <p>{@code redactedDelta} is optional (null when absent) — redacted new text since the
- * previous slow-path ASR emission. {@code redactedSnippet} remains the rolling window.
+ * <p>Live sessions must not carry transcript text ({@code redactedSnippet}/{@code redactedDelta}
+ * empty). Structured extraction is numbers/enums only.
  */
 public record LinguisticFamily(
         boolean available,
@@ -19,9 +22,16 @@ public record LinguisticFamily(
         String claimedIdentity,
         String claimedRole,
         String redactedSnippet,
-        String redactedDelta
+        String redactedDelta,
+        String source,
+        Long observedAt,
+        Double confidence,
+        Map<String, Double> categories,
+        List<String> matchedRuleIds,
+        Boolean injectionAttempt,
+        Boolean llmPending
 ) {
-    /** Back-compat constructor when delta is unavailable. */
+    /** Back-compat when only pre-F11 fields are present. */
     public LinguisticFamily(
             boolean available,
             Long ageMs,
@@ -39,7 +49,41 @@ public record LinguisticFamily(
         this(
                 available, ageMs, language, urgency, secrecy, authorityInvocation,
                 emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
-                redactedSnippet, null
+                redactedSnippet, null, null, null, null, null, null, null, null
         );
+    }
+
+    /** Back-compat with redactedDelta. */
+    public LinguisticFamily(
+            boolean available,
+            Long ageMs,
+            String language,
+            Double urgency,
+            Double secrecy,
+            Double authorityInvocation,
+            Double emotionalCoercion,
+            Boolean askDetected,
+            Ask ask,
+            String claimedIdentity,
+            String claimedRole,
+            String redactedSnippet,
+            String redactedDelta
+    ) {
+        this(
+                available, ageMs, language, urgency, secrecy, authorityInvocation,
+                emotionalCoercion, askDetected, ask, claimedIdentity, claimedRole,
+                redactedSnippet, redactedDelta, null, null, null, null, null, null, null
+        );
+    }
+
+    public boolean llmUnavailable() {
+        if (!available) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(llmPending)) {
+            return false;
+        }
+        return "STAGE_A".equalsIgnoreCase(source == null ? "" : source)
+                && (confidence == null || confidence < 0.6);
     }
 }

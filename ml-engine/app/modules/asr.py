@@ -355,6 +355,7 @@ def warmup(force: bool = False) -> dict[str, Any]:
 
 
 def reset_session_state(state: Optional[AsrSessionState] = None) -> None:
+    """Zeroise in-memory transcript on session close (F11 privacy)."""
     if state is None:
         return
     state._rolling_raw = ""
@@ -366,9 +367,33 @@ def reset_session_state(state: Optional[AsrSessionState] = None) -> None:
     state.words.clear()
     state.last_latency_ms = 0.0
     state.last_available = False
+    state.last_updated_monotonic = 0.0
     state.last_delta_redacted = ""
     state.last_snippet_redacted = ""
     state.last_language_label = "und"
+
+
+def trim_rolling_window(state: AsrSessionState, horizon_s: Optional[float] = None) -> None:
+    """Keep only the last ~horizon_s of word stamps + reconstructed raw text."""
+    horizon = float(horizon_s if horizon_s is not None else settings.asr_rolling_seconds)
+    if not state.words:
+        # Character fallback ~ 12 chars/s speech
+        max_chars = max(80, int(horizon * 14))
+        if len(state._rolling_raw) > max_chars:
+            state._rolling_raw = state._rolling_raw[-max_chars:]
+        return
+    end_t = state.words[-1].end
+    cutoff = end_t - horizon
+    kept = [w for w in state.words if w.end >= cutoff]
+    state.words = kept
+    state._rolling_raw = " ".join(w.word for w in kept).strip()
+    state._emitted_raw_len = min(state._emitted_raw_len, len(state._rolling_raw))
+
+
+def raw_rolling_text(state: AsrSessionState) -> str:
+    """In-process only — never put on FeatureFrame."""
+    return state._rolling_raw or ""
+
 
 
 def _record_languages(state: AsrSessionState, langs: list[str]) -> None:
@@ -536,6 +561,7 @@ def _transcribe_sync(
         # Cap in-memory word list (rolling, not persisted).
         if len(state.words) > 2000:
             del state.words[:-1000]
+        trim_rolling_window(state)
 
     if window_raw:
         state._last_window_raw = window_raw
@@ -606,13 +632,19 @@ def linguistic_from_state(
     state: AsrSessionState,
     *,
     now_monotonic: Optional[float] = None,
+    lexicon: Any = None,
+    stage_b_overlay: Optional[dict[str, Any]] = None,
+    llm_pending: bool = False,
 ) -> dict[str, Any]:
-    """Build a FeatureFrame ``linguistic`` block from the latest ASR snapshot.
+    """Build a FeatureFrame ``linguistic`` block (F11 — numbers/enums only on the wire).
 
-    Intent scores come from the P10.2 hybrid lexicon + semantic scorer. ASR
-    surfaces language, redactedSnippet (rolling), and redactedDelta.
+    Transcript text stays on ``AsrSessionState`` in-process; this payload is stripped
+    of redactedSnippet/redactedDelta before emit.
     """
-    if not state.last_available and not state.last_snippet_redacted:
+    from app.modules.privacy import strip_transcript_fields
+    from app.modules.stage_a import run_stage_a
+
+    if not state.last_available and not state._rolling_raw.strip():
         return {"available": False}
 
     now = now_monotonic if now_monotonic is not None else time.monotonic()
@@ -620,31 +652,21 @@ def linguistic_from_state(
     if state.last_updated_monotonic > 0:
         age_ms = max(0, int((now - state.last_updated_monotonic) * 1000.0))
 
-    snippet = state.last_snippet_redacted or ""
-    intent_fields: dict[str, Any] = {
-        "urgency": 0.0,
-        "secrecy": 0.0,
-        "authorityInvocation": 0.0,
-        "emotionalCoercion": 0.0,
-        "askDetected": False,
-        "claimedIdentity": "",
-        "claimedRole": "",
-    }
-    if snippet.strip():
-        try:
-            from app.modules import intent as intent_mod
+    raw = state._rolling_raw or ""
+    # Keep in-process redacted copies for debug endpoints that opt-in; not on FeatureFrame.
+    state.last_snippet_redacted = redact(raw)[-settings.asr_snippet_chars :] if raw else ""
 
-            scored = intent_mod.score_text(snippet, use_semantic=True)
-            intent_fields = scored.to_linguistic_fields()
-        except Exception:
-            logger.exception("intent_score_failed — publishing ASR text without scores")
+    stage_a = run_stage_a(raw, lexicon=lexicon)
+    ling = stage_a.to_linguistic(
+        language=state.last_language_label or "und",
+        age_ms=age_ms,
+    )
+    if stage_b_overlay and stage_b_overlay.get("available"):
+        # Prefer merged Stage B when fresher
+        merged = dict(stage_b_overlay)
+        merged["ageMs"] = age_ms
+        merged["language"] = state.last_language_label or merged.get("language") or "und"
+        ling = merged
+    ling["llmPending"] = bool(llm_pending)
+    return strip_transcript_fields(ling)
 
-    return {
-        "available": True,
-        "ageMs": age_ms,
-        "language": state.last_language_label or "und",
-        **intent_fields,
-        "redactedSnippet": snippet,
-        # Delta since last slow-path emission (redacted). Optional on the wire.
-        "redactedDelta": state.last_delta_redacted or "",
-    }

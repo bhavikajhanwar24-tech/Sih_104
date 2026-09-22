@@ -22,6 +22,8 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * F10 telephony health — explains each failing link with a fix hint (no secrets).
@@ -71,18 +73,24 @@ public class TelephonyHealthService {
 
     public Map<String, Object> diagnose(int tenantEndpointCount, int activeChannels) {
         Map<String, Object> out = new LinkedHashMap<>();
-        List<Map<String, Object>> checks = new ArrayList<>();
-
-        Map<String, Object> postgres = checkPostgresRealtime();
-        checks.add(postgres);
-
-        Map<String, Object> asteriskDb = checkAsteriskViaAmi();
-        checks.add(asteriskDb);
-
-        Map<String, Object> ari = checkAri();
-        checks.add(ari);
-
+        // Parallel probes — sequential AMI+ARI+JDBC was stacking multi-second
+        // refusals when Docker was down and freezing Settings → Telephony.
+        CompletableFuture<Map<String, Object>> postgresF =
+                CompletableFuture.supplyAsync(this::checkPostgresRealtime);
+        CompletableFuture<Map<String, Object>> amiF =
+                CompletableFuture.supplyAsync(this::checkAsteriskViaAmi);
+        CompletableFuture<Map<String, Object>> ariF =
+                CompletableFuture.supplyAsync(this::checkAri);
         Map<String, Object> sipIp = checkSipExternalIp();
+
+        Map<String, Object> postgres = joinProbe(postgresF, "postgresRealtime", "Backend → Postgres asterisk.ps_*");
+        Map<String, Object> asteriskDb = joinProbe(amiF, "asteriskRealtime", "Asterisk → DB (AMI: pjsip show endpoints)");
+        Map<String, Object> ari = joinProbe(ariF, "ari", "ARI reachable");
+
+        List<Map<String, Object>> checks = new ArrayList<>();
+        checks.add(postgres);
+        checks.add(asteriskDb);
+        checks.add(ari);
         checks.add(sipIp);
 
         boolean allOk = checks.stream().allMatch(c -> Boolean.TRUE.equals(c.get("ok")));
@@ -97,6 +105,22 @@ public class TelephonyHealthService {
         out.put("checks", checks);
         out.put("summary", buildSummary(checks));
         return out;
+    }
+
+    private static Map<String, Object> joinProbe(
+            CompletableFuture<Map<String, Object>> future,
+            String id,
+            String label
+    ) {
+        try {
+            return future.orTimeout(5, TimeUnit.SECONDS).join();
+        } catch (Exception e) {
+            Map<String, Object> c = base(id, label);
+            c.put("ok", false);
+            c.put("error", "probe timed out");
+            c.put("fixHint", "Health probe exceeded 5s — local Docker Postgres/Asterisk may be down.");
+            return c;
+        }
     }
 
     private Map<String, Object> checkPostgresRealtime() {
@@ -131,8 +155,8 @@ public class TelephonyHealthService {
         c.put("amiHost", amiHost);
         c.put("amiPort", amiPort);
         try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(amiHost, amiPort), 2000);
-            socket.setSoTimeout(4000);
+            socket.connect(new InetSocketAddress(amiHost, amiPort), 800);
+            socket.setSoTimeout(1500);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
             PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
             // Banner is typically one line ("Asterisk Call Manager/x.y") without a trailing blank.

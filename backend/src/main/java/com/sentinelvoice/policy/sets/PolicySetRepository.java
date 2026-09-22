@@ -164,6 +164,66 @@ public class PolicySetRepository {
         copyKeywords(tenantId, fromSetId, toSetId, excludeRuleIds);
     }
 
+    /**
+     * Append live (ACCEPTED/EDITED) rules from {@code fromSetId} into {@code toSetId}
+     * without replacing rules that already exist (matched by {@code ruleId}).
+     * New compiles / approvals keep the previous ACTIVE rulebook; clashes stay as
+     * OPEN conflicts for the operator to resolve.
+     *
+     * @return number of rules newly copied
+     */
+    public int appendMissingRuntimeRules(UUID tenantId, UUID fromSetId, UUID toSetId) {
+        if (fromSetId == null || toSetId == null || fromSetId.equals(toSetId)) {
+            return 0;
+        }
+        java.util.Set<String> existing = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> r : listActiveRules(tenantId, toSetId)) {
+            if (r.get("ruleId") != null) {
+                existing.add(String.valueOf(r.get("ruleId")));
+            }
+        }
+        int copied = 0;
+        java.util.List<String> appendedIds = new java.util.ArrayList<>();
+        for (Map<String, Object> rule : listRuntimeRules(tenantId, fromSetId)) {
+            String rid = String.valueOf(rule.get("ruleId"));
+            if (rid == null || rid.isBlank() || "null".equals(rid) || existing.contains(rid)) {
+                continue;
+            }
+            insertCopiedRule(tenantId, toSetId, rule);
+            existing.add(rid);
+            appendedIds.add(rid);
+            copied++;
+        }
+        if (!appendedIds.isEmpty()) {
+            java.util.Set<String> want = new java.util.HashSet<>(appendedIds);
+            for (Map<String, Object> k : listKeywords(tenantId, fromSetId)) {
+                String src = k.get("sourceRuleId") == null ? null : String.valueOf(k.get("sourceRuleId"));
+                if (src == null || !want.contains(src)) {
+                    continue;
+                }
+                addKeywordForRule(
+                        tenantId, toSetId,
+                        String.valueOf(k.get("term")),
+                        String.valueOf(k.getOrDefault("lang", "en")),
+                        String.valueOf(k.getOrDefault("category", "CUSTOM")),
+                        k.get("weight") instanceof Number n ? n.doubleValue() : 1.0,
+                        src
+                );
+            }
+        }
+        return copied;
+    }
+
+    public void renameSet(UUID tenantId, UUID setId, String name) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        jdbc.update(
+                "UPDATE policy_sets SET name = ?, updated_at = now() WHERE tenant_id = ? AND id = ?",
+                name.trim(), tenantId, setId
+        );
+    }
+
     public void copyKeywords(
             UUID tenantId, UUID fromSetId, UUID toSetId, java.util.Collection<String> excludeRuleIds
     ) {
@@ -391,6 +451,13 @@ public class PolicySetRepository {
                 DELETE FROM policy_keywords
                 WHERE tenant_id = ? AND policy_set_id = ? AND source_rule_id = ?
                 """, tenantId, setId, ruleId);
+    }
+
+    public void deleteAllKeywords(UUID tenantId, UUID setId) {
+        jdbc.update(
+                "DELETE FROM policy_keywords WHERE tenant_id = ? AND policy_set_id = ?",
+                tenantId, setId
+        );
     }
 
     public void deleteKeyword(UUID tenantId, UUID keywordId) {

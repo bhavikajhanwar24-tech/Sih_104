@@ -109,21 +109,21 @@ function EmployeesTab({ canWrite, push }) {
       const params = new URLSearchParams({ page: '0', size: '50' });
       if (query) params.set('q', query);
       if (statusFilter) params.set('status', statusFilter);
-      const data = await apiJson(`/api/v2/directory/employees?${params}`);
+      const [data, deps, eps] = await Promise.all([
+        apiJson(`/api/v2/directory/employees?${params}`),
+        apiJson('/api/v2/directory/departments'),
+        apiJson('/api/v2/telephony/endpoints', { skipErrorToast: true, timeoutMs: 4_000 }).catch(
+          () => [],
+        ),
+      ]);
       setItems(data.items || []);
-      const deps = await apiJson('/api/v2/directory/departments');
       setDepartments(deps.items || []);
-      try {
-        const eps = await apiJson('/api/v2/telephony/endpoints', { skipErrorToast: true });
-        /** @type {Record<string, any>} */
-        const map = {};
-        for (const ep of Array.isArray(eps) ? eps : []) {
-          if (ep.employeeId) map[ep.employeeId] = ep;
-        }
-        setSipByEmployee(map);
-      } catch {
-        setSipByEmployee({});
+      /** @type {Record<string, any>} */
+      const map = {};
+      for (const ep of Array.isArray(eps) ? eps : []) {
+        if (ep.employeeId) map[ep.employeeId] = ep;
       }
+      setSipByEmployee(map);
     } catch (err) {
       setError(err.message || 'Failed to load employees');
       push(err.message || 'Failed to load employees');
