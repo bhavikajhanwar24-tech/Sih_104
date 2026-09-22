@@ -6,6 +6,7 @@ import { Button } from '@/ui/Button.jsx';
 const NAV = [
   { to: '/app', end: true, label: 'Dashboard', permission: 'dashboard:read' },
   { to: '/app/calls', label: 'Live Calls', permission: 'calls:read' },
+  { to: '/app/history', label: 'Call History', permission: 'calls:read' },
   { to: '/app/directory', label: 'Directory', permission: 'directory:read' },
   { to: '/app/policies', label: 'Policies', permission: 'policies:read' },
   { to: '/app/response', label: 'Response Plans', permission: 'response:read' },

@@ -15,20 +15,15 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Builds TelemetryFrame.topReasons from a FeatureFrame plus Decision-plane context assessments
- * (Context §8.2). Messages are quantified plain English; NO_BREATH is gated in this class.
- * Thresholds for secrecy/authority/voiceprint come from the tenant {@link FusionConfigDocument}.
+ * Builds typed explainability reasons (F12). Text comes from {@link ReasonTemplates} bundles.
  */
 @Component
 public class ReasonGenerator {
 
-    /** Context §8.1 / P5.3 — breath absence is meaningless before this much speech. */
     static final long NO_BREATH_MIN_SPEECH_MS = 15_000L;
-    /** Context §8.1 — human conversational breath rate. */
     private static final double BREATH_HUMAN_MIN_PER_MIN = 8.0;
     private static final double BREATH_HUMAN_MAX_PER_MIN = 20.0;
     private static final double BREATH_ABSENT_MAX_PER_MIN = 2.0;
-    /** Context §8.1 — jitter below this % is over-smooth / synthetic. */
     private static final double JITTER_OVERSMOOTH_MAX_PCT = 0.2;
     private static final double SPOOF_SYNTHETIC_MIN = 0.60;
     private static final double DOUBLE_COMPRESSION_MIN = 0.55;
@@ -36,15 +31,15 @@ public class ReasonGenerator {
     private static final double URGENCY_FLAG_MIN = 0.70;
     private static final double RIR_PLAUSIBLE_MIN_T60_MS = 30.0;
     private static final int HIERARCHY_ANOMALY_MIN_DISTANCE = 3;
-    private static final int TOP_N = 5;
+    private static final int TOP_N = 8;
     private static final double MATCH_COSINE_FLOOR = 0.70;
 
-    public ReasonGenerator() {
+    private final ReasonTemplates templates;
+
+    public ReasonGenerator(ReasonTemplates templates) {
+        this.templates = templates;
     }
 
-    /**
-     * Context assessments that live outside the FeatureFrame (identity, graph, challenge, etc.).
-     */
     public record Assessments(
             RelationshipAssessment relationship,
             boolean presenceConflict,
@@ -55,7 +50,6 @@ public class ReasonGenerator {
             boolean challengeLatencyFailed,
             long challengeLatencyMs,
             long challengeBudgetMs,
-            /** Optional: CHALLENGE_CONTENT_FAIL / CHALLENGE_ACOUSTIC_FAIL / etc. */
             String challengeFailCode,
             double challengeMetric
     ) {
@@ -83,22 +77,32 @@ public class ReasonGenerator {
         }
     }
 
-    /**
-     * One emitted reason for the analyst UI / TelemetryFrame.topReasons.
-     */
     public record GeneratedReason(
             ReasonCode code,
+            String title,
             String text,
             EvidenceFamily family,
-            double contribution
+            double contribution,
+            String ruleId,
+            Integer policyVersion,
+            Map<String, Object> sourceClause,
+            Map<String, Object> evidence
     ) {
+        public GeneratedReason(ReasonCode code, String title, String text, EvidenceFamily family, double contribution) {
+            this(code, title, text, family, contribution, null, null, null, Map.of());
+        }
+
         public ReasonCode.Severity severity() {
-            return code.severity();
+            return code.canonical().severity();
+        }
+
+        public ReasonCode canonicalCode() {
+            return code.canonical();
         }
     }
 
     public List<GeneratedReason> generate(FusionContext context) {
-        return generate(context, Map.of(), Assessments.empty(), null);
+        return generate(context, Map.of(), Assessments.empty(), null, Locale.ENGLISH);
     }
 
     public List<GeneratedReason> generate(
@@ -106,7 +110,7 @@ public class ReasonGenerator {
             Map<EvidenceFamily, FamilyScore> familyScores,
             Assessments assessments
     ) {
-        return generate(context, familyScores, assessments, null);
+        return generate(context, familyScores, assessments, null, Locale.ENGLISH);
     }
 
     public List<GeneratedReason> generate(
@@ -115,26 +119,48 @@ public class ReasonGenerator {
             Assessments assessments,
             FusionConfigDocument config
     ) {
+        return generate(context, familyScores, assessments, config, Locale.ENGLISH);
+    }
+
+    public List<GeneratedReason> generate(
+            FusionContext context,
+            Map<EvidenceFamily, FamilyScore> familyScores,
+            Assessments assessments,
+            FusionConfigDocument config,
+            Locale locale
+    ) {
+        Locale loc = locale == null ? Locale.ENGLISH : locale;
         FeatureFrame frame = context.frame();
         List<Candidate> candidates = new ArrayList<>();
         Thresholds thresholds = Thresholds.from(config);
 
-        evaluateIdentity(context, assessments, candidates);
-        evaluateVoice(frame, candidates, thresholds);
-        evaluateChannel(frame, candidates);
-        evaluateProsody(frame, candidates);
-        evaluateLinguistic(context, candidates, thresholds);
-        evaluateTransactionPolicy(context, candidates);
-        evaluateRelationship(assessments, candidates);
-        evaluateChallenge(assessments, candidates);
-        evaluateWatermark(frame, candidates);
+        evaluateIdentity(context, assessments, candidates, loc);
+        evaluateVoice(frame, candidates, thresholds, loc);
+        evaluateChannel(frame, candidates, loc);
+        evaluateProsody(frame, candidates, loc);
+        evaluateLinguistic(context, candidates, thresholds, loc);
+        evaluateTransactionPolicy(context, candidates, loc);
+        evaluateRelationship(assessments, candidates, loc);
+        evaluateChallenge(assessments, candidates, loc);
+        evaluateWatermark(frame, candidates, loc);
 
         Map<EvidenceFamily, Double> contributionByFamily = contributionIndex(familyScores);
 
         return candidates.stream()
                 .map(c -> {
-                    double contrib = contributionByFamily.getOrDefault(c.code.family(), c.fallbackContribution);
-                    return new GeneratedReason(c.code, c.text, c.code.family(), contrib);
+                    ReasonCode canon = c.code.canonical();
+                    double contrib = contributionByFamily.getOrDefault(canon.family(), c.fallbackContribution);
+                    return new GeneratedReason(
+                            canon,
+                            templates.title(canon, loc),
+                            c.detail,
+                            canon.family(),
+                            contrib,
+                            c.ruleId,
+                            c.policyVersion,
+                            c.sourceClause,
+                            c.evidence == null ? Map.of() : c.evidence
+                    );
                 })
                 .sorted(Comparator
                         .comparingInt((GeneratedReason r) -> r.severity().rank())
@@ -143,51 +169,34 @@ public class ReasonGenerator {
                 .toList();
     }
 
-    private void evaluateIdentity(
-            FusionContext context,
-            Assessments assessments,
-            List<Candidate> out
-    ) {
+    private void evaluateIdentity(FusionContext context, Assessments assessments, List<Candidate> out, Locale loc) {
         FeatureFrame frame = context.frame();
         if (context.cliVsClaimMismatch()) {
             String role = claimedRole(frame);
-            out.add(new Candidate(
-                    ReasonCode.CLI_CLAIM_MISMATCH,
-                    ReasonCode.CLI_CLAIM_MISMATCH.format(role),
-                    1.0
-            ));
+            out.add(cand(ReasonCode.CLI_CLAIM_MISMATCH, templates.detail(ReasonCode.CLI_CLAIM_MISMATCH, loc, role), 1.0));
         }
-
         if (assessments.presenceConflict()) {
-            String expected = nullToDash(assessments.presenceExpected());
-            String observed = nullToDash(assessments.presenceObserved());
-            out.add(new Candidate(
-                    ReasonCode.PRESENCE_CONFLICT,
-                    ReasonCode.PRESENCE_CONFLICT.format(expected, observed),
-                    0.9
-            ));
+            out.add(cand(ReasonCode.PRESENCE_CONFLICT, templates.detail(
+                    ReasonCode.PRESENCE_CONFLICT, loc,
+                    nullToDash(assessments.presenceExpected()), nullToDash(assessments.presenceObserved())
+            ), 0.9));
         }
-
         if (assessments.crossChannelPrecursor() && assessments.crossChannelSignalCount() > 0) {
-            out.add(new Candidate(
-                    ReasonCode.CROSS_CHANNEL_PRECURSOR,
-                    ReasonCode.CROSS_CHANNEL_PRECURSOR.format(assessments.crossChannelSignalCount()),
-                    0.85
-            ));
+            out.add(cand(ReasonCode.CROSS_CHANNEL_PRECURSOR, templates.detail(
+                    ReasonCode.CROSS_CHANNEL_PRECURSOR, loc, assessments.crossChannelSignalCount()
+            ), 0.85));
         }
     }
 
-    private void evaluateVoice(FeatureFrame frame, List<Candidate> out, Thresholds thresholds) {
+    private void evaluateVoice(FeatureFrame frame, List<Candidate> out, Thresholds thresholds, Locale loc) {
         FeatureFrame.VoiceFamily voice = frame.voice();
         if (voice != null && voice.available() && voice.spoofProbability() != null
                 && voice.spoofProbability() >= SPOOF_SYNTHETIC_MIN) {
-            int spoofPct = pct(voice.spoofProbability());
-            int confPct = pct(voice.confidence() == null ? 0.0 : voice.confidence());
-            out.add(new Candidate(
-                    ReasonCode.SYNTHETIC_ARTIFACTS,
-                    ReasonCode.SYNTHETIC_ARTIFACTS.format(spoofPct, confPct),
-                    voice.spoofProbability()
-            ));
+            out.add(cand(ReasonCode.SYNTHETIC_VOICE, templates.detail(
+                    ReasonCode.SYNTHETIC_VOICE, loc,
+                    pct(voice.spoofProbability()),
+                    pct(voice.confidence() == null ? 0.0 : voice.confidence())
+            ), voice.spoofProbability()));
         }
 
         FeatureFrame.SpeakerFamily speaker = frame.speaker();
@@ -197,138 +206,83 @@ public class ReasonGenerator {
                 && !speaker.enrolledProfileId().isBlank()
                 && speaker.cosineSimilarity() != null
                 && speaker.cosineSimilarity() < thresholds.cosineMatchFloor()) {
-            out.add(new Candidate(
-                    ReasonCode.VOICEPRINT_FAIL,
-                    ReasonCode.VOICEPRINT_FAIL.format(
-                            fmt(speaker.cosineSimilarity()),
-                            fmt(thresholds.cosineMatchFloor())
-                    ),
-                    1.0 - speaker.cosineSimilarity()
-            ));
+            out.add(cand(ReasonCode.SPEAKER_MISMATCH, templates.detail(
+                    ReasonCode.SPEAKER_MISMATCH, loc,
+                    fmt(speaker.cosineSimilarity()), fmt(thresholds.cosineMatchFloor())
+            ), 1.0 - speaker.cosineSimilarity()));
         }
 
-        if (speaker != null
-                && speaker.available()
-                && speaker.intraCallDrift() != null
+        if (speaker != null && speaker.available() && speaker.intraCallDrift() != null
                 && speaker.intraCallDrift() >= VOICE_DRIFT_MIN) {
-            out.add(new Candidate(
-                    ReasonCode.VOICE_DRIFT,
-                    ReasonCode.VOICE_DRIFT.format(fmt(speaker.intraCallDrift()), fmt(VOICE_DRIFT_MIN)),
-                    speaker.intraCallDrift()
-            ));
+            out.add(cand(ReasonCode.VOICE_DRIFT, templates.detail(
+                    ReasonCode.VOICE_DRIFT, loc, fmt(speaker.intraCallDrift()), fmt(VOICE_DRIFT_MIN)
+            ), speaker.intraCallDrift()));
         }
     }
 
-    private void evaluateChannel(FeatureFrame frame, List<Candidate> out) {
+    private void evaluateChannel(FeatureFrame frame, List<Candidate> out, Locale loc) {
         FeatureFrame.ChannelFamily channel = frame.channel();
         if (channel == null || !channel.available()) {
             return;
         }
         if (Boolean.FALSE.equals(channel.rirPlausible()) && channel.rirT60Ms() != null) {
-            out.add(new Candidate(
-                    ReasonCode.NO_ROOM_ACOUSTICS,
-                    ReasonCode.NO_ROOM_ACOUSTICS.format(
-                            fmt(channel.rirT60Ms()),
-                            fmt(RIR_PLAUSIBLE_MIN_T60_MS)
-                    ),
-                    1.0
-            ));
+            String note = "Room reverberation " + fmt(channel.rirT60Ms()) + " ms below floor "
+                    + fmt(RIR_PLAUSIBLE_MIN_T60_MS) + " ms.";
+            out.add(cand(ReasonCode.CHANNEL_INCONSISTENT, templates.detail(ReasonCode.CHANNEL_INCONSISTENT, loc, note), 1.0));
         }
         if (channel.doubleCompressionScore() != null
                 && channel.doubleCompressionScore() >= DOUBLE_COMPRESSION_MIN) {
-            out.add(new Candidate(
-                    ReasonCode.DOUBLE_COMPRESSION,
-                    ReasonCode.DOUBLE_COMPRESSION.format(
-                            fmt(channel.doubleCompressionScore()),
-                            fmt(DOUBLE_COMPRESSION_MIN)
-                    ),
-                    channel.doubleCompressionScore()
-            ));
+            String note = "Double-compression score " + fmt(channel.doubleCompressionScore())
+                    + " above threshold " + fmt(DOUBLE_COMPRESSION_MIN) + ".";
+            out.add(cand(ReasonCode.CHANNEL_INCONSISTENT, templates.detail(ReasonCode.CHANNEL_INCONSISTENT, loc, note),
+                    channel.doubleCompressionScore()));
         }
     }
 
-    private void evaluateProsody(FeatureFrame frame, List<Candidate> out) {
+    private void evaluateProsody(FeatureFrame frame, List<Candidate> out, Locale loc) {
         FeatureFrame.ProsodyFamily prosody = frame.prosody();
         if (prosody == null || !prosody.available()) {
             return;
         }
-
-        // Guard lives here — UI must not decide when breath absence is meaningful.
         if (frame.cumulativeSpeechMs() >= NO_BREATH_MIN_SPEECH_MS
                 && prosody.breathEventsPerMin() != null
                 && prosody.breathEventsPerMin() <= BREATH_ABSENT_MAX_PER_MIN) {
             long seconds = Math.round(frame.cumulativeSpeechMs() / 1000.0);
-            out.add(new Candidate(
-                    ReasonCode.NO_BREATH,
-                    ReasonCode.NO_BREATH.format(
-                            seconds,
-                            (int) BREATH_HUMAN_MIN_PER_MIN,
-                            (int) BREATH_HUMAN_MAX_PER_MIN
-                    ),
-                    1.0 - (prosody.breathEventsPerMin() / BREATH_HUMAN_MAX_PER_MIN)
-            ));
+            out.add(cand(ReasonCode.NO_BREATH, templates.detail(
+                    ReasonCode.NO_BREATH, loc, seconds, (int) BREATH_HUMAN_MIN_PER_MIN, (int) BREATH_HUMAN_MAX_PER_MIN
+            ), 1.0 - (prosody.breathEventsPerMin() / BREATH_HUMAN_MAX_PER_MIN)));
         }
-
-        if (prosody.jitterLocalPct() != null
-                && prosody.jitterLocalPct() < JITTER_OVERSMOOTH_MAX_PCT) {
-            out.add(new Candidate(
-                    ReasonCode.OVERSMOOTH_PROSODY,
-                    ReasonCode.OVERSMOOTH_PROSODY.format(fmt(prosody.jitterLocalPct())),
-                    1.0 - prosody.jitterLocalPct()
-            ));
+        if (prosody.jitterLocalPct() != null && prosody.jitterLocalPct() < JITTER_OVERSMOOTH_MAX_PCT) {
+            out.add(cand(ReasonCode.OVERSMOOTH_PROSODY, templates.detail(
+                    ReasonCode.OVERSMOOTH_PROSODY, loc, fmt(prosody.jitterLocalPct())
+            ), 1.0 - prosody.jitterLocalPct()));
         }
     }
 
-    private void evaluateLinguistic(FusionContext context, List<Candidate> out, Thresholds thresholds) {
+    private void evaluateLinguistic(FusionContext context, List<Candidate> out, Thresholds thresholds, Locale loc) {
         LinguisticFamily linguistic = context.frame().linguistic();
         if (linguistic == null || !linguistic.available()) {
             return;
         }
         if (linguistic.secrecy() != null && linguistic.secrecy() > thresholds.secrecy()) {
-            out.add(new Candidate(
-                    ReasonCode.SECRECY_DEMAND,
-                    ReasonCode.SECRECY_DEMAND.format(
-                            fmt(linguistic.secrecy()),
-                            fmt(thresholds.secrecy())
-                    ),
-                    linguistic.secrecy()
-            ));
+            out.add(cand(ReasonCode.SECRECY_REQUESTED, templates.detail(
+                    ReasonCode.SECRECY_REQUESTED, loc, fmt(linguistic.secrecy()), fmt(thresholds.secrecy())
+            ), linguistic.secrecy()));
         }
         if (linguistic.urgency() != null && linguistic.urgency() >= URGENCY_FLAG_MIN) {
-            out.add(new Candidate(
-                    ReasonCode.URGENCY_PRESSURE,
-                    ReasonCode.URGENCY_PRESSURE.format(
-                            fmt(linguistic.urgency()),
-                            fmt(URGENCY_FLAG_MIN)
-                    ),
-                    linguistic.urgency()
-            ));
+            out.add(cand(ReasonCode.URGENCY, templates.detail(
+                    ReasonCode.URGENCY, loc, fmt(linguistic.urgency()), fmt(URGENCY_FLAG_MIN)
+            ), linguistic.urgency()));
         }
-        if (linguistic.authorityInvocation() != null
-                && linguistic.authorityInvocation() > thresholds.authority()) {
-            out.add(new Candidate(
-                    ReasonCode.AUTHORITY_INVOCATION,
-                    ReasonCode.AUTHORITY_INVOCATION.format(
-                            fmt(linguistic.authorityInvocation()),
-                            fmt(thresholds.authority())
-                    ),
-                    linguistic.authorityInvocation()
-            ));
+        if (linguistic.authorityInvocation() != null && linguistic.authorityInvocation() > thresholds.authority()) {
+            out.add(cand(ReasonCode.AUTHORITY_INVOCATION, templates.detail(
+                    ReasonCode.AUTHORITY_INVOCATION, loc,
+                    fmt(linguistic.authorityInvocation()), fmt(thresholds.authority())
+            ), linguistic.authorityInvocation()));
         }
     }
 
-    private record Thresholds(double cosineMatchFloor, double secrecy, double authority) {
-        static Thresholds from(FusionConfigDocument config) {
-            if (config == null || config.emergency().rules().isEmpty()) {
-                return new Thresholds(MATCH_COSINE_FLOOR, 0.85, 0.85);
-            }
-            FusionConfigDocument.EmergencyRule rule = config.emergency().rules().get(0);
-            double matchFloor = Math.max(0.0, 1.0 - rule.cosineMismatchMin());
-            return new Thresholds(matchFloor, rule.secrecyMin(), rule.authorityMin());
-        }
-    }
-
-    private void evaluateTransactionPolicy(FusionContext context, List<Candidate> out) {
+    private void evaluateTransactionPolicy(FusionContext context, List<Candidate> out, Locale loc) {
         LinguisticFamily linguistic = context.frame().linguistic();
         if (linguistic == null || linguistic.ask() == null || linguistic.ask().amount() == null) {
             return;
@@ -337,91 +291,80 @@ public class ReasonGenerator {
         double amount = ask.amount();
         if (amount > context.verbalAuthorityLimit()) {
             String currency = ask.currency() == null || ask.currency().isBlank() ? "INR" : ask.currency();
+            String quote = "Requested " + formatMoney(amount) + " " + currency
+                    + " exceeds verbal authority " + formatMoney(context.verbalAuthorityLimit());
+            if (quote.length() > 200) {
+                quote = quote.substring(0, 197) + "...";
+            }
+            Map<String, Object> clause = Map.of(
+                    "title", "Verbal authority limit",
+                    "quote", quote
+            );
             out.add(new Candidate(
-                    ReasonCode.POLICY_VIOLATION,
-                    ReasonCode.POLICY_VIOLATION.format(
-                            formatMoney(amount),
-                            currency,
-                            formatMoney(context.verbalAuthorityLimit())
-                    ),
-                    1.0
+                    ReasonCode.POLICY_RULE_FIRED,
+                    templates.detail(ReasonCode.POLICY_RULE_FIRED, loc, "AUTHORITY_LIMIT", "Verbal authority", quote),
+                    1.0,
+                    "AUTHORITY_LIMIT",
+                    null,
+                    clause,
+                    Map.of("amount", amount, "currency", currency)
             ));
         }
     }
 
-    private void evaluateRelationship(Assessments assessments, List<Candidate> out) {
+    private void evaluateRelationship(Assessments assessments, List<Candidate> out, Locale loc) {
         RelationshipAssessment rel = assessments.relationship();
         if (rel == null) {
             return;
         }
         if (rel.firstContact()) {
-            out.add(new Candidate(
-                    ReasonCode.FIRST_CONTACT,
-                    ReasonCode.FIRST_CONTACT.format(rel.interactionCount365d()),
-                    0.7
-            ));
+            out.add(cand(ReasonCode.NO_PRIOR_RELATIONSHIP, templates.detail(
+                    ReasonCode.NO_PRIOR_RELATIONSHIP, loc, rel.interactionCount365d()
+            ), 0.7));
         }
         if (rel.hierarchyDistance() >= HIERARCHY_ANOMALY_MIN_DISTANCE
                 && rel.hierarchyDistance() != Integer.MAX_VALUE) {
-            out.add(new Candidate(
-                    ReasonCode.HIERARCHY_ANOMALY,
-                    ReasonCode.HIERARCHY_ANOMALY.format(
-                            rel.hierarchyDistance(),
-                            HIERARCHY_ANOMALY_MIN_DISTANCE
-                    ),
-                    Math.min(1.0, rel.hierarchyDistance() / 10.0)
-            ));
+            out.add(cand(ReasonCode.HIERARCHY_ANOMALY, templates.detail(
+                    ReasonCode.HIERARCHY_ANOMALY, loc, rel.hierarchyDistance(), HIERARCHY_ANOMALY_MIN_DISTANCE
+            ), Math.min(1.0, rel.hierarchyDistance() / 10.0)));
         }
     }
 
-    private void evaluateChallenge(Assessments assessments, List<Candidate> out) {
+    private void evaluateChallenge(Assessments assessments, List<Candidate> out, Locale loc) {
         String code = assessments.challengeFailCode();
         if (code == null || code.isBlank()) {
             if (!assessments.challengeLatencyFailed()) {
                 return;
             }
-            out.add(new Candidate(
-                    ReasonCode.CHALLENGE_LATENCY_FAIL,
-                    ReasonCode.CHALLENGE_LATENCY_FAIL.format(
-                            assessments.challengeLatencyMs(),
-                            assessments.challengeBudgetMs()
-                    ),
-                    1.0
-            ));
+            out.add(cand(ReasonCode.CHALLENGE_LATENCY_FAIL, templates.detail(
+                    ReasonCode.CHALLENGE_LATENCY_FAIL, loc,
+                    assessments.challengeLatencyMs(), assessments.challengeBudgetMs()
+            ), 1.0));
             return;
         }
         try {
-            ReasonCode rc = ReasonCode.valueOf(code);
-            String text = switch (rc) {
-                case CHALLENGE_LATENCY_FAIL -> rc.format(
-                        assessments.challengeLatencyMs(),
-                        assessments.challengeBudgetMs()
-                );
-                case CHALLENGE_CONTENT_FAIL -> rc.format(
-                        String.format(java.util.Locale.ROOT, "%.2f", assessments.challengeMetric())
-                );
-                case CHALLENGE_ACOUSTIC_FAIL -> rc.format(
-                        String.format(java.util.Locale.ROOT, "%.2f", assessments.challengeMetric()),
-                        "0.55"
-                );
-                default -> rc.format(assessments.challengeMetric());
+            ReasonCode rc = ReasonCode.valueOf(code).canonical();
+            String detail = switch (rc) {
+                case CHALLENGE_LATENCY_FAIL -> templates.detail(rc, loc,
+                        assessments.challengeLatencyMs(), assessments.challengeBudgetMs());
+                case CHALLENGE_CONTENT_FAIL -> templates.detail(rc, loc,
+                        String.format(Locale.ROOT, "%.2f", assessments.challengeMetric()));
+                case CHALLENGE_ACOUSTIC_FAIL -> templates.detail(rc, loc,
+                        String.format(Locale.ROOT, "%.2f", assessments.challengeMetric()), "0.55");
+                default -> templates.detail(rc, loc, assessments.challengeMetric());
             };
-            out.add(new Candidate(rc, text, 1.0));
+            out.add(cand(rc, detail, 1.0));
         } catch (Exception ex) {
             if (assessments.challengeLatencyFailed()) {
-                out.add(new Candidate(
-                        ReasonCode.CHALLENGE_LATENCY_FAIL,
-                        ReasonCode.CHALLENGE_LATENCY_FAIL.format(
-                                assessments.challengeLatencyMs(),
-                                assessments.challengeBudgetMs()
-                        ),
-                        1.0
-                ));
+                out.add(cand(ReasonCode.CHALLENGE_LATENCY_FAIL, templates.detail(
+                        ReasonCode.CHALLENGE_LATENCY_FAIL, loc,
+                        assessments.challengeLatencyMs(), assessments.challengeBudgetMs()
+                ), 1.0));
             }
         }
     }
 
-    private void evaluateWatermark(FeatureFrame frame, List<Candidate> out) {
+    private void evaluateWatermark(FeatureFrame frame, List<Candidate> out, Locale loc) {
         FeatureFrame.WatermarkFamily watermark = frame.watermark();
         if (watermark == null) {
             return;
@@ -429,20 +372,19 @@ public class ReasonGenerator {
         boolean available = watermark.available() == null || Boolean.TRUE.equals(watermark.available());
         if (available && Boolean.TRUE.equals(watermark.detected())) {
             String provider = watermark.provider() == null || watermark.provider().isBlank()
-                    ? "unknown"
-                    : watermark.provider();
-            int confPct = pct(watermark.confidence() == null ? 0.0 : watermark.confidence());
-            out.add(new Candidate(
-                    ReasonCode.WATERMARK_DETECTED,
-                    ReasonCode.WATERMARK_DETECTED.format(provider, confPct),
-                    watermark.confidence() == null ? 0.5 : watermark.confidence()
-            ));
+                    ? "unknown" : watermark.provider();
+            out.add(cand(ReasonCode.WATERMARK_DETECTED, templates.detail(
+                    ReasonCode.WATERMARK_DETECTED, loc, provider,
+                    pct(watermark.confidence() == null ? 0.0 : watermark.confidence())
+            ), watermark.confidence() == null ? 0.5 : watermark.confidence()));
         }
     }
 
-    private static Map<EvidenceFamily, Double> contributionIndex(
-            Map<EvidenceFamily, FamilyScore> familyScores
-    ) {
+    private static Candidate cand(ReasonCode code, String detail, double contrib) {
+        return new Candidate(code, detail, contrib, null, null, null, Map.of());
+    }
+
+    private static Map<EvidenceFamily, Double> contributionIndex(Map<EvidenceFamily, FamilyScore> familyScores) {
         Map<EvidenceFamily, Double> map = new EnumMap<>(EvidenceFamily.class);
         if (familyScores == null) {
             return map;
@@ -454,6 +396,17 @@ public class ReasonGenerator {
             }
         }
         return map;
+    }
+
+    private record Thresholds(double cosineMatchFloor, double secrecy, double authority) {
+        static Thresholds from(FusionConfigDocument config) {
+            if (config == null || config.emergency().rules().isEmpty()) {
+                return new Thresholds(MATCH_COSINE_FLOOR, 0.85, 0.85);
+            }
+            FusionConfigDocument.EmergencyRule rule = config.emergency().rules().get(0);
+            double matchFloor = Math.max(0.0, 1.0 - rule.cosineMismatchMin());
+            return new Thresholds(matchFloor, rule.secrecyMin(), rule.authorityMin());
+        }
     }
 
     private static String claimedRole(FeatureFrame frame) {
@@ -490,6 +443,14 @@ public class ReasonGenerator {
         return String.format(Locale.ROOT, "%,.2f", amount);
     }
 
-    private record Candidate(ReasonCode code, String text, double fallbackContribution) {
+    private record Candidate(
+            ReasonCode code,
+            String detail,
+            double fallbackContribution,
+            String ruleId,
+            Integer policyVersion,
+            Map<String, Object> sourceClause,
+            Map<String, Object> evidence
+    ) {
     }
 }

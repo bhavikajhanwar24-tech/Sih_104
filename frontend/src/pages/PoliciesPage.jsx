@@ -63,6 +63,9 @@ export function PoliciesPage() {
   const [viewer, setViewer] = useState(null);
   const [chunks, setChunks] = useState([]);
   const [chunksLoading, setChunksLoading] = useState(false);
+  const [highlightClause, setHighlightClause] = useState('');
+  const [highlightChunkId, setHighlightChunkId] = useState('');
+  const deepLinkDone = useRef(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [sets, setSets] = useState([]);
@@ -204,10 +207,12 @@ export function PoliciesPage() {
     }
   }
 
-  async function openChunks(doc) {
+  async function openChunks(doc, opts = {}) {
     setViewer(doc);
     setChunks([]);
     setChunksLoading(true);
+    setHighlightClause(opts.clause || '');
+    setHighlightChunkId(opts.chunk || '');
     try {
       const data = await apiJson(`/api/v2/policies/documents/${doc.id}/chunks`);
       setChunks(data.items || []);
@@ -217,6 +222,20 @@ export function PoliciesPage() {
       setChunksLoading(false);
     }
   }
+
+  // F12 Call Detail → deep-link: /app/policies?tab=documents&doc=&clause=&chunk=
+  useEffect(() => {
+    if (deepLinkDone.current || loading || !docsTab || !items.length) return;
+    const docId = searchParams.get('doc');
+    if (!docId) return;
+    const match = items.find((d) => String(d.id) === String(docId));
+    if (!match) return;
+    deepLinkDone.current = true;
+    void openChunks(match, {
+      clause: searchParams.get('clause') || '',
+      chunk: searchParams.get('chunk') || '',
+    });
+  }, [loading, docsTab, items, searchParams]);
 
   async function downloadDoc(doc) {
     try {
@@ -662,7 +681,13 @@ export function PoliciesPage() {
         doc={viewer}
         chunks={chunks}
         loading={chunksLoading}
-        onClose={() => setViewer(null)}
+        highlightClause={highlightClause}
+        highlightChunkId={highlightChunkId}
+        onClose={() => {
+          setViewer(null);
+          setHighlightClause('');
+          setHighlightChunkId('');
+        }}
       />
 
       <PermanentDeleteModal
@@ -1685,15 +1710,33 @@ function flagPhrases(flags) {
   return flags.map((f) => (typeof f === 'string' ? f : f?.phrase)).filter(Boolean);
 }
 
-function ChunkViewerModal({ open, doc, chunks, loading, onClose }) {
+function ChunkViewerModal({
+  open,
+  doc,
+  chunks,
+  loading,
+  onClose,
+  highlightClause = '',
+  highlightChunkId = '',
+}) {
   if (!open || !doc) return null;
   const docPhrases = flagPhrases(doc.injectionFlags);
+  const clauseNeedle = String(highlightClause || '').trim().toLowerCase();
+  const chunkNeedle = String(highlightChunkId || '').trim();
+
   return (
     <Modal open={open} onClose={onClose} title={doc.title || 'Document text'} wide>
       {doc.hasInjectionFlags || docPhrases.length > 0 ? (
         <div role="alert" className="mb-3 rounded border border-risk-watch/40 bg-risk-watch/10 px-3 py-2 text-xs">
           Injection flags: {docPhrases.join(', ') || 'present'}
         </div>
+      ) : null}
+      {clauseNeedle || chunkNeedle ? (
+        <p className="mb-2 text-xs text-sv-accent">
+          Highlighting cited clause
+          {highlightClause ? ` “${highlightClause}”` : ''}
+          {chunkNeedle ? ` · chunk ${chunkNeedle}` : ''}
+        </p>
       ) : null}
       {doc.status === 'FAILED' && doc.extractionError ? (
         <p className="mb-3 text-sm text-risk-critical">{doc.extractionError}</p>
@@ -1708,19 +1751,38 @@ function ChunkViewerModal({ open, doc, chunks, loading, onClose }) {
         <ul className="max-h-[60vh] space-y-3 overflow-y-auto">
           {chunks.map((c) => {
             const flagged = c.hasInjectionFlags || (c.injectionFlags && c.injectionFlags.length > 0);
+            const heading = String(c.headingPath || c.clauseRef || '').toLowerCase();
+            const text = String(c.text || '').toLowerCase();
+            const matched =
+              (chunkNeedle && String(c.id) === chunkNeedle) ||
+              (clauseNeedle &&
+                (heading.includes(clauseNeedle) ||
+                  text.includes(clauseNeedle) ||
+                  String(c.ordinal) === clauseNeedle));
             return (
               <li
                 key={c.id}
+                id={matched ? 'sv-cited-clause' : undefined}
+                ref={
+                  matched
+                    ? (el) => {
+                        if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                      }
+                    : undefined
+                }
                 className={`rounded border p-3 ${
-                  flagged
-                    ? 'border-risk-watch/50 bg-risk-watch/5'
-                    : 'border-sv-border bg-sv-elevated/50'
+                  matched
+                    ? 'border-sv-accent bg-sv-accent/10 ring-2 ring-sv-accent/40'
+                    : flagged
+                      ? 'border-risk-watch/50 bg-risk-watch/5'
+                      : 'border-sv-border bg-sv-elevated/50'
                 }`}
               >
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-sv-muted">
                   <span>#{c.ordinal}</span>
                   {c.headingPath ? <span>{c.headingPath}</span> : null}
                   {c.pageNo != null ? <span>p.{c.pageNo}</span> : null}
+                  {matched ? <Badge tone="accent">Cited</Badge> : null}
                   {flagged ? (
                     <span
                       className="inline-flex items-center gap-1 text-risk-watch"
@@ -1748,6 +1810,8 @@ ChunkViewerModal.propTypes = {
   chunks: PropTypes.array,
   loading: PropTypes.bool,
   onClose: PropTypes.func,
+  highlightClause: PropTypes.string,
+  highlightChunkId: PropTypes.string,
 };
 
 function EngineStatusChip({ status }) {

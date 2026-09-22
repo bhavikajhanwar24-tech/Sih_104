@@ -26,10 +26,10 @@ export function ForensicDossierViewer({ initialSessionId = null, className = '' 
 
   const loadSessions = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/v1/session');
+      const res = await apiFetch('/api/v2/sessions?limit=50');
       if (!res.ok) throw new Error(`sessions HTTP ${res.status}`);
       const body = await res.json();
-      setSessions(Array.isArray(body.sessions) ? body.sessions : []);
+      setSessions(Array.isArray(body.items) ? body.items : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'session list failed');
     }
@@ -46,7 +46,7 @@ export function ForensicDossierViewer({ initialSessionId = null, className = '' 
     setPdfSha(null);
     try {
       const res = await apiFetch(
-        `/api/v1/forensics/${encodeURIComponent(sessionId)}/dossier?generatedBy=${encodeURIComponent(username || 'analyst')}`,
+        `/api/v2/sessions/${encodeURIComponent(sessionId)}/dossier?generatedBy=${encodeURIComponent(username || 'analyst')}`,
       );
       if (!res.ok) throw new Error(`dossier HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
       setDossier(await res.json());
@@ -64,7 +64,7 @@ export function ForensicDossierViewer({ initialSessionId = null, className = '' 
     setError(null);
     try {
       const res = await apiFetch(
-        `/api/v1/forensics/${encodeURIComponent(sessionId)}/dossier.pdf?generatedBy=${encodeURIComponent(username || 'analyst')}`,
+        `/api/v2/sessions/${encodeURIComponent(sessionId)}/dossier.pdf?generatedBy=${encodeURIComponent(username || 'analyst')}`,
       );
       if (!res.ok) throw new Error(`PDF HTTP ${res.status}`);
       const sha = res.headers.get('X-Document-SHA256');
@@ -98,12 +98,15 @@ export function ForensicDossierViewer({ initialSessionId = null, className = '' 
             data-testid="forensic-session-select"
           >
             <option value="">— select —</option>
-            {sessions.map((s) => (
-              <option key={s.sessionId} value={s.sessionId}>
-                {s.sessionId}
-                {s.scenarioId ? ` · ${s.scenarioId}` : ''}
-              </option>
-            ))}
+            {sessions.map((s) => {
+              const sid = s.svSessionUuid || s.id;
+              return (
+                <option key={sid} value={sid}>
+                  {s.callerName || s.callerNumber || sid}
+                  {s.peakLevel ? ` · ${s.peakLevel}` : ''}
+                </option>
+              );
+            })}
           </select>
         </label>
         <button

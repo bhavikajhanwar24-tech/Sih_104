@@ -1,5 +1,6 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.explain.SessionExplainRecorder;
 import com.sentinelvoice.response.execute.PlanRunner;
 import com.sentinelvoice.intervention.InterventionDecision;
 import com.sentinelvoice.intervention.InterventionLadderService;
@@ -36,17 +37,20 @@ public class InterventionController {
     private final InterventionLadderService interventionLadderService;
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final PlanRunner planRunner;
+    private final SessionExplainRecorder sessionExplainRecorder;
 
     public InterventionController(
             CallSessionManager callSessionManager,
             InterventionLadderService interventionLadderService,
             TelemetryBroadcaster telemetryBroadcaster,
-            PlanRunner planRunner
+            PlanRunner planRunner,
+            SessionExplainRecorder sessionExplainRecorder
     ) {
         this.callSessionManager = callSessionManager;
         this.interventionLadderService = interventionLadderService;
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.planRunner = planRunner;
+        this.sessionExplainRecorder = sessionExplainRecorder;
     }
 
     @PostMapping("/{sessionId}/override")
@@ -79,6 +83,22 @@ public class InterventionController {
         );
 
         publishOverrideTelemetry(sessionId, session, previous, decision, nowMs);
+
+        try {
+            if (session.getTenantId() != null) {
+                sessionExplainRecorder.onOperatorLevelChange(
+                        session.getTenantId(),
+                        session,
+                        nowMs,
+                        session.getSmoothedRisk(),
+                        decision.level(),
+                        "ANALYST_OVERRIDE",
+                        request.reason().trim()
+                );
+            }
+        } catch (Exception ignored) {
+            // explainability must not break override
+        }
 
         if (decision.changed()) {
             try {

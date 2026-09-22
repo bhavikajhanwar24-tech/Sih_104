@@ -129,6 +129,20 @@ public class PlanRunner {
         }
     }
 
+    public ActionResult forceBridge(String sessionId, String supervisorEndpoint) {
+        if (!callControl.capabilities().contains("BRIDGE_SUPERVISOR")) {
+            return ActionResult.UNSUPPORTED;
+        }
+        try {
+            callControl.bridgeSupervisor(sessionId, supervisorEndpoint);
+            auditFired(sessionId, "BRIDGE_SUPERVISOR", "forceBridge", true, false, null);
+            return ActionResult.SUCCESS;
+        } catch (Exception e) {
+            log.warn("force_bridge_failed sessionId={} err={}", sessionId, e.toString());
+            return ActionResult.FAILURE;
+        }
+    }
+
     public ActionResult forceUnhold(String sessionId) {
         if (!callControl.capabilities().contains("UNHOLD") && !callControl.capabilities().contains("HOLD")) {
             return ActionResult.UNSUPPORTED;

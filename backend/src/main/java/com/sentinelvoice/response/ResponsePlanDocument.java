@@ -155,6 +155,13 @@ public record ResponsePlanDocument(Map<String, LevelPlan> levels) {
                 new PlanStep("OPERATOR_ADVISORY", new LinkedHashMap<>(advisory),
                         "ON_ENTER", 0, false, true, false, null),
                 new PlanStep("LOCK_APPROVAL", Map.of(), "ON_ENTER", 0, false, true, false, null),
+                new PlanStep("REQUIRE_CALLBACK_VERIFICATION", Map.of(
+                                "checklist", List.of(
+                                        "Hang up the current call",
+                                        "Call the employee back on the directory number",
+                                        "Confirm identity before any approval"
+                                )
+                        ), "ON_ENTER", 0, false, true, false, null),
                 new PlanStep("NOTIFY_SUPERVISOR", Map.of("channels", List.of("in_app")),
                         "ON_ENTER", 0, false, true, false, null)
         )));

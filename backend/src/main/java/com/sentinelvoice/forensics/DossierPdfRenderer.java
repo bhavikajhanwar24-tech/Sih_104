@@ -184,7 +184,8 @@ public class DossierPdfRenderer {
         Paragraph legal = new Paragraph(
                 "This package is assembled exclusively from Decision Plane retained state "
                         + "(scores, enums, reason codes, and hash-chained audit blocks). "
-                        + "It does not contain audio. See the No-Audio Statement and Methodology Appendix. "
+                        + "It does not retain call media or speech text. See the privacy statement "
+                        + "and Methodology Appendix. "
                         + "The SHA-256 printed in each page footer is the audit-anchored digest of this file "
                         + "(window-exclusion seal) and matches DOSSIER_GENERATED.pdfSha256.",
                 smallFont
@@ -380,7 +381,7 @@ public class DossierPdfRenderer {
     }
 
     private void writeNoAudio(Document document, ForensicDossier dossier) throws DocumentException {
-        section(document, "10. No-audio statement (DPDP §8)");
+        section(document, "10. Privacy statement (DPDP §8)");
         Paragraph p = new Paragraph(
                 dossier.noAudioStatement() == null ? "" : dossier.noAudioStatement(),
                 bodyFont

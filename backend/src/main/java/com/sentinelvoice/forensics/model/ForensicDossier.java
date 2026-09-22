@@ -5,10 +5,11 @@ import java.util.Map;
 
 /**
  * Court-ready evidence package assembled from Decision Plane retained state only.
- * Never contains audio. Schema mirrors Context §7.3 / §13 dossier expectations.
+ * Never contains audio or transcripts. Schema v2 adds tenantId.
  */
 public record ForensicDossier(
         String schema,
+        String tenantId,
         String sessionId,
         boolean noFindings,
         String summary,
@@ -29,7 +30,7 @@ public record ForensicDossier(
         List<MethodologyEntry> methodology,
         String noAudioStatement
 ) {
-    public static final String SCHEMA = "sentinelvoice.ForensicDossier/1";
+    public static final String SCHEMA = "sentinelvoice.ForensicDossier/2";
 
     public ForensicDossier {
         riskTimeline = riskTimeline == null ? List.of() : List.copyOf(riskTimeline);
@@ -46,7 +47,6 @@ public record ForensicDossier(
         if (identity == null || identity.isEmpty()) {
             return Map.of();
         }
-        // Map.copyOf rejects null values — identity optionals may be null.
         java.util.LinkedHashMap<String, Object> copy = new java.util.LinkedHashMap<>();
         for (Map.Entry<String, Object> e : identity.entrySet()) {
             if (e.getKey() != null) {
@@ -58,7 +58,7 @@ public record ForensicDossier(
 
     public ForensicDossier withDigests(String manifestSha256, String pdfSha256) {
         return new ForensicDossier(
-                schema, sessionId, noFindings, summary, generatedAtEpochMs, generatedBy,
+                schema, tenantId, sessionId, noFindings, summary, generatedAtEpochMs, generatedBy,
                 manifestSha256, pdfSha256, caseHeader, identity, identityMismatchAnalysis,
                 riskTimeline, levelMarkers, evidence, interventionLog, analystActions,
                 challengeResults, auditChain, methodology, noAudioStatement
@@ -114,7 +114,6 @@ public record ForensicDossier(
             Map<String, Object> payload
     ) {
         public ChallengeEvent {
-            // Payload may contain null optionals — avoid Map.copyOf.
             if (payload == null || payload.isEmpty()) {
                 payload = Map.of();
             } else {

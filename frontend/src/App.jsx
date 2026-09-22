@@ -22,6 +22,12 @@ const DashboardPage = lazy(() =>
 const LiveCallsPage = lazy(() =>
   import('@/pages/LiveCallsPage.jsx').then((m) => ({ default: m.LiveCallsPage })),
 );
+const CallHistoryPage = lazy(() =>
+  import('@/pages/CallHistoryPage.jsx').then((m) => ({ default: m.CallHistoryPage })),
+);
+const CallDetailPage = lazy(() =>
+  import('@/pages/CallDetailPage.jsx').then((m) => ({ default: m.CallDetailPage })),
+);
 const ResponsePlansPage = lazy(() =>
   import('@/pages/ResponsePlansPage.jsx').then((m) => ({ default: m.ResponsePlansPage })),
 );
@@ -71,6 +77,9 @@ export default function App() {
                 <Route path="/app" element={<AppShell />}>
                   <Route index element={<DashboardPage />} />
                   <Route path="calls" element={<LiveCallsPage />} />
+                  <Route path="history" element={<CallHistoryPage />} />
+                  <Route path="sessions" element={<Navigate to="/app/history" replace />} />
+                  <Route path="sessions/:id" element={<CallDetailPage />} />
                   <Route path="directory" element={<DirectoryPage />} />
                   <Route path="policies" element={<PoliciesPage />} />
                   <Route path="policies/review" element={<PolicyReviewPage />} />

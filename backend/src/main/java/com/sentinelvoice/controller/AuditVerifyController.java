@@ -2,6 +2,7 @@ package com.sentinelvoice.controller;
 
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.TenantChainVerification;
+import com.sentinelvoice.forensics.ForensicDossierService;
 import com.sentinelvoice.model.AuditBlock;
 import com.sentinelvoice.repository.AuditBlockRepository;
 import com.sentinelvoice.security.TenantContext;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -25,13 +27,16 @@ public class AuditVerifyController {
 
     private final AuditLedgerService auditLedgerService;
     private final AuditBlockRepository auditBlockRepository;
+    private final ForensicDossierService forensicDossierService;
 
     public AuditVerifyController(
             AuditLedgerService auditLedgerService,
-            AuditBlockRepository auditBlockRepository
+            AuditBlockRepository auditBlockRepository,
+            ForensicDossierService forensicDossierService
     ) {
         this.auditLedgerService = auditLedgerService;
         this.auditBlockRepository = auditBlockRepository;
+        this.forensicDossierService = forensicDossierService;
     }
 
     @GetMapping("/verify")
@@ -46,6 +51,42 @@ public class AuditVerifyController {
         body.put("valid", result.valid());
         body.put("blocksChecked", result.blocksChecked());
         body.put("firstBrokenSeq", result.firstBrokenSeq());
+        return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/verify-dossier")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','ANALYST','AUDITOR')")
+    public ResponseEntity<Map<String, Object>> verifyDossier(
+            @RequestParam("hash") String hash
+    ) {
+        UUID tenantId = TenantContext.require().tenantId();
+        Optional<ForensicDossierService.ForensicDossierRow> row =
+                forensicDossierService.findDossierByContentHash(tenantId, hash);
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (row.isEmpty()) {
+            body.put("valid", false);
+            body.put("sessionId", null);
+            body.put("generatedAt", null);
+            body.put("auditSeqFrom", null);
+            body.put("auditSeqTo", null);
+            body.put("auditChainValid", null);
+            return ResponseEntity.ok(body);
+        }
+        ForensicDossierService.ForensicDossierRow d = row.get();
+        // Re-verify only blocks tagged with this session — not MIN..MAX inclusive
+        // (that range wrongly includes interstitial LOGIN/etc. from other activity).
+        TenantChainVerification live = auditLedgerService.verifySessionBlocks(
+                tenantId, d.sessionId().toString()
+        );
+        boolean chainOk = live.valid();
+        body.put("valid", true);
+        body.put("sessionId", d.sessionId().toString());
+        body.put("generatedAt", d.generatedAt().toString());
+        body.put("auditSeqFrom", d.auditSeqFrom());
+        body.put("auditSeqTo", d.auditSeqTo());
+        body.put("auditChainValid", chainOk);
+        body.put("contentSha256", d.contentSha256());
+        body.put("pdfSha256", d.pdfSha256());
         return ResponseEntity.ok(body);
     }
 

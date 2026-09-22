@@ -6,10 +6,12 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -88,6 +90,47 @@ public class SessionActionRepository {
                 },
                 tenantId, sessionId
         );
+    }
+
+    /**
+     * Operator workspace flags for a batch of session ids (sv_session_uuid strings).
+     * Returns sessionId → set of action keys that are still live for the operator.
+     */
+    public Map<String, Set<String>> liveActionFlags(UUID tenantId, Collection<String> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = sessionIds.stream().filter(s -> s != null && !s.isBlank()).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        Object[] args = new Object[ids.size() + 1];
+        args[0] = tenantId;
+        for (int i = 0; i < ids.size(); i++) {
+            args[i + 1] = ids.get(i);
+        }
+        Map<String, Set<String>> out = new LinkedHashMap<>();
+        jdbc.query(
+                """
+                SELECT session_id, action
+                FROM session_actions
+                WHERE tenant_id = ?
+                  AND session_id IN (%s)
+                  AND action IN ('LOCK_APPROVAL', 'REQUIRE_CALLBACK_VERIFICATION', 'BRIDGE_SUPERVISOR', 'SEND_OOB_MFA')
+                  AND status IN ('PENDING', 'EXECUTED', 'AWAITING_OPERATOR')
+                """.formatted(placeholders),
+                (rs) -> {
+                    while (rs.next()) {
+                        String sid = rs.getString("session_id");
+                        String action = rs.getString("action");
+                        out.computeIfAbsent(sid, k -> new java.util.LinkedHashSet<>()).add(action);
+                    }
+                    return null;
+                },
+                args
+        );
+        return out;
     }
 
     public void markOverridden(UUID tenantId, String sessionId, UUID actionId, String reason, String actorId) {

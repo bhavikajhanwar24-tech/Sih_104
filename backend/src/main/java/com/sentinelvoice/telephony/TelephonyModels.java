@@ -68,8 +68,36 @@ public final class TelephonyModels {
     ) {
     }
 
-    /** Live Calls row — call_sessions + directory names. */
+    /** Live Calls row — call_sessions + directory names + departments. */
     public record CallSessionListItem(
+            UUID id,
+            UUID tenantId,
+            Instant startedAt,
+            Instant endedAt,
+            String callerNumber,
+            String calleeNumber,
+            UUID callerEmployeeId,
+            UUID calleeEmployeeId,
+            String callerName,
+            String callerTitle,
+            String calleeName,
+            String calleeTitle,
+            String callerDepartment,
+            String calleeDepartment,
+            String direction,
+            Double peakScore,
+            String peakLevel,
+            String finalOutcome,
+            String sipCallId,
+            UUID svSessionUuid
+    ) {
+        public boolean active() {
+            return endedAt == null;
+        }
+    }
+
+    /** F12 history / dossier detail — includes review + snapshot versions. */
+    public record CallSessionDetail(
             UUID id,
             UUID tenantId,
             Instant startedAt,
@@ -87,11 +115,49 @@ public final class TelephonyModels {
             String peakLevel,
             String finalOutcome,
             String sipCallId,
-            UUID svSessionUuid
+            UUID svSessionUuid,
+            Integer snapshotPolicyVersion,
+            Integer snapshotFusionVersion,
+            Integer snapshotResponsePlanVersion,
+            String reviewStatus,
+            Instant reviewedAt,
+            UUID reviewedBy
     ) {
         public boolean active() {
             return endedAt == null;
         }
+
+        public long durationMs() {
+            if (startedAt == null) {
+                return 0L;
+            }
+            Instant end = endedAt == null ? Instant.now() : endedAt;
+            return Math.max(0L, end.toEpochMilli() - startedAt.toEpochMilli());
+        }
+    }
+
+    /** Filtered Call History row (F12). */
+    public record CallSessionHistoryItem(
+            UUID id,
+            UUID tenantId,
+            Instant startedAt,
+            Instant endedAt,
+            long durationMs,
+            String callerNumber,
+            String calleeNumber,
+            UUID callerEmployeeId,
+            UUID calleeEmployeeId,
+            String callerName,
+            String callerTitle,
+            String calleeName,
+            String calleeTitle,
+            String direction,
+            Double peakScore,
+            String peakLevel,
+            String finalOutcome,
+            String reviewStatus,
+            UUID svSessionUuid
+    ) {
     }
 
     public record ExtensionResolveResult(

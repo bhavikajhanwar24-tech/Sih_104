@@ -53,10 +53,10 @@ fi
 AGI_BIN=/var/lib/asterisk/agi-bin
 mkdir -p "${AGI_BIN}"
 if [[ -d "${SCRIPTS}" ]]; then
-  for f in "${SCRIPTS}"/*.py; do
+  for f in "${SCRIPTS}"/*.{py,sh}; do
     [[ -f "${f}" ]] || continue
     base="$(basename "${f}")"
-    # Strip CR so shebang is "python3" not "python3\r"
+    # Strip CR so shebang is "python3"/"bash" not "...\r"
     sed 's/\r$//' "${f}" > "${AGI_BIN}/${base}"
     chmod +x "${AGI_BIN}/${base}"
   done
@@ -97,30 +97,19 @@ ps_aors => pgsql,${ASTERISK_DB_NAME},ps_aors
 ps_contacts => pgsql,${ASTERISK_DB_NAME},ps_contacts
 EOF
 
-# Sorcery: prefer realtime for endpoints/auths/aors; keep transport/global in conf.
-# Do NOT match commented sample lines like ";[res_pjsip]".
-if [[ -f /etc/asterisk/sorcery.conf ]] && grep -qE '^\[res_pjsip\]' /etc/asterisk/sorcery.conf 2>/dev/null; then
-  :
-elif [[ -f /etc/asterisk/sorcery.conf ]]; then
-  # Strip commented sample realtime block so we don't leave a dead config.
-  sed -i '/^;\[res_pjsip\]/,/^$/d' /etc/asterisk/sorcery.conf 2>/dev/null || true
-  cat >> /etc/asterisk/sorcery.conf <<'EOF'
-
+# Sorcery: always overwrite stock sample. Commented ";[res_pjsip]" must not
+# count as configured — older images matched that and left realtime disabled.
+cat > /etc/asterisk/sorcery.conf <<'EOF'
 [res_pjsip]
 endpoint=realtime,ps_endpoints
 auth=realtime,ps_auths
 aor=realtime,ps_aors
 contact=realtime,ps_contacts
 EOF
-else
-  cat > /etc/asterisk/sorcery.conf <<'EOF'
-[res_pjsip]
-endpoint=realtime,ps_endpoints
-auth=realtime,ps_auths
-aor=realtime,ps_aors
-contact=realtime,ps_contacts
-EOF
+if id asterisk >/dev/null 2>&1; then
+  chown asterisk:asterisk /etc/asterisk/sorcery.conf 2>/dev/null || true
 fi
+chmod 644 /etc/asterisk/sorcery.conf
 
 echo "sentinel-entrypoint: SIP_EXTERNAL_IP=${SIP_EXTERNAL_IP} ASTERISK_DB=${ASTERISK_DB_HOST}:${ASTERISK_DB_PORT}/${ASTERISK_DB_NAME}"
 grep -E 'external_media_address|external_signaling|local_net|bind=' /etc/asterisk/pjsip.conf || true

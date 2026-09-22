@@ -19,6 +19,8 @@ public interface AuditBlockRepository extends JpaRepository<AuditBlock, UUID> {
 
     Optional<AuditBlock> findTopByTenantIdOrderBySeqDesc(UUID tenantId);
 
+    Optional<AuditBlock> findByTenantIdAndSeq(UUID tenantId, long seq);
+
     long countByTenantId(UUID tenantId);
 
     long countByTenantIdAndEventType(UUID tenantId, String eventType);

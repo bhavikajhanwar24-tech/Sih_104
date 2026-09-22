@@ -15,6 +15,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,6 +87,68 @@ public class AuditLedgerService {
     }
 
     /**
+     * Verify only blocks whose payload sessionId is in {@code sessionIds}.
+     * Each block is checked against its stored prev_hash (mid-chain safe). Does not
+     * require the seq range to be free of interstitial non-session events.
+     */
+    @Transactional(readOnly = true)
+    public TenantChainVerification verifySessionBlocks(UUID tenantId, String... sessionIds) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
+        }
+        if (sessionIds == null || sessionIds.length == 0) {
+            return TenantChainVerification.empty();
+        }
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (String id : sessionIds) {
+            if (id != null && !id.isBlank()) {
+                keys.add(id);
+            }
+        }
+        if (keys.isEmpty()) {
+            return TenantChainVerification.empty();
+        }
+        List<AuditBlock> all = repository.findByTenantIdOrderBySeqAsc(tenantId);
+        java.util.Map<Long, AuditBlock> bySeq = new java.util.HashMap<>();
+        for (AuditBlock b : all) {
+            bySeq.put(b.getSeq(), b);
+        }
+        List<AuditBlock> blocks = all.stream()
+                .filter(b -> {
+                    String sid = b.sessionIdFromPayload();
+                    return sid != null && keys.contains(sid);
+                })
+                .toList();
+        if (blocks.isEmpty()) {
+            return TenantChainVerification.empty();
+        }
+        for (AuditBlock block : blocks) {
+            Instant created = block.getCreatedAt() == null
+                    ? null
+                    : block.getCreatedAt().truncatedTo(ChronoUnit.MICROS);
+            String expectedHash = computeHash(
+                    block.getPrevHash(),
+                    block.getSeq(),
+                    block.getEventType(),
+                    canonicalJson.serialize(block.getPayload()),
+                    created
+            );
+            if (!expectedHash.equals(block.getHash())) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
+            }
+            if (block.getSeq() > 1L) {
+                AuditBlock prior = bySeq.get(block.getSeq() - 1L);
+                if (prior != null && !prior.getHash().equals(block.getPrevHash())) {
+                    return TenantChainVerification.broken(blocks.size(), block.getSeq());
+                }
+            } else if (!BootstrapTenant.GENESIS_PREV_HASH.equals(block.getPrevHash())) {
+                return TenantChainVerification.broken(blocks.size(), block.getSeq());
+            }
+        }
+        return TenantChainVerification.ok(blocks.size());
+    }
+
+    /**
      * Verify the full chain for a tenant.
      *
      * @return {@code valid}, {@code blocksChecked}, {@code firstBrokenSeq} (null if valid / empty)
@@ -144,7 +207,8 @@ public class AuditLedgerService {
                     block.getSeq(),
                     block.getEventType(),
                     canonicalJson.serialize(block.getPayload()),
-                    block.getCreatedAt()
+                    // Match persistLocked: hash material uses microsecond Instant (PG timestamptz).
+                    block.getCreatedAt() == null ? null : block.getCreatedAt().truncatedTo(ChronoUnit.MICROS)
             );
             if (!expectedHash.equals(block.getHash())) {
                 return TenantChainVerification.broken(blocks.size(), block.getSeq());
@@ -218,7 +282,9 @@ public class AuditLedgerService {
         long nextSeq = tip.map(b -> b.getSeq() + 1L).orElse(1L);
         String prevHash = tip.map(AuditBlock::getHash).orElse(BootstrapTenant.GENESIS_PREV_HASH);
 
-        Instant createdAt = Instant.now();
+        // Truncate to microseconds before hashing: PostgreSQL timestamptz stores micros only.
+        // Hashing Instant.now()'s nanoseconds then reading back micros makes verify forever fail.
+        Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
         String canonicalPayload = canonicalJson.serialize(payload);
         String hash = computeHash(prevHash, nextSeq, type.name(), canonicalPayload, createdAt);
 

@@ -68,5 +68,6 @@ public enum AuditEventType {
     SESSION_CONFIG_SNAPSHOT,
     CALL_RINGING,
     CALL_ANSWERED,
-    CALL_ENDED
+    CALL_ENDED,
+    SESSION_REVIEWED
 }

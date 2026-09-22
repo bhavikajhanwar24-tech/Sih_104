@@ -21,7 +21,7 @@ public enum Role {
         return switch (this) {
             case TENANT_ADMIN -> Set.of(
                     "dashboard:read",
-                    "calls:read", "calls:act",
+                    "calls:read", "calls:act", "calls:bridge",
                     "directory:read", "directory:write",
                     "policies:read", "policies:write", "policies:submit",
                     "response:read", "response:write", "response:submit",

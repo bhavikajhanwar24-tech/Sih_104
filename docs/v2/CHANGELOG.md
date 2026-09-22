@@ -35,7 +35,16 @@ Keep entries short (one line reason where possible).
 | 2026-09-21 | Directory Telephony tab + Settings → Telephony UI; SIP reg/on-call indicators | F10 — telephony UI |
 | 2026-09-21 | Telephony health explains Postgres/AMI/ARI/SIP_EXTERNAL_IP; DotEnv + AMI :5038 | F10 — health diagnostics |
 | 2026-09-21 | Asterisk mirror uses `AsteriskMirrorJdbc` (not a `DataSource`/`JdbcTemplate` bean) | F10 — avoid stealing primary pool when `ASTERISK_SYNC_URL` is set |
-| 2026-09-21 | Live Calls page + `/api/v2/calls`; same-tenant dial enforce; registration via `ps_contacts` | F10 — lab acceptance path |
+| 2026-09-22 | Live Calls page + `/api/v2/calls`; same-tenant dial enforce; registration via `ps_contacts` | F10 — lab acceptance path |
+| 2026-09-22 | Forensic dossier owned by F12 (not F15); `/api/v1/forensics` removed in favour of `/api/v2/sessions/{id}/dossier*` | F12 — explainability + court PDF |
+| 2026-09-22 | Asterisk entrypoint always writes `sorcery.conf` realtime; `sv_asterisk` search_path=`asterisk` (V022) | F10 — softphone REGISTER was dead (no endpoints) |
+| 2026-09-22 | Local Asterisk Postgres must include V020 `ps_contacts` columns or REGISTER auth succeeds but contact bind fails | F10 — lab mirror not Flyway-managed |
+| 2026-09-22 | Dialplan sets caller endpoint as CALLERID before Originate; Progress until answer | F10 — Zoiper mobile 486 when From CID missing |
+| 2026-09-22 | Hangup finalize via `sv_session_end.sh` (curl), not AGI; explicit NO_ANSWER end | F10 — Live Calls stuck when hangup AGI failed |
+| 2026-09-22 | F12 verify pass: dossier privacy wording; Why lang=hi; History employee filter; policy citation deep-link | F12 — verification checklist |
+| 2026-09-22 | Audit hash uses `Instant` truncated to micros; dossier chain verify is session-scoped (not MIN..MAX) | F12 — `auditChainValid` false from PG timestamptz rounding + interstitial seqs |
+| 2026-09-22 | Live Calls upgraded to multi-call operator workspace (L3 amber/alert/callback/lock, Bridge=`calls:bridge`, stale banner) | F10 — manual acceptance for operator console |
+| 2026-09-22 | F12 Mark FP / Confirmed live (`POST …/review`); Force L3 records operator explain ticks | F12 — closed review stubs + softphone empty timeline |
 
 ## New dependencies
 
@@ -76,4 +85,5 @@ Keep entries short (one line reason where possible).
 | 2026-09-21 | F8 | Per-tenant fusion_configs + pure FusionEngine; Risk tuning UI; YAML fusion/intervention removed |
 | 2026-09-21 | F10 | Multi-tenant Asterisk PJSIP REALTIME; AGI dialplan; Directory/Settings telephony UI |
 | 2026-09-22 | F11 | Streaming ASR + Stage A/B intent; FeatureFrame linguistic (no transcript on wire); gate-check; languages settings |
+| 2026-09-22 | F12 | session_ticks/reasons/extractions; ForensicDossier from DB; `/api/v2/sessions` + Call History/Detail; verify-dossier |
 

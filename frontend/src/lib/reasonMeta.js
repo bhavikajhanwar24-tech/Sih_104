@@ -1,26 +1,44 @@
 /**
- * Reason code → evidence-family axis (mirrors backend ReasonCode).
- * Used by ReasonsList → Evidence panel highlight (P6.3).
+ * Reason code → evidence-family axis (mirrors backend ReasonCode F12).
+ * Used by ReasonsList → Evidence panel highlight.
  */
 export const REASON_FAMILY = Object.freeze({
+  // F12 canonical codes
+  POLICY_RULE_FIRED: 'transaction',
+  SYNTHETIC_VOICE: 'voice',
+  SPEAKER_MISMATCH: 'voice',
+  CHANNEL_INCONSISTENT: 'channel',
+  NO_PRIOR_RELATIONSHIP: 'relationship',
+  EMPLOYEE_ON_LEAVE: 'relationship',
+  UNKNOWN_BENEFICIARY: 'transaction',
+  SECRECY_REQUESTED: 'linguistic',
+  URGENCY: 'linguistic',
+  CREDENTIAL_REQUEST: 'linguistic',
+  PROMPT_INJECTION_ATTEMPT: 'linguistic',
+  INSUFFICIENT_EVIDENCE: 'voice',
+  LLM_UNAVAILABLE: 'linguistic',
   CLI_CLAIM_MISMATCH: 'relationship',
-  VOICEPRINT_FAIL: 'voice',
-  SYNTHETIC_ARTIFACTS: 'voice',
   NO_BREATH: 'prosody',
   OVERSMOOTH_PROSODY: 'prosody',
-  NO_ROOM_ACOUSTICS: 'channel',
-  DOUBLE_COMPRESSION: 'channel',
-  SECRECY_DEMAND: 'linguistic',
-  URGENCY_PRESSURE: 'linguistic',
   AUTHORITY_INVOCATION: 'linguistic',
-  POLICY_VIOLATION: 'transaction',
-  FIRST_CONTACT: 'relationship',
   HIERARCHY_ANOMALY: 'relationship',
   PRESENCE_CONFLICT: 'relationship',
   CROSS_CHANNEL_PRECURSOR: 'relationship',
   VOICE_DRIFT: 'voice',
   CHALLENGE_LATENCY_FAIL: 'voice',
+  CHALLENGE_CONTENT_FAIL: 'voice',
+  CHALLENGE_ACOUSTIC_FAIL: 'voice',
   WATERMARK_DETECTED: 'voice',
+
+  // Deprecated aliases (still mapped for older frames)
+  SYNTHETIC_ARTIFACTS: 'voice',
+  VOICEPRINT_FAIL: 'voice',
+  NO_ROOM_ACOUSTICS: 'channel',
+  DOUBLE_COMPRESSION: 'channel',
+  SECRECY_DEMAND: 'linguistic',
+  URGENCY_PRESSURE: 'linguistic',
+  POLICY_VIOLATION: 'transaction',
+  FIRST_CONTACT: 'relationship',
 });
 
 /**

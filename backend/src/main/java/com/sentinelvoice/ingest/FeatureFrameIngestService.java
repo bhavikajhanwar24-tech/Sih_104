@@ -10,6 +10,7 @@ import com.sentinelvoice.context.CrossChannelCorrelationService;
 import com.sentinelvoice.context.RelationshipGraphService;
 import com.sentinelvoice.context.model.CorrelationResult;
 import com.sentinelvoice.context.model.RelationshipAssessment;
+import com.sentinelvoice.explain.SessionExplainRecorder;
 import com.sentinelvoice.directory.DirectoryMatch;
 import com.sentinelvoice.directory.DirectoryService;
 import com.sentinelvoice.fusion.EvidenceFamily;
@@ -79,6 +80,7 @@ public class FeatureFrameIngestService {
     private final ChallengeService challengeService;
     private final ScenarioSessionContext scenarioSessionContext;
     private final BreakGlassTranscriptService breakGlassTranscriptService;
+    private final SessionExplainRecorder sessionExplainRecorder;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -102,6 +104,7 @@ public class FeatureFrameIngestService {
             ChallengeService challengeService,
             ScenarioSessionContext scenarioSessionContext,
             BreakGlassTranscriptService breakGlassTranscriptService,
+            SessionExplainRecorder sessionExplainRecorder,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -121,6 +124,7 @@ public class FeatureFrameIngestService {
         this.challengeService = challengeService;
         this.scenarioSessionContext = scenarioSessionContext;
         this.breakGlassTranscriptService = breakGlassTranscriptService;
+        this.sessionExplainRecorder = sessionExplainRecorder;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -311,16 +315,46 @@ public class FeatureFrameIngestService {
         // Prepend engine reasons (policy floor / emergency) so TelemetryFrame surfaces them
         if (!assessment.reasons().isEmpty()) {
             List<ReasonGenerator.GeneratedReason> merged = new ArrayList<>();
+            List<RuleEvaluation.FiredRule> fired = policyEval.firedRules();
+            int fireIdx = 0;
             for (RiskAssessment.Reason r : assessment.reasons()) {
+                RuleEvaluation.FiredRule match = null;
+                if ("POLICY_FLOOR".equals(r.code()) && fireIdx < fired.size()) {
+                    match = fired.get(fireIdx++);
+                } else if (!fired.isEmpty()) {
+                    for (RuleEvaluation.FiredRule fr : fired) {
+                        if (fr.ruleId() != null && r.text() != null && r.text().contains(fr.ruleId())) {
+                            match = fr;
+                            break;
+                        }
+                    }
+                }
+                Map<String, Object> sourceClause = new LinkedHashMap<>();
+                String ruleId = null;
+                Integer polVer = policyVersion;
+                if (match != null) {
+                    ruleId = match.ruleId();
+                    if (match.sourceRef() != null) {
+                        sourceClause.putAll(match.sourceRef());
+                    }
+                    if (match.title() != null && !match.title().isBlank()) {
+                        sourceClause.putIfAbsent("title", match.title());
+                    }
+                }
                 merged.add(new ReasonGenerator.GeneratedReason(
-                        ReasonCode.POLICY_VIOLATION,
+                        ReasonCode.POLICY_RULE_FIRED,
+                        "Policy rule fired",
                         r.text(),
                         EvidenceFamily.TRANSACTION,
-                        1.0
+                        1.0,
+                        ruleId,
+                        polVer,
+                        sourceClause.isEmpty() ? null : sourceClause,
+                        Map.of()
                 ));
             }
             merged.addAll(reasons);
-            reasons = merged.stream().limit(5).toList();
+            reasons = merged.stream().limit(8).toList();
         }
 
         List<CallSession.FiredReason> fired = new ArrayList<>(reasons.size());
@@ -328,7 +362,7 @@ public class FeatureFrameIngestService {
             if (r == null || r.code() == null) {
                 continue;
             }
-            String code = r.code().name();
+            String code = r.canonicalCode().name();
             String text = r.text();
             fired.add(new CallSession.FiredReason(
                     code,
@@ -341,6 +375,25 @@ public class FeatureFrameIngestService {
             ));
         }
         session.recordFiredReasons(nowMs, fired);
+
+        List<String> firedRuleIds = policyEval.firedRules().stream()
+                .map(RuleEvaluation.FiredRule::ruleId)
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+        String llmState = working.linguistic() != null && working.linguistic().available()
+                ? "AVAILABLE" : "MISSING";
+        sessionExplainRecorder.onTick(
+                session.getTenantId(),
+                session,
+                Math.max(0L, nowMs - session.getCreatedAt().toEpochMilli()),
+                fusion.smoothed(),
+                decision.level(),
+                fusion.families(),
+                firedRuleIds,
+                llmState,
+                reasons,
+                working
+        );
 
         if (working.linguistic() != null) {
             String snippet = working.linguistic().redactedSnippet();
@@ -466,16 +519,18 @@ public class FeatureFrameIngestService {
 
     private static String baselineForReasonCode(String code) {
         return switch (code == null ? "" : code) {
-            case "VOICEPRINT_FAIL" -> "match cosine ≥ 0.70";
+            case "SPEAKER_MISMATCH", "VOICEPRINT_FAIL" -> "match cosine ≥ 0.70";
             case "NO_BREATH" -> "8–20 breaths/min";
             case "OVERSMOOTH_PROSODY" -> "jitter 0.5–1.5%";
-            case "NO_ROOM_ACOUSTICS" -> "T60 ≳ 30 ms";
+            case "CHANNEL_INCONSISTENT", "NO_ROOM_ACOUSTICS" -> "T60 ≳ 30 ms / no double-compression";
             case "DOUBLE_COMPRESSION" -> "score < 0.55";
-            case "SYNTHETIC_ARTIFACTS" -> "spoofProbability < 0.60";
-            case "POLICY_VIOLATION" -> "within verbalAuthorityLimit";
+            case "SYNTHETIC_VOICE", "SYNTHETIC_ARTIFACTS" -> "spoofProbability < 0.60";
+            case "POLICY_RULE_FIRED", "POLICY_VIOLATION" -> "within verbalAuthorityLimit";
             case "CHALLENGE_LATENCY_FAIL" -> "response onset ≤ 1.8s (fail > 3.5s)";
             case "CHALLENGE_CONTENT_FAIL" -> "fuzzy phrase overlap ≥ 0.60";
             case "CHALLENGE_ACOUSTIC_FAIL" -> "speaker cosine ≥ 0.55 vs call baseline";
+            case "LLM_UNAVAILABLE" -> "LLM features available";
+            case "INSUFFICIENT_EVIDENCE" -> "all families present";
             default -> "see methodology appendix";
         };
     }
