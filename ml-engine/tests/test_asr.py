@@ -59,8 +59,9 @@ class _FakeWhisper:
         self._calls = 0
 
     def transcribe(self, audio: Any, **kwargs: Any):
-        assert kwargs.get("language") is None
-        assert kwargs.get("condition_on_previous_text") is True
+        assert kwargs.get("condition_on_previous_text") is False
+        # Language may be forced to en for keyword lexicon stability.
+        assert kwargs.get("language") in (None, "en", "hi")
         idx = min(self._calls, len(self._plan) - 1)
         self._calls += 1
         segs, info = self._plan[idx]

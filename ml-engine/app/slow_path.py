@@ -1,6 +1,7 @@
 """Slow-path orchestration — ASR + Stage A (sync) + Stage B LLM (async).
 
-Cadence ~2.5 s over a 6 s overlapping PCM window. Stage A never waits on the LLM.
+Hop ASR (~3 s of newest audio every ~3 s). Stage A never waits on the LLM.
+Stage B runs at most once per 10 s and only when the transcript actually changed.
 Transcript text stays in-process; FeatureFrame linguistic is numbers/enums only (F11).
 """
 
@@ -31,6 +32,7 @@ class SlowPathRunner:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._last_speech_mono: dict[str, float] = {}
+        self._last_llm_text_norm: dict[str, str] = {}
 
     async def start(self, session_id: str) -> None:
         if not settings.asr_enabled:
@@ -44,10 +46,11 @@ class SlowPathRunner:
                 name=f"slow-path-{session_id}",
             )
             logger.info(
-                "slow_path_start session_id=%s interval_ms=%s window_s=%s",
+                "slow_path_start session_id=%s interval_ms=%s window_s=%s model=%s",
                 session_id,
                 settings.asr_interval_ms,
                 settings.asr_window_seconds,
+                settings.asr_model_size,
             )
 
     async def stop(self, session_id: str) -> None:
@@ -67,6 +70,7 @@ class SlowPathRunner:
             session.slow_path_linguistic = {"available": False}
         stage_b_runner.clear(session_id)
         self._last_speech_mono.pop(session_id, None)
+        self._last_llm_text_norm.pop(session_id, None)
         logger.info("slow_path_stop session_id=%s", session_id)
 
     async def stop_all(self) -> None:
@@ -75,20 +79,51 @@ class SlowPathRunner:
         for session_id in ids:
             await self.stop(session_id)
 
+    def _read_hop_window(self, session: PipelineSession) -> Optional[np.ndarray]:
+        """Read only newest audio since the last ASR cursor (+ short overlap)."""
+        ring = session.ring_buffer
+        sr = ring.sample_rate
+        state = session.asr_state
+        total = int(ring.total_samples_written)
+        overlap = int(max(0.0, float(settings.asr_hop_overlap_seconds)) * sr)
+        max_win = int(float(settings.asr_window_seconds) * sr)
+        min_new = max(int(0.6 * sr), int(0.25 * max_win))
+
+        cursor = int(getattr(state, "_asr_cursor_samples", 0) or 0)
+        if cursor > total:
+            cursor = 0
+            state._asr_cursor_samples = 0
+
+        new_samples = total - cursor
+        if cursor == 0:
+            # First tick: need a short window before we start.
+            if total < max(min_new, int(1.2 * sr)):
+                return None
+            duration_s = min(float(settings.asr_window_seconds), total / float(sr))
+        else:
+            if new_samples < min_new:
+                return None
+            take = min(max_win, new_samples + overlap)
+            duration_s = take / float(sr)
+
+        if duration_s <= 0.05:
+            return None
+        return ring.read_window(duration_s, hop_offset_s=0.0)
+
     async def tick(self, session_id: str) -> Optional[asr_mod.AsrTickResult]:
-        """One slow-path cycle: PCM → ASR → Stage A → maybe schedule Stage B."""
+        """One slow-path cycle: hop PCM → ASR → Stage A → maybe schedule Stage B."""
         session = self.registry.get(session_id)
         if session is None:
             return None
 
-        sr = session.ring_buffer.sample_rate
-        needed = int(settings.asr_window_seconds * sr)
-        if session.ring_buffer.total_samples_written < needed:
+        window = self._read_hop_window(session)
+        if window is None or window.size == 0:
             return None
 
-        window = session.ring_buffer.read_window(
-            settings.asr_window_seconds, hop_offset_s=0.0
-        )
+        sr = session.ring_buffer.sample_rate
+        cursor_before = int(getattr(session.asr_state, "_asr_cursor_samples", 0) or 0)
+        total_before = int(session.ring_buffer.total_samples_written)
+
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             asr_mod.get_executor(),
@@ -97,6 +132,17 @@ class SlowPathRunner:
             sr,
             session.asr_state,
         )
+        # Advance cursor past the audio we just heard (keep overlap for next hop).
+        overlap = int(max(0.0, float(settings.asr_hop_overlap_seconds)) * sr)
+        session.asr_state._asr_cursor_samples = max(
+            cursor_before, total_before - overlap
+        )
+        # If ring advanced during ASR, don't leave a permanent lag larger than one window.
+        total_now = int(session.ring_buffer.total_samples_written)
+        max_lag = int(float(settings.asr_window_seconds) * sr)
+        if total_now - session.asr_state._asr_cursor_samples > max_lag:
+            session.asr_state._asr_cursor_samples = total_now - max_lag
+
         self._apply_result(session, result)
         return result
 
@@ -123,8 +169,6 @@ class SlowPathRunner:
                 len(raw),
                 len(lexicon.keywords) if lexicon else 0,
             )
-            # Push a FeatureFrame even if the PCM ring has not advanced — otherwise
-            # keyword hits never reach Live Calls when AudioSocket stalls.
             session.force_emit = True
         elif raw.strip():
             logger.info(
@@ -151,8 +195,7 @@ class SlowPathRunner:
                     llm_pending=pending,
                 )
 
-        # Stage B: judge transcript against ACTIVE live rules. In lab mode, still run
-        # LLM so operators see thinking even before a policy set is published.
+        # Stage B: only when transcript meaningfully changed; 10 s cooldown in runner.
         silence_end = False
         last_speech = self._last_speech_mono.get(session.session_id)
         if last_speech is not None and (time.monotonic() - last_speech) >= 0.6:
@@ -160,25 +203,38 @@ class SlowPathRunner:
                 silence_end = True
 
         schedule_text = raw.strip()
+        schedule_norm = " ".join(schedule_text.lower().split())
+        prev_llm_norm = self._last_llm_text_norm.get(session.session_id, "")
+        text_changed = bool(schedule_norm) and schedule_norm != prev_llm_norm
         has_rules = bool(lexicon and getattr(lexicon, "rules", None))
-        allow_stage_b = bool(schedule_text) and (has_rules or settings.lab_mode)
+        allow_stage_b = text_changed and (has_rules or settings.lab_mode)
         if allow_stage_b:
             try:
                 from app.llm_gateway.gateway import gateway as llm_gateway
 
-                stage_b_runner.maybe_schedule(
+                queued = stage_b_runner.maybe_schedule(
                     session.session_id,
                     schedule_text,
                     stage_a=stage_a or run_stage_a(schedule_text, lexicon=lexicon),
-                    lexicon=lexicon,
                     gateway=_GatewayAdapter(llm_gateway),
-                    force=True,  # never wait on keywords
+                    lexicon=lexicon,
+                    force=False,
                 )
+                # Always remember the caption we just evaluated so identical text
+                # never re-enters the scheduler (queued or skipped-as-unchanged).
+                if queued or schedule_norm:
+                    self._last_llm_text_norm[session.session_id] = schedule_norm
             except Exception:
                 logger.debug("stage_b_schedule_failed", exc_info=True)
-        elif schedule_text and silence_end and not has_rules:
+        elif schedule_text and silence_end and not has_rules and not settings.lab_mode:
             logger.info(
                 "stage_b_skip_no_active_rules session_id=%s raw_chars=%s",
+                session.session_id,
+                len(schedule_text),
+            )
+        elif schedule_text and not text_changed:
+            logger.debug(
+                "stage_b_skip_same_text session_id=%s chars=%s",
                 session.session_id,
                 len(schedule_text),
             )
@@ -192,19 +248,21 @@ class SlowPathRunner:
             or ling_now.get("redactedSnippet")
             or ling_now.get("redactedDelta")
             or pending
+            or stage_b_runner.pending(session.session_id)
         ):
             session.force_emit = True
 
         logger.info(
             "slow_path_tick session_id=%s latency_ms=%.1f available=%s "
-            "code_switch=%s skipped=%s stage_a_ms=%.1f llm_pending=%s",
+            "code_switch=%s skipped=%s stage_a_ms=%.1f llm_pending=%s text_changed=%s",
             session.session_id,
             result.latency_ms,
             result.available,
             result.code_switch_detected,
             result.skipped_reason,
             (stage_a.latency_ms if stage_a else 0.0),
-            pending,
+            stage_b_runner.pending(session.session_id),
+            text_changed,
         )
 
     async def _run(self, session_id: str) -> None:

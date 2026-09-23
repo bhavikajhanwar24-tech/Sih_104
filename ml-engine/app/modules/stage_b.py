@@ -83,11 +83,11 @@ class LlmSessionStats:
 
 
 class StageBRunner:
-    """Per-session LLM judgments. Re-judge the CURRENT sentence whenever it grows."""
+    """Per-session LLM judgments. Re-judge only when the transcript grows, ≥10 s apart."""
 
     # Ignore tiny ASR jitter between ticks.
-    _MIN_NEW_CHARS = 3
-    _MIN_NEW_WORDS = 1
+    _MIN_NEW_CHARS = 12
+    _MIN_NEW_WORDS = 2
 
     def __init__(self) -> None:
         self._stats: dict[str, LlmSessionStats] = defaultdict(LlmSessionStats)
@@ -133,22 +133,46 @@ class StageBRunner:
     def _norm_text(text: str) -> str:
         return " ".join((text or "").lower().split())
 
+    @staticmethod
+    def _min_gap_s() -> float:
+        try:
+            from app.config import settings
+
+            return max(1.0, float(getattr(settings, "stage_b_min_interval_s", 10.0) or 10.0))
+        except Exception:
+            return 10.0
+
     def _latest_sentence_if_changed(self, session_id: str, text: str) -> Optional[str]:
         """Return the CURRENT full sentence when it grew vs the last judged one."""
         newest = self._norm_text(text)
         if not newest:
             return None
         words = newest.split()
-        if len(words) > 60:
-            newest = " ".join(words[-60:])
+        if len(words) > 80:
+            newest = " ".join(words[-80:])
+            words = newest.split()
         prev = self._last_sent_norm.get(session_id, "")
         if newest == prev:
             return None
-        if prev and newest.startswith(prev):
+        if not prev:
+            # First judgment: need a real phrase, not a single filler token.
+            if len(words) < self._MIN_NEW_WORDS and len(newest) < self._MIN_NEW_CHARS:
+                return None
+            return newest
+        if newest.startswith(prev):
             added = newest[len(prev) :].strip()
             if len(added) < self._MIN_NEW_CHARS and len(added.split()) < self._MIN_NEW_WORDS:
                 return None
-        elif prev and len(newest) <= len(prev):
+            return newest
+        # Shorter / reshuffled ASR noise — do not re-fire the LLM.
+        if len(newest) <= len(prev):
+            return None
+        prev_toks = set(prev.split())
+        new_toks = set(words)
+        if new_toks and len(prev_toks & new_toks) / float(len(new_toks)) >= 0.85:
+            if len(newest) < len(prev) + self._MIN_NEW_CHARS:
+                return None
+        if len(newest) < len(prev) + self._MIN_NEW_CHARS:
             return None
         return newest
 
@@ -161,10 +185,10 @@ class StageBRunner:
         lexicon: Optional[TenantLexicon],
         gateway: Any,
         force: bool = False,
-    ) -> None:
-        """Fire-and-forget schedule. Never awaited by the slow-path tick."""
+    ) -> bool:
+        """Fire-and-forget schedule. Returns True if a run was queued / coalesced."""
         if not raw_text or not raw_text.strip():
-            return
+            return False
         should = (
             force
             or bool(lexicon and lexicon.rules)
@@ -172,8 +196,16 @@ class StageBRunner:
             or stage_a.high_risk
             or stage_a.ask_detected
         )
+        # Lab mode: allow Stage B even without keyword/rules (caller gates on text change).
         if not should:
-            return
+            try:
+                from app.config import settings
+
+                should = bool(settings.lab_mode)
+            except Exception:
+                should = False
+        if not should:
+            return False
 
         self._coalesce_text[session_id] = raw_text
         if self._latest_sentence_if_changed(session_id, raw_text) is None:
@@ -182,16 +214,18 @@ class StageBRunner:
                 session_id,
                 len(raw_text),
             )
-            return
+            return False
 
         existing = self._inflight.get(session_id)
         if existing is not None and not existing.done():
+            # Coalesce onto the in-flight task; it will re-check text when done.
             self._stats[session_id].pending = True
-            return
+            logger.debug("stage_b_coalesce session=%s chars=%s", session_id, len(raw_text))
+            return True
 
         now = time.monotonic()
         last = self._last_call_mono.get(session_id, 0.0)
-        min_gap = 2.0
+        min_gap = self._min_gap_s()
         if now - last < min_gap:
             delay = min_gap - (now - last)
 
@@ -200,6 +234,11 @@ class StageBRunner:
                 text = self._coalesce_text.get(session_id, raw_text)
                 if self._latest_sentence_if_changed(session_id, text) is None:
                     self._stats[session_id].pending = False
+                    logger.info(
+                        "stage_b_skip_unchanged_after_wait session=%s gap_s=%.1f",
+                        session_id,
+                        min_gap,
+                    )
                     return self._latest.get(session_id)
                 return await self._run(
                     session_id, text, stage_a=stage_a, lexicon=lexicon, gateway=gateway
@@ -209,13 +248,20 @@ class StageBRunner:
                 _delayed(), name=f"stage-b-{session_id}"
             )
             self._stats[session_id].pending = True
-            return
+            logger.info(
+                "stage_b_delayed session=%s wait_s=%.1f chars=%s",
+                session_id,
+                delay,
+                len(raw_text),
+            )
+            return True
 
         self._inflight[session_id] = asyncio.create_task(
             self._run(session_id, raw_text, stage_a=stage_a, lexicon=lexicon, gateway=gateway),
             name=f"stage-b-{session_id}",
         )
         self._stats[session_id].pending = True
+        return True
 
     async def _run(
         self,
@@ -388,18 +434,31 @@ class StageBRunner:
             except Exception:
                 logger.debug("stage_b_force_emit_failed", exc_info=True)
             self._inflight.pop(session_id, None)
-            # Only follow up when the rolling transcript grew while we were busy.
+            # Follow up only if transcript grew AND the 10 s gap has elapsed.
             newest = self._coalesce_text.get(session_id)
             if newest and self._latest_sentence_if_changed(session_id, newest) is not None:
-                stats.pending = True
-                self._inflight[session_id] = asyncio.create_task(
-                    self._run(
+                gap = self._min_gap_s()
+                elapsed = time.monotonic() - self._last_call_mono.get(session_id, 0.0)
+                wait = max(0.0, gap - elapsed)
+
+                async def _followup() -> Optional[dict[str, Any]]:
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    text = self._coalesce_text.get(session_id, newest)
+                    if self._latest_sentence_if_changed(session_id, text) is None:
+                        self._stats[session_id].pending = False
+                        return self._latest.get(session_id)
+                    return await self._run(
                         session_id,
-                        newest,
+                        text,
                         stage_a=stage_a,
                         lexicon=lexicon,
                         gateway=gateway,
-                    ),
+                    )
+
+                stats.pending = True
+                self._inflight[session_id] = asyncio.create_task(
+                    _followup(),
                     name=f"stage-b-followup-{session_id}",
                 )
             else:

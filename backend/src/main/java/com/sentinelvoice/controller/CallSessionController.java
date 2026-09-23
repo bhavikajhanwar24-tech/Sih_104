@@ -29,8 +29,10 @@ import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
+import com.sentinelvoice.telephony.CallLifecycleService;
 import com.sentinelvoice.telephony.LiveCallEnsureService;
 import jakarta.validation.Valid;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -61,6 +63,7 @@ public class CallSessionController {
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final PlanRunner planRunner;
     private final LiveCallEnsureService liveCallEnsureService;
+    private final CallLifecycleService callLifecycleService;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
@@ -74,7 +77,8 @@ public class CallSessionController {
             DirectoryService directoryService,
             TelemetryBroadcaster telemetryBroadcaster,
             PlanRunner planRunner,
-            LiveCallEnsureService liveCallEnsureService
+            LiveCallEnsureService liveCallEnsureService,
+            @Lazy CallLifecycleService callLifecycleService
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionRuntimeService = fusionRuntimeService;
@@ -88,6 +92,7 @@ public class CallSessionController {
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.planRunner = planRunner;
         this.liveCallEnsureService = liveCallEnsureService;
+        this.callLifecycleService = callLifecycleService;
     }
 
     @PostMapping("/start")
@@ -127,10 +132,26 @@ public class CallSessionController {
 
     @PostMapping("/{sessionId}/close")
     public ResponseEntity<Map<String, Object>> closeSession(@PathVariable String sessionId) {
-        if (callSessionManager.getSession(sessionId).isEmpty()) {
-            return ResponseEntity.notFound().build();
+        boolean hadMemory = callSessionManager.getSession(sessionId).isPresent();
+        boolean telephonyFinalized = false;
+        try {
+            java.util.UUID uuid = java.util.UUID.fromString(sessionId);
+            // Sets call_sessions.ended_at + closes memory — required so Live Calls cannot ghost.
+            callLifecycleService.onEnd(uuid, "ENDED");
+            telephonyFinalized = true;
+        } catch (IllegalArgumentException nonUuid) {
+            if (!hadMemory) {
+                return ResponseEntity.notFound().build();
+            }
+            callSessionManager.closeSession(sessionId);
+        } catch (RuntimeException ex) {
+            if (hadMemory) {
+                callSessionManager.closeSession(sessionId);
+            } else if (!hadMemory) {
+                return ResponseEntity.notFound().build();
+            }
         }
-        callSessionManager.closeSession(sessionId);
+
         fusionRuntimeService.clearSession(sessionId);
         interventionLadderService.clearSession(sessionId);
         telemetryBroadcaster.clear(sessionId);
@@ -138,6 +159,7 @@ public class CallSessionController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "closed");
         body.put("sessionId", sessionId);
+        body.put("telephonyFinalized", telephonyFinalized);
         return ResponseEntity.ok(body);
     }
 

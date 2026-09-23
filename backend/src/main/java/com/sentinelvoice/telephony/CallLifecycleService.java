@@ -8,6 +8,7 @@ import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,19 +32,22 @@ public class CallLifecycleService {
     private final TelephonyResolveService resolveService;
     private final RelationshipService relationshipService;
     private final AuditLedgerService auditLedgerService;
+    private final LiveCallsBroadcaster liveCallsBroadcaster;
 
     public CallLifecycleService(
             CallSessionRepository callSessionRepository,
             CallSessionManager callSessionManager,
             TelephonyResolveService resolveService,
             RelationshipService relationshipService,
-            AuditLedgerService auditLedgerService
+            AuditLedgerService auditLedgerService,
+            @Lazy LiveCallsBroadcaster liveCallsBroadcaster
     ) {
         this.callSessionRepository = callSessionRepository;
         this.callSessionManager = callSessionManager;
         this.resolveService = resolveService;
         this.relationshipService = relationshipService;
         this.auditLedgerService = auditLedgerService;
+        this.liveCallsBroadcaster = liveCallsBroadcaster;
     }
 
     /**
@@ -243,6 +247,11 @@ public class CallLifecycleService {
             }
 
             callSessionManager.closeSession(svSessionUuid.toString());
+            try {
+                liveCallsBroadcaster.publishEnded(tenantId, svSessionUuid.toString());
+            } catch (RuntimeException ignored) {
+                // UI delta is best-effort
+            }
             return Map.of(
                     "svSessionUuid", svSessionUuid.toString(),
                     "finalized", fin.finalized(),

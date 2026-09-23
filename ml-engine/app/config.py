@@ -62,24 +62,29 @@ class Settings(BaseSettings):
 
     # Slow-path ASR (Context §7.2 / §10.6) — faster-whisper / CTranslate2.
     asr_enabled: bool = True
-    # Lab CPU: tiny keeps the fast-path/gauge alive; small starves the 500ms tick.
-    asr_model_size: str = "tiny"
+    # base ≫ tiny for live captions; hop ASR (not full-window re-ASR) keeps CPU load OK.
+    asr_model_size: str = "base"
     asr_device: str = "auto"  # auto | cpu | cuda
     asr_compute_type: str = "default"  # default → int8 (cpu) / float16 (cuda)
-    asr_window_seconds: float = 6.0
-    asr_interval_ms: int = 2500
+    # Hop length: only the newest audio is transcribed each tick (plus a short overlap).
+    asr_window_seconds: float = 3.0
+    asr_interval_ms: int = 3000
+    # Overlap retained from the previous hop so words at the cut are not lost.
+    asr_hop_overlap_seconds: float = 0.45
     # Softphone / AudioSocket levels are often low; 0.3 blocked almost every tick.
     asr_vad_speech_ratio_min: float = 0.12
     # RMS floor — if energy is present, still run Whisper even when webrtcvad is shy.
     asr_vad_rms_min: float = 0.006
     # Soft gain for PSTN/snoop before ASR (clipped to [-1,1]).
     asr_pcm_gain: float = 2.5
-    asr_snippet_chars: int = 160
-    asr_latency_budget_ms: float = 900.0
+    asr_snippet_chars: int = 280
+    asr_latency_budget_ms: float = 2500.0
     # F11 — in-memory rolling transcript horizon (seconds); zeroised on session close.
-    asr_rolling_seconds: float = 20.0
+    asr_rolling_seconds: float = 45.0
     # Tenant-allowed ASR languages (Whisper codes). Hinglish = code-switch hi+en.
     asr_languages: str = "en,hi"
+    # Stage B LLM: minimum seconds between calls per session (only if transcript changed).
+    stage_b_min_interval_s: float = 10.0
     # Lab / operator workspace: put a short redacted ASR transcript on FeatureFrame
     # so Live Calls can show what was heard (F11 wire strip is skipped for this).
     lab_mode: bool = False
@@ -97,3 +102,14 @@ if not settings.service_token:
 _lab = (os.environ.get("LAB_MODE") or os.environ.get("SENTINELVOICE_ML_LAB_MODE") or "").strip().lower()
 if _lab in {"1", "true", "yes", "on"}:
     object.__setattr__(settings, "lab_mode", True)
+
+# Optional unprefixed overrides (repo-root .env convenience).
+_asr_size = (os.environ.get("ASR_MODEL_SIZE") or "").strip()
+if _asr_size:
+    object.__setattr__(settings, "asr_model_size", _asr_size)
+_stage_b_gap = (os.environ.get("STAGE_B_MIN_INTERVAL_S") or "").strip()
+if _stage_b_gap:
+    try:
+        object.__setattr__(settings, "stage_b_min_interval_s", float(_stage_b_gap))
+    except ValueError:
+        pass

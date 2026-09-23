@@ -95,6 +95,29 @@ public class LiveCallsBroadcaster {
         log.debug("live_calls_delta sessionId={} level={}", session.getSessionId(), delta.get("liveLevel"));
     }
 
+    /** Notify Live Calls UI that a session is no longer active. */
+    public void publishEnded(UUID tenantId, String svSessionUuid) {
+        if (tenantId == null || svSessionUuid == null || svSessionUuid.isBlank()) {
+            return;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("schemaVersion", "2");
+        m.put("type", "call.ended");
+        m.put("tenantId", tenantId.toString());
+        m.put("svSessionUuid", svSessionUuid);
+        m.put("id", svSessionUuid);
+        m.put("active", false);
+        m.put("serverTime", Instant.now().toString());
+        try {
+            callSessionRepository.findListItemBySvSession(tenantId, UUID.fromString(svSessionUuid))
+                    .ifPresent(row -> m.put("id", row.id().toString()));
+        } catch (IllegalArgumentException ignored) {
+            // non-uuid
+        }
+        messagingTemplate.convertAndSend(topic(tenantId), m);
+        log.debug("live_calls_ended sessionId={}", svSessionUuid);
+    }
+
     private Map<String, Object> buildDelta(
             UUID tenantId,
             CallSession session,

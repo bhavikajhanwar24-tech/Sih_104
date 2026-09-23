@@ -288,6 +288,23 @@ public class CallSessionRepository {
         );
     }
 
+    /** Open (not ended) sessions older than cutoff — ghost candidates. */
+    public List<UUID> listOpenSvSessionsOlderThan(UUID tenantId, Instant olderThan) {
+        return jdbc.query(
+                """
+                SELECT sv_session_uuid
+                FROM call_sessions
+                WHERE tenant_id = ?
+                  AND ended_at IS NULL
+                  AND sv_session_uuid IS NOT NULL
+                  AND started_at < ?
+                """,
+                (rs, i) -> rs.getObject("sv_session_uuid", UUID.class),
+                tenantId,
+                java.sql.Timestamp.from(olderThan)
+        );
+    }
+
     /**
      * Recent call metadata with directory names for Live Calls (F10).
      */

@@ -1,0 +1,27 @@
+---
+description: Never change or wipe the database without explicit user confirmation
+alwaysApply: true
+---
+
+# Database safety — confirmation required
+
+NEVER create, update, delete, truncate, purge, migrate-destructively, seed-overwrite, or otherwise change **any** database data or schema without the user’s **explicit confirmation in that turn**.
+
+This includes:
+
+- Supabase / primary app DB
+- Local Postgres / Asterisk mirror (`ps_*`, `sip_endpoints`, etc.)
+- Passwords, users, tenants, employees, SIP accounts, call sessions, policies, audit chains
+- “Fix” scripts that rewrite usernames, emails, or credentials
+- Interpreting vague or angry messages as permission to wipe
+
+Even if the user says something like “remove all data” or “change the password”:
+
+1. **Stop**
+2. State exactly what you would run (targets + irreversible impact)
+3. Ask for confirmation (e.g. “Reply YES to wipe Supabase public tables”)
+4. Only proceed after a clear affirmative in a following message
+
+Do **not** “helpfully” reset `admin@demo.test`, rename SIP users, purge tenants, or seed demo data unless confirmed.
+
+Read-only queries (SELECT / explain) are allowed when diagnosing. Writes are not.

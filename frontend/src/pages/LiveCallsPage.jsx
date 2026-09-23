@@ -210,16 +210,23 @@ export function LiveCallsPage() {
   }, [callDeltas, mergeRow]);
 
   // Merge live telemetry captions into the selected row immediately.
+  // Prefer growth / stable supersets — reject shorter near-duplicates that flicker.
   useEffect(() => {
     const text = latest?.transcriptDelta?.text;
     if (!selectedRow || !text || typeof text !== 'string' || !text.trim()) return;
     const key = String(selectedRow.id || selectedRow.svSessionUuid || '');
     if (!key) return;
-    transcriptByCallRef.current[key] = text.trim();
-    setItems((prev) =>
-      prev.map((r) =>
+    const next = text.trim();
+    const prev = (transcriptByCallRef.current[key] || '').trim();
+    const prevNorm = prev.toLowerCase().replace(/\s+/g, ' ');
+    const nextNorm = next.toLowerCase().replace(/\s+/g, ' ');
+    if (prevNorm && nextNorm === prevNorm) return;
+    if (prevNorm && nextNorm.length + 8 < prevNorm.length && prevNorm.includes(nextNorm)) return;
+    transcriptByCallRef.current[key] = next;
+    setItems((prevItems) =>
+      prevItems.map((r) =>
         String(r.id) === String(selectedRow.id) || String(r.svSessionUuid) === String(selectedSession)
-          ? { ...r, asrTranscript: text.trim() }
+          ? { ...r, asrTranscript: next }
           : r,
       ),
     );
@@ -250,12 +257,19 @@ export function LiveCallsPage() {
   const liveCaption = useMemo(() => {
     if (!selectedRow) return '';
     const key = String(selectedRow.id || '');
-    return (
-      (typeof latest?.transcriptDelta?.text === 'string' && latest.transcriptDelta.text.trim()) ||
-      (typeof selectedRow.asrTranscript === 'string' && selectedRow.asrTranscript.trim()) ||
-      transcriptByCallRef.current[key] ||
-      ''
-    );
+    const fromTelemetry =
+      typeof latest?.transcriptDelta?.text === 'string' ? latest.transcriptDelta.text.trim() : '';
+    const fromRow =
+      typeof selectedRow.asrTranscript === 'string' ? selectedRow.asrTranscript.trim() : '';
+    const fromRef = transcriptByCallRef.current[key] || '';
+    // Prefer the longest stable caption (hop ASR publishes full rolling snippet).
+    return [fromTelemetry, fromRow, fromRef].reduce((best, cur) => {
+      if (!cur) return best;
+      if (!best) return cur;
+      if (cur.length >= best.length) return cur;
+      if (best.toLowerCase().includes(cur.toLowerCase())) return best;
+      return cur;
+    }, '');
   }, [selectedRow, latest?.transcriptDelta?.text, items]);
 
   useEffect(() => {

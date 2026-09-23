@@ -79,7 +79,18 @@ public class TelephonyResolveService {
         if (username == null || username.isBlank()) {
             return Optional.empty();
         }
-        return endpointRepository.resolveUsernameCrossTenant(username.trim());
+        String trimmed = username.trim();
+        Optional<TelephonyModels.ExtensionResolveResult> byUser =
+                endpointRepository.resolveUsernameCrossTenant(trimmed);
+        if (byUser.isPresent()) {
+            return byUser;
+        }
+        // Asterisk CHANNEL(endpoint) is often the extension digits (Zoiper lab),
+        // while older seeds used prefixed usernames — also accept extension match.
+        if (phoneNormaliser.looksLikeExtension(trimmed)) {
+            return resolveExtension(phoneNormaliser.extensionDigits(trimmed));
+        }
+        return Optional.empty();
     }
 
     /**

@@ -49,6 +49,7 @@ public class LiveCallsController {
     private final InterventionLadderService interventionLadderService;
     private final TransactionLockService transactionLockService;
     private final SessionExplainRecorder sessionExplainRecorder;
+    private final CallLifecycleService callLifecycleService;
 
     public LiveCallsController(
             CallSessionRepository callSessionRepository,
@@ -57,7 +58,8 @@ public class LiveCallsController {
             PlanRunner planRunner,
             InterventionLadderService interventionLadderService,
             TransactionLockService transactionLockService,
-            SessionExplainRecorder sessionExplainRecorder
+            SessionExplainRecorder sessionExplainRecorder,
+            CallLifecycleService callLifecycleService
     ) {
         this.callSessionRepository = callSessionRepository;
         this.callSessionManager = callSessionManager;
@@ -66,15 +68,31 @@ public class LiveCallsController {
         this.interventionLadderService = interventionLadderService;
         this.transactionLockService = transactionLockService;
         this.sessionExplainRecorder = sessionExplainRecorder;
+        this.callLifecycleService = callLifecycleService;
     }
 
     @GetMapping
     @PreAuthorize("hasAnyRole('TENANT_ADMIN','ANALYST','SUPERVISOR','AUDITOR')")
     public Map<String, Object> list(
             @RequestParam(defaultValue = "40") int limit,
-            @RequestParam(defaultValue = "false") boolean activeOnly
+            @RequestParam(defaultValue = "true") boolean activeOnly
     ) {
         UUID tenantId = TenantContext.require().tenantId();
+        // Reap ghosts before listing so cut calls cannot linger as active.
+        Instant graceCutoff = Instant.now().minusSeconds(LiveCallGhostReaper.GRACE_SECONDS);
+        for (UUID sid : callSessionRepository.listOpenSvSessionsOlderThan(tenantId, graceCutoff)) {
+            if (sid == null) {
+                continue;
+            }
+            if (callSessionManager.getSession(sid.toString()).isEmpty()) {
+                try {
+                    callLifecycleService.onEnd(sid, "STALE_HANGUP");
+                } catch (RuntimeException ignored) {
+                    // best-effort; list still filters below
+                }
+            }
+        }
+
         List<TelephonyModels.CallSessionListItem> rows =
                 callSessionRepository.listRecent(tenantId, limit, activeOnly);
 
@@ -84,12 +102,21 @@ public class LiveCallsController {
                 .toList();
         Map<String, Set<String>> actionFlags = sessionActionRepository.liveActionFlags(tenantId, sessionKeys);
 
-        List<Map<String, Object>> items = new java.util.ArrayList<>(rows.stream().map(row -> {
+        List<Map<String, Object>> items = new java.util.ArrayList<>();
+        for (TelephonyModels.CallSessionListItem row : rows) {
+            Optional<CallSession> mem = row.svSessionUuid() == null
+                    ? Optional.empty()
+                    : callSessionManager.getSession(row.svSessionUuid().toString());
+            boolean live = isTrulyLive(row, mem.isPresent());
+            if (activeOnly && !live) {
+                continue;
+            }
+
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("schemaVersion", "2");
             m.put("id", row.id().toString());
             m.put("tenantId", row.tenantId().toString());
-            m.put("active", row.active());
+            m.put("active", live);
             m.put("startedAt", row.startedAt() == null ? null : row.startedAt().toString());
             m.put("endedAt", row.endedAt() == null ? null : row.endedAt().toString());
             m.put("direction", row.direction());
@@ -120,34 +147,31 @@ public class LiveCallsController {
             Double liveScore = null;
             String llmState = "idle";
             List<Double> scoreHistory = List.of();
-            if (row.svSessionUuid() != null) {
-                Optional<CallSession> mem = callSessionManager.getSession(row.svSessionUuid().toString());
-                if (mem.isPresent()) {
-                    CallSession s = mem.get();
-                    liveLevel = s.getCurrentLevel() == null ? null : s.getCurrentLevel().name();
-                    liveScore = s.getSmoothedRisk();
-                    if (Boolean.TRUE.equals(s.getLastLinguisticPending())) {
-                        llmState = "pending";
-                    } else if (s.getLastLlmThinking() != null && !s.getLastLlmThinking().isBlank()) {
-                        llmState = "ready";
-                    } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
-                        llmState = "live";
-                    }
-                    m.put("linguisticStatus", llmState.equals("idle") ? "unavailable" : llmState);
-                    m.put("linguisticSource", s.getLastLinguisticSource());
-                    m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
-                    m.put("linguisticConfidence", s.getLastLinguisticConfidence());
-                    m.put("matchedKeywords", s.getLastMatchedKeywords());
-                    m.put("llmThinking", s.getLastLlmThinking());
-                    m.put("asrTranscript", s.getLastAsrTranscript());
-                    m.put("brokenRuleIds", s.getLastBrokenRuleIds());
-                    m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
-                    scoreHistory = s.getTelemetryHistory().snapshot().stream()
-                            .map(TelemetryEntry::smoothedRisk)
-                            .collect(Collectors.toList());
-                    if (scoreHistory.size() > 24) {
-                        scoreHistory = scoreHistory.subList(scoreHistory.size() - 24, scoreHistory.size());
-                    }
+            if (mem.isPresent()) {
+                CallSession s = mem.get();
+                liveLevel = s.getCurrentLevel() == null ? null : s.getCurrentLevel().name();
+                liveScore = s.getSmoothedRisk();
+                if (Boolean.TRUE.equals(s.getLastLinguisticPending())) {
+                    llmState = "pending";
+                } else if (s.getLastLlmThinking() != null && !s.getLastLlmThinking().isBlank()) {
+                    llmState = "ready";
+                } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
+                    llmState = "live";
+                }
+                m.put("linguisticStatus", llmState.equals("idle") ? "unavailable" : llmState);
+                m.put("linguisticSource", s.getLastLinguisticSource());
+                m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
+                m.put("linguisticConfidence", s.getLastLinguisticConfidence());
+                m.put("matchedKeywords", s.getLastMatchedKeywords());
+                m.put("llmThinking", s.getLastLlmThinking());
+                m.put("asrTranscript", s.getLastAsrTranscript());
+                m.put("brokenRuleIds", s.getLastBrokenRuleIds());
+                m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
+                scoreHistory = s.getTelemetryHistory().snapshot().stream()
+                        .map(TelemetryEntry::smoothedRisk)
+                        .collect(Collectors.toList());
+                if (scoreHistory.size() > 24) {
+                    scoreHistory = scoreHistory.subList(scoreHistory.size() - 24, scoreHistory.size());
                 }
             }
             m.put("liveLevel", liveLevel);
@@ -188,10 +212,10 @@ public class LiveCallsController {
                 m.put("approvalLockReason",
                         "Approval locked — confirm callback verification first, then Approve unlocks.");
             }
-            return m;
-        }).toList());
+            items.add(m);
+        }
 
-        // Bridge /api/v1/session/start opens memory without AGI — include those too.
+        // Memory-only sessions (ensure path) — only if still open in memory.
         java.util.Set<String> seen = items.stream()
                 .map(m -> String.valueOf(m.get("svSessionUuid")))
                 .collect(Collectors.toSet());
@@ -199,17 +223,11 @@ public class LiveCallsController {
             if (mem.getSessionId() == null || seen.contains(mem.getSessionId())) {
                 continue;
             }
-            if (activeOnly) {
-                // memory sessions are always "active"
-            }
             items.add(0, mapMemorySession(mem));
             seen.add(mem.getSessionId());
         }
 
         int activeCount = (int) items.stream().filter(m -> Boolean.TRUE.equals(m.get("active"))).count();
-        if (activeCount == 0) {
-            activeCount = callSessionRepository.countActive(tenantId);
-        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("schemaVersion", "2");
@@ -218,6 +236,24 @@ public class LiveCallsController {
         body.put("serverTime", Instant.now().toString());
         body.put("items", items);
         return body;
+    }
+
+    /**
+     * Truly live = DB open AND (Decision Plane memory present OR within answer grace).
+     * Cut calls with no memory after grace are not active.
+     */
+    private static boolean isTrulyLive(TelephonyModels.CallSessionListItem row, boolean inMemory) {
+        if (row.endedAt() != null) {
+            return false;
+        }
+        if (inMemory) {
+            return true;
+        }
+        if (row.startedAt() == null) {
+            return false;
+        }
+        long ageSec = java.time.Duration.between(row.startedAt(), Instant.now()).getSeconds();
+        return ageSec >= 0 && ageSec <= LiveCallGhostReaper.GRACE_SECONDS;
     }
 
     private Map<String, Object> mapMemorySession(CallSession s) {

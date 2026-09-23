@@ -283,17 +283,47 @@ class DecisionPlaneClient:
         return False
 
     async def close_session(self, sid: str) -> None:
-        url = f"{self.base_url}/api/v1/session/{sid}/close"
+        """End Live Calls DB row + Decision Plane memory (hangup must finalize call_sessions)."""
+        await self.end_call(sid, outcome="ENDED")
+
+    async def end_call(self, sid: str, outcome: str = "ENDED") -> None:
+        """POST /internal/v2/sessions/end — sets ended_at so Live Calls cannot stay ghost-active."""
+        url = f"{self.base_url}/internal/v2/sessions/end"
+        body = {"svSessionUuid": sid, "outcome": outcome or "ENDED"}
         try:
             r = await self._client.post(
-                url, headers=_service_headers(tenant_id=_tenant_for(sid))
+                url,
+                json=body,
+                headers=_service_headers(
+                    {"Content-Type": "application/json"},
+                    tenant_id=_tenant_for(sid),
+                ),
             )
             if r.status_code in (200, 404):
-                LOG.info("decision_session_close sid=%s status=%s", sid, r.status_code)
+                LOG.info(
+                    "decision_session_end sid=%s status=%s outcome=%s",
+                    sid,
+                    r.status_code,
+                    outcome,
+                )
                 return
-            LOG.error("Decision Plane close returned %s sid=%s", r.status_code, sid)
+            LOG.error(
+                "Decision Plane sessions/end returned %s sid=%s body=%s",
+                r.status_code,
+                sid,
+                (r.text or "")[:200],
+            )
         except Exception:
-            LOG.exception("FAIL-OPEN: Decision Plane close failed sid=%s", sid)
+            LOG.exception("FAIL-OPEN: Decision Plane sessions/end failed sid=%s", sid)
+        # Fallback: memory-only close if telephony finalize unreachable.
+        url2 = f"{self.base_url}/api/v1/session/{sid}/close"
+        try:
+            r2 = await self._client.post(
+                url2, headers=_service_headers(tenant_id=_tenant_for(sid))
+            )
+            LOG.info("decision_session_close_fallback sid=%s status=%s", sid, r2.status_code)
+        except Exception:
+            LOG.exception("FAIL-OPEN: Decision Plane close fallback failed sid=%s", sid)
 
     async def bind_channel(self, sid: str, channel_id: str, role: str = "caller") -> None:
         """Populate Decision Plane sessionIdΓåÆchannelId map for ARI hold/terminate/whisper."""
@@ -532,6 +562,7 @@ class AriSnoopController:
         self._snooped: set[str] = set()
         self._agent_bound: set[str] = set()
         self._bound: set[str] = set()
+        self._channel_sid: dict[str, str] = {}
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -604,6 +635,7 @@ class AriSnoopController:
             )
             return
         await self._remember_tenant(sid, channel_id, name)
+        self._channel_sid[channel_id] = sid
         snoop_id = str(uuid.uuid4())
         try:
             r = await self._http.post(
@@ -800,6 +832,16 @@ class AriSnoopController:
                             channel_id = channel.get("id")
                             if channel_id:
                                 self._snooped.discard(channel_id)
+                                sid = self._channel_sid.pop(channel_id, None)
+                                if not sid:
+                                    sid = await self._get_var(channel_id, "SV_SESSION")
+                                if sid and self.decision is not None:
+                                    LOG.info(
+                                        "ari_channel_destroyed channel=%s sid=%s → sessions/end",
+                                        channel_id,
+                                        sid,
+                                    )
+                                    await self.decision.end_call(sid, outcome="ENDED")
             except asyncio.CancelledError:
                 raise
             except Exception:

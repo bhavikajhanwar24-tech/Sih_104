@@ -111,6 +111,8 @@ class AsrSessionState:
     _rolling_raw: str = ""
     _last_window_raw: str = ""
     _emitted_raw_len: int = 0
+    # Ring-buffer cursor: samples already covered by ASR (avoids re-hearing overlap).
+    _asr_cursor_samples: int = 0
     languages_seen: list[str] = field(default_factory=list)
     last_segment_language: Optional[str] = None
     code_switch_detected: bool = False
@@ -267,13 +269,21 @@ def _collapse_repeated_phrases(tokens: list[str]) -> list[str]:
     return out
 
 
-def _append_novel_transcript(rolling: str, window: str) -> str:
-    """Grow rolling transcript with only new words from this ASR window.
+def _token_jaccard(a: list[str], b: list[str]) -> float:
+    sa, sb = set(a), set(b)
+    if not sa and not sb:
+        return 1.0
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / float(len(sa | sb))
 
-    Example:
-      rolling: \"please share the password\"
-      window:  \"please share the password please share the password for my account\"
-      result:  \"please share the password for my account\"
+
+def _append_novel_transcript(rolling: str, window: str) -> str:
+    """Grow rolling transcript with only new words from this ASR hop.
+
+    Overlapping Whisper windows used to re-emit the same phrase with tiny
+    variants ("please share… please share…"). Hop ASR + this merger keep a
+    stable caption line instead of an incrementing echo.
     """
     r_toks = _collapse_repeated_phrases(_norm_words(rolling))
     w_toks = _collapse_repeated_phrases(_norm_words(window))
@@ -281,6 +291,11 @@ def _append_novel_transcript(rolling: str, window: str) -> str:
         return " ".join(r_toks)
     if not r_toks:
         return " ".join(w_toks)
+
+    # Near-duplicate of what we already have → keep rolling unchanged.
+    if _token_jaccard(r_toks[-min(len(r_toks), len(w_toks) + 4) :], w_toks) >= 0.88:
+        if len(w_toks) <= len(r_toks) + 1:
+            return " ".join(r_toks)
 
     # After echo-collapse, window extends rolling → take window.
     if len(w_toks) >= len(r_toks) and w_toks[: len(r_toks)] == r_toks:
@@ -298,7 +313,13 @@ def _append_novel_transcript(rolling: str, window: str) -> str:
             best = n
             break
     if best:
-        return " ".join(_collapse_repeated_phrases(r_toks + w_toks[best:])).strip()
+        novel = w_toks[best:]
+        if not novel:
+            return " ".join(r_toks)
+        # Drop novel that is just a re-statement of the last few rolling tokens.
+        if _token_jaccard(r_toks[-min(8, len(r_toks)) :], novel) >= 0.75:
+            return " ".join(r_toks)
+        return " ".join(_collapse_repeated_phrases(r_toks + novel)).strip()
 
     for n in range(len(w_toks), 0, -1):
         chunk = w_toks[:n]
@@ -307,8 +328,15 @@ def _append_novel_transcript(rolling: str, window: str) -> str:
             if i < 0:
                 break
             if r_toks[i : i + len(chunk)] == chunk:
-                return " ".join(_collapse_repeated_phrases(r_toks + w_toks[n:])).strip()
+                novel = w_toks[n:]
+                if not novel:
+                    return " ".join(r_toks)
+                return " ".join(_collapse_repeated_phrases(r_toks + novel)).strip()
 
+    # Low overlap with recent rolling — likely a fresh utterance; append.
+    # High bag-of-words overlap without prefix match → Whisper reshuffle; ignore.
+    if _token_jaccard(r_toks[-min(24, len(r_toks)) :], w_toks) >= 0.7:
+        return " ".join(r_toks)
     return " ".join(_collapse_repeated_phrases(r_toks + w_toks))
 
 
@@ -431,6 +459,7 @@ def reset_session_state(state: Optional[AsrSessionState] = None) -> None:
     state._rolling_raw = ""
     state._last_window_raw = ""
     state._emitted_raw_len = 0
+    state._asr_cursor_samples = 0
     state.languages_seen.clear()
     state.last_segment_language = None
     state.code_switch_detected = False
@@ -643,6 +672,14 @@ def _transcribe_sync(
         _record_languages(state, seg_langs)
     elif info_lang and window_raw:
         _record_languages(state, [str(info_lang)])
+
+    # Skip near-identical re-hears of the previous hop (Whisper jitter).
+    if window_raw and state._last_window_raw:
+        prev_w = _norm_words(state._last_window_raw)
+        cur_w = _norm_words(window_raw)
+        if prev_w and cur_w and _token_jaccard(prev_w, cur_w) >= 0.9:
+            if abs(len(cur_w) - len(prev_w)) <= 1:
+                window_raw = ""
 
     if window_raw:
         before = state._rolling_raw
