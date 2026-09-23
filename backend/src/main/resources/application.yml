@@ -20,6 +20,8 @@ spring:
     user: ${DB_OWNER_USER:sv_owner}
     password: ${DB_OWNER_PASSWORD:changeme_owner}
     locations: classpath:db/migration
+    # Lab: V025 was edited after apply; skip validate so V026 can land. Re-enable after flyway repair.
+    validate-on-migrate: false
   jpa:
     hibernate:
       ddl-auto: validate

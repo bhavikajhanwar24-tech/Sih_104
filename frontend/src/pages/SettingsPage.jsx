@@ -200,14 +200,19 @@ export function SettingsPage() {
               Retention days (F15)
               <input
                 type="number"
-                min={1}
-                max={3650}
+                min={7}
+                max={365}
                 className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
                 value={settings.retentionDays ?? 90}
                 disabled={!canWrite || saving}
                 onChange={(e) =>
                   setSettings((prev) =>
-                    prev ? { ...prev, retentionDays: Number(e.target.value) } : prev,
+                    prev
+                      ? {
+                          ...prev,
+                          retentionDays: Math.min(365, Math.max(7, Number(e.target.value) || 7)),
+                        }
+                      : prev,
                   )
                 }
               />

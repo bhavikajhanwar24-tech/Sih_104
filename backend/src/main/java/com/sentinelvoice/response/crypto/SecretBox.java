@@ -81,6 +81,40 @@ public class SecretBox {
         return decrypt(Base64.getDecoder().decode(base64.trim()));
     }
 
+    public byte[] encryptBytes(byte[] plaintext) {
+        if (plaintext == null) {
+            return null;
+        }
+        try {
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            random.nextBytes(iv);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+            byte[] ciphertext = cipher.doFinal(plaintext);
+            ByteBuffer buf = ByteBuffer.allocate(iv.length + ciphertext.length);
+            buf.put(iv);
+            buf.put(ciphertext);
+            return buf.array();
+        } catch (Exception e) {
+            throw new IllegalStateException("encryptBytes failed", e);
+        }
+    }
+
+    public byte[] decryptBytes(byte[] blob) {
+        if (blob == null || blob.length <= GCM_IV_LENGTH) {
+            return null;
+        }
+        try {
+            byte[] iv = Arrays.copyOfRange(blob, 0, GCM_IV_LENGTH);
+            byte[] ciphertext = Arrays.copyOfRange(blob, GCM_IV_LENGTH, blob.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+            return cipher.doFinal(ciphertext);
+        } catch (Exception e) {
+            throw new IllegalStateException("decryptBytes failed", e);
+        }
+    }
+
     private static SecretKey deriveKey(String material) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
