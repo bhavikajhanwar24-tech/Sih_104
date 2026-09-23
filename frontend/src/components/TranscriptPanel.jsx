@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { Badge } from '@/components/ui/Badge.jsx';
-import {
-  SimulatedSignalBadge,
-  isScenarioSeededText,
-} from '@/components/SimulatedSignalBadge.jsx';
 import { useAuth } from '@/context/AuthContext.jsx';
 import {
   BREAK_GLASS_STATUS,
@@ -45,8 +41,6 @@ export function TranscriptPanel({ frame, sessionId = null }) {
     (typeof snippet === 'string' && snippet.trim()) ||
     null;
   const lang = frame?.linguistic?.language || frame?.transcriptDelta?.language || null;
-  const seeded = isScenarioSeededText(snippet) || isScenarioSeededText(liveText);
-
   const refreshStatus = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -160,7 +154,6 @@ export function TranscriptPanel({ frame, sessionId = null }) {
             {status}
           </Badge>
         </span>
-        {seeded ? <SimulatedSignalBadge label="simulated signal — scenario seed" /> : null}
         <span className="font-mono text-[10px] text-sv-muted">{username || '—'}</span>
       </div>
 

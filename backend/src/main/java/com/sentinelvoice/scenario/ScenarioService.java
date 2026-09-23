@@ -1,7 +1,6 @@
 package com.sentinelvoice.scenario;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.sentinelvoice.model.ChannelProfile;
 import com.sentinelvoice.model.SessionStartRequest;
 import com.sentinelvoice.scenario.model.Scenario;
@@ -30,8 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
- * Loads scenario fixtures and opens sessions.
- * Directory / relationship / cross-channel DB seeding deferred to F4 / F15 / F18.
+ * F18 — loads JSON scenario fixtures (classpath:/scenarios/*.json).
+ * Real audio via WAV replay / ARI; no fake FeatureFrame injection into live sessions.
  */
 @Service
 public class ScenarioService {
@@ -40,7 +39,7 @@ public class ScenarioService {
 
     private final CallSessionManager callSessionManager;
     private final ScenarioSessionContext scenarioSessionContext;
-    private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+    private final ObjectMapper jsonMapper;
     private final ConcurrentHashMap<String, Scenario> scenarios = new ConcurrentHashMap<>();
 
     @Value("${sentinelvoice.scenarios.path:}")
@@ -51,33 +50,26 @@ public class ScenarioService {
 
     public ScenarioService(
             CallSessionManager callSessionManager,
-            ScenarioSessionContext scenarioSessionContext
+            ScenarioSessionContext scenarioSessionContext,
+            ObjectMapper objectMapper
     ) {
         this.callSessionManager = callSessionManager;
         this.scenarioSessionContext = scenarioSessionContext;
+        this.jsonMapper = objectMapper;
     }
 
     @PostConstruct
     void loadFixtures() {
         scenarios.clear();
-        List<Path> files = discoverYamlFiles();
-        if (files.isEmpty()) {
-            loadFromClasspath();
-        } else {
-            for (Path file : files) {
-                try (InputStream in = Files.newInputStream(file)) {
-                    Scenario scenario = yamlMapper.readValue(in, Scenario.class);
-                    register(scenario, file.toString());
-                } catch (IOException ex) {
-                    throw new IllegalStateException("Failed to parse scenario " + file + ": " + ex.getMessage(), ex);
-                }
-            }
+        loadFromClasspathJson();
+        if (scenarios.isEmpty()) {
+            loadFromFilesystemJson();
         }
         if (scenarios.isEmpty()) {
-            log.warn("No scenario fixtures found — live telephony path is unaffected (domain agnostic mode)");
+            log.warn("No F18 scenario fixtures found under classpath:/scenarios/*.json");
             return;
         }
-        log.info("Loaded {} scenario fixtures: {}", scenarios.size(), scenarios.keySet());
+        log.info("Loaded {} F18 scenario fixtures: {}", scenarios.size(), scenarios.keySet());
     }
 
     public List<Scenario> list() {
@@ -101,13 +93,9 @@ public class ScenarioService {
             throw new IllegalArgumentException("scenario " + id + " does not allow live mode");
         }
 
-        // F1: DB seed of directory/edges/cross-channel removed — returns in F4/F15/F18.
-        log.warn(
-                "scenario_load_without_db_seed id={} reason=F1_postgres_baseline",
-                scenario.id()
+        ChannelProfile profile = ChannelProfile.valueOf(
+                scenario.channelProfile() == null ? "WEBRTC_WIDEBAND" : scenario.channelProfile()
         );
-
-        ChannelProfile profile = ChannelProfile.valueOf(scenario.channelProfile());
         String sessionId = "scen-" + scenario.id() + "-" + Long.toHexString(System.currentTimeMillis());
         String callerCli = scenario.caller() != null ? scenario.caller().cli() : "unknown";
         String calleeCli = scenario.callee() != null ? scenario.callee().cli() : "unknown";
@@ -148,12 +136,6 @@ public class ScenarioService {
             row.put("risk", point.risk());
             row.put("level", point.level() != null ? point.level().name() : null);
             row.put("corroboration", point.corroboration());
-            if (point.acoustic() != null) {
-                row.put("acoustic", point.acoustic());
-            }
-            if (point.contextual() != null) {
-                row.put("contextual", point.contextual());
-            }
             trajectory.add(row);
         }
 
@@ -165,7 +147,7 @@ public class ScenarioService {
                 profile,
                 callerCli,
                 calleeCli,
-                scenario.caller() != null ? scenario.caller().claimedIdentity() : null,
+                scenario.caller() != null ? scenario.caller().claimedIdentity() : scenario.claimedIdentity(),
                 scenario.caller() != null ? scenario.caller().claimedRole() : null,
                 audioSource,
                 ingestWs,
@@ -188,53 +170,52 @@ public class ScenarioService {
         scenarios.put(scenario.id(), scenario);
     }
 
-    private List<Path> discoverYamlFiles() {
+    private void loadFromClasspathJson() {
+        try {
+            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+            Resource[] resources = resolver.getResources("classpath*:scenarios/*.json");
+            for (Resource resource : resources) {
+                if (!resource.exists() || !resource.isReadable()) {
+                    continue;
+                }
+                try (InputStream in = resource.getInputStream()) {
+                    Scenario scenario = jsonMapper.readValue(in, Scenario.class);
+                    register(scenario, resource.getDescription());
+                }
+            }
+        } catch (IOException ex) {
+            log.warn("classpath scenario load failed: {}", ex.getMessage());
+        }
+    }
+
+    private void loadFromFilesystemJson() {
         List<Path> roots = new ArrayList<>();
         if (scenariosPath != null && !scenariosPath.isBlank()) {
             roots.add(Path.of(scenariosPath).toAbsolutePath().normalize());
         }
         Path cwd = Path.of("").toAbsolutePath().normalize();
         roots.add(cwd.resolve("scenarios"));
-        roots.add(cwd.resolve("..").resolve("scenarios").normalize());
-        roots.add(cwd.getParent() != null ? cwd.getParent().resolve("scenarios") : null);
-
-        List<Path> found = new ArrayList<>();
+        roots.add(cwd.resolve("backend/src/main/resources/scenarios"));
         for (Path root : roots) {
             if (root == null || !Files.isDirectory(root)) {
                 continue;
             }
             try (Stream<Path> stream = Files.list(root)) {
-                stream.filter(p -> {
-                            String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                            return name.endsWith(".yaml") || name.endsWith(".yml");
-                        })
+                stream.filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"))
                         .sorted()
-                        .forEach(found::add);
+                        .forEach(p -> {
+                            try (InputStream in = Files.newInputStream(p)) {
+                                register(jsonMapper.readValue(in, Scenario.class), p.toString());
+                            } catch (IOException ex) {
+                                throw new IllegalStateException("Failed to parse " + p + ": " + ex.getMessage(), ex);
+                            }
+                        });
             } catch (IOException ex) {
-                log.warn("Cannot list scenario dir {}: {}", root, ex.getMessage());
+                log.warn("Cannot list {}: {}", root, ex.getMessage());
             }
-            if (!found.isEmpty()) {
-                return found;
+            if (!scenarios.isEmpty()) {
+                return;
             }
-        }
-        return found;
-    }
-
-    private void loadFromClasspath() {
-        try {
-            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            Resource[] resources = resolver.getResources("classpath*:scenarios/*.{yml,yaml}");
-            for (Resource resource : resources) {
-                if (!resource.exists() || !resource.isReadable()) {
-                    continue;
-                }
-                try (InputStream in = resource.getInputStream()) {
-                    Scenario scenario = yamlMapper.readValue(in, Scenario.class);
-                    register(scenario, resource.getDescription());
-                }
-            }
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to load classpath scenarios: " + ex.getMessage(), ex);
         }
     }
 

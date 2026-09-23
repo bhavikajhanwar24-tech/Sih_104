@@ -21,10 +21,12 @@ export function CallDetailPage() {
   const [label, setLabel] = useState('');
   const [labelNote, setLabelNote] = useState('');
   const [labelBusy, setLabelBusy] = useState(false);
+  const [labCompare, setLabCompare] = useState(/** @type {any | null} */ (null));
 
   const canRead = hasPermission('calls:read');
   const canAct = hasPermission('calls:act');
   const canRelabel = canAct; // analysts + supervisors + admins with calls:act
+  const canLab = hasPermission('lab:robustness');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -45,13 +47,29 @@ export function CallDetailPage() {
         setLabel(body?.metadata?.reviewStatus || '');
         setLabelNote('');
       }
+      const sv = body?.metadata?.svSessionUuid || body?.metadata?.id || id;
+      const looksLab =
+        typeof sv === 'string' && (sv.startsWith('scen-') || Boolean(body?.metadata?.scenarioId));
+      if (canLab && looksLab) {
+        try {
+          const cmp = await apiJson(`/api/v2/lab/runs/${encodeURIComponent(sv)}`, {
+            skipErrorToast: true,
+          });
+          setLabCompare(cmp);
+        } catch {
+          setLabCompare(null);
+        }
+      } else {
+        setLabCompare(null);
+      }
     } catch (err) {
       setData(null);
+      setLabCompare(null);
       push(err instanceof Error ? err.message : 'Failed to load session');
     } finally {
       setLoading(false);
     }
-  }, [id, lang, push]);
+  }, [id, lang, push, canLab]);
 
   useEffect(() => {
     if (!canRead) return;
@@ -241,6 +259,32 @@ export function CallDetailPage() {
           ) : null}
         </div>
       </div>
+
+      {labCompare?.scenarioId ? (
+        <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
+          <h2 className="text-sm font-semibold text-sv-fg">Lab expected vs actual</h2>
+          <p className="mt-0.5 text-xs text-sv-muted">
+            Scenario <span className="font-mono">{labCompare.scenarioId}</span>
+            {labCompare.teachingPoint ? ` — ${labCompare.teachingPoint}` : ''}
+          </p>
+          <p className="mt-2 text-sm text-sv-fg">
+            Expected{' '}
+            <span className="font-mono">{labCompare.expectedFinalLevel || '—'}</span>
+            {' · '}
+            Actual <span className="font-mono">{labCompare.actualPeakLevel || '—'}</span>{' '}
+            {labCompare.match ? (
+              <Badge tone="success">match</Badge>
+            ) : (
+              <Badge tone="warn">differs</Badge>
+            )}
+          </p>
+          {(labCompare.expectedPolicyRules || []).length > 0 ? (
+            <p className="mt-1 text-xs text-sv-muted">
+              Expected rules: {(labCompare.expectedPolicyRules || []).join(', ')}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
         <h2 className="text-sm font-semibold text-sv-fg">Alert label (F16)</h2>

@@ -53,7 +53,8 @@ public enum Role {
                     "calls:read", "calls:act",
                     "policies:read",
                     "audit:read",
-                    "analytics:read"
+                    "analytics:read",
+                    "lab:robustness"
             );
             case SUPERVISOR -> Set.of(
                     "dashboard:read",

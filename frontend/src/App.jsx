@@ -67,6 +67,9 @@ const AnalyticsPage = lazy(() =>
 const FairnessPage = lazy(() =>
   import('@/pages/FairnessPage.jsx').then((m) => ({ default: m.FairnessPage })),
 );
+const LabPage = lazy(() =>
+  import('@/pages/LabPage.jsx').then((m) => ({ default: m.LabPage })),
+);
 
 function RouteFallback() {
   return (
@@ -106,6 +109,7 @@ export default function App() {
                   <Route path="history" element={<CallHistoryPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
                   <Route path="fairness" element={<FairnessPage />} />
+                  <Route path="lab" element={<LabPage />} />
                   <Route path="sessions" element={<Navigate to="/app/history" replace />} />
                   <Route path="sessions/:id" element={<CallDetailPage />} />
                   <Route path="directory" element={<DirectoryPage />} />

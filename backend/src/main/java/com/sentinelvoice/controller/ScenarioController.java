@@ -2,7 +2,6 @@ package com.sentinelvoice.controller;
 
 import com.sentinelvoice.scenario.ScenarioReplayLauncher;
 import com.sentinelvoice.scenario.ScenarioService;
-import com.sentinelvoice.scenario.ScenarioTrajectoryRunner;
 import com.sentinelvoice.scenario.model.Scenario;
 import com.sentinelvoice.scenario.model.ScenarioSessionDescriptor;
 import org.springframework.http.ResponseEntity;
@@ -18,34 +17,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+/**
+ * Legacy v1 scenario paths — prefer {@code /api/v2/lab/**} (F18).
+ */
 @RestController
 @RequestMapping("/api/v1/scenario")
 public class ScenarioController {
 
     private final ScenarioService scenarioService;
     private final ScenarioReplayLauncher replayLauncher;
-    private final ScenarioTrajectoryRunner trajectoryRunner;
 
     public ScenarioController(
             ScenarioService scenarioService,
-            ScenarioReplayLauncher replayLauncher,
-            ScenarioTrajectoryRunner trajectoryRunner
+            ScenarioReplayLauncher replayLauncher
     ) {
         this.scenarioService = scenarioService;
         this.replayLauncher = replayLauncher;
-        this.trajectoryRunner = trajectoryRunner;
-    }
-
-    /**
-     * Offline ladder rehearsal (no ML audio) — verifies authored trajectories without PCM.
-     */
-    @PostMapping("/{id}/rehearse")
-    public ResponseEntity<?> rehearse(@PathVariable String id) {
-        try {
-            return ResponseEntity.ok(trajectoryRunner.run(id));
-        } catch (NoSuchElementException ex) {
-            return ResponseEntity.notFound().build();
-        }
     }
 
     @GetMapping
@@ -62,12 +49,6 @@ public class ScenarioController {
         }
     }
 
-    /**
-     * Seed directory / relationship / cross-channel state and open a session.
-     *
-     * @param mode {@code replay} (default) or {@code live} Asterisk path
-     * @param autoReplay when mode=replay, start {@code replay_audio.py} into ml-engine
-     */
     @PostMapping("/{id}/load")
     public ResponseEntity<?> load(
             @PathVariable String id,
@@ -134,11 +115,9 @@ public class ScenarioController {
         row.put("expectedTrajectory", scenario.expectedTrajectory());
         row.put("caller", scenario.caller());
         row.put("callee", scenario.callee());
-        row.put("directoryOverrides", scenario.directoryOverrides());
-        row.put("relationshipEdges", scenario.relationshipEdges());
-        row.put("crossChannelEvents", scenario.crossChannelEvents());
+        row.put("spokenScript", scenario.spokenScript());
+        row.put("expectedPolicyRules", scenario.expectedPolicyRules());
         row.put("audio", scenario.audio());
-        row.put("challenge", scenario.challenge());
         return row;
     }
 }
