@@ -1,12 +1,17 @@
 package com.sentinelvoice.telemetry;
 
+import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.TelemetryFrame;
+import com.sentinelvoice.service.CallSessionManager;
+import com.sentinelvoice.telephony.LiveCallsBroadcaster;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
@@ -15,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TelemetryBroadcasterTest {
 
@@ -26,11 +32,26 @@ class TelemetryBroadcasterTest {
         SimpMessagingTemplate template = mock(SimpMessagingTemplate.class);
         doAnswer(invocation -> {
             sent.add(invocation.getArgument(1));
-            // Simulate slow consumer so the queue backs up.
             Thread.sleep(30);
             return null;
         }).when(template).convertAndSend(anyString(), any(Object.class));
-        broadcaster = new TelemetryBroadcaster(template, new SimpleMeterRegistry());
+
+        CallSessionManager sessions = mock(CallSessionManager.class);
+        when(sessions.getSession(anyString())).thenAnswer(inv -> {
+            String id = inv.getArgument(0);
+            CallSession s = mock(CallSession.class);
+            when(s.getSessionId()).thenReturn(id);
+            when(s.getTenantId()).thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+            return Optional.of(s);
+        });
+
+        broadcaster = new TelemetryBroadcaster(
+                template,
+                sessions,
+                mock(LiveCallsBroadcaster.class),
+                new SimpleMeterRegistry(),
+                false
+        );
         sent.clear();
     }
 
@@ -54,13 +75,12 @@ class TelemetryBroadcasterTest {
         assertThat(seqs).isNotEmpty();
         assertThat(seqs.getLast()).isEqualTo(10);
         assertThat(seqs).isSorted();
-        // At least one oldest frame was dropped from the bounded queue (capacity 4).
         assertThat(seqs).doesNotContain(1, 2);
         assertThat(seqs.size()).isLessThan(10);
     }
 
     @Test
-    void liveStompStripsTranscriptText() throws Exception {
+    void liveStompStripsTranscriptTextWhenNotLab() throws Exception {
         broadcaster.publish(frame("tx-1", 1, "secret account 123456789"));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (System.nanoTime() < deadline && sent.isEmpty()) {
@@ -69,7 +89,6 @@ class TelemetryBroadcasterTest {
         }
         assertThat(sent).isNotEmpty();
         assertThat(sent.getFirst().transcriptDelta().text()).isEmpty();
-        // In-memory latest retains original for actuation/debug paths that use latest().
         assertThat(broadcaster.latest("tx-1")).isPresent();
         assertThat(broadcaster.latest("tx-1").orElseThrow().transcriptDelta().text())
                 .isEqualTo("secret account 123456789");

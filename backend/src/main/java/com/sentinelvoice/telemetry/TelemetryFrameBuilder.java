@@ -63,6 +63,11 @@ public class TelemetryFrameBuilder {
                 decision.level()
         );
 
+        String caption = captionFromFrame(frame);
+        if (caption.isBlank() && session.getLastAsrTranscript() != null) {
+            caption = session.getLastAsrTranscript();
+        }
+
         return new TelemetryFrame(
                 TelemetryFrame.SCHEMA,
                 session.getSessionId(),
@@ -75,9 +80,20 @@ public class TelemetryFrameBuilder {
                 intervention,
                 mapIdentity(session, frame, identity),
                 mapReasons(reasons),
-                new TelemetryFrame.TranscriptDelta(callElapsedMs, "", List.of()),
+                new TelemetryFrame.TranscriptDelta(callElapsedMs, caption, List.of()),
                 auditHash
         );
+    }
+
+    private static String captionFromFrame(FeatureFrame frame) {
+        if (frame == null || frame.linguistic() == null) {
+            return "";
+        }
+        String snip = frame.linguistic().redactedSnippet();
+        if (snip == null || snip.isBlank()) {
+            snip = frame.linguistic().redactedDelta();
+        }
+        return snip == null ? "" : snip.trim();
     }
 
     /**

@@ -129,6 +129,13 @@ public class InternalTelephonyController {
         return lifecycleService.onEnd(svSession, str(body.get("outcome")));
     }
 
+    /** End every active call_sessions row + in-memory sessions (lab ghost-call cleanup). */
+    @PostMapping("/sessions/clear-active")
+    public Map<String, Object> clearActive(@RequestBody(required = false) Map<String, Object> body) {
+        String outcome = body == null ? null : str(body.get("outcome"));
+        return lifecycleService.clearAllActive(outcome);
+    }
+
     private static UUID parseUuid(Object raw) {
         if (raw == null) {
             return null;

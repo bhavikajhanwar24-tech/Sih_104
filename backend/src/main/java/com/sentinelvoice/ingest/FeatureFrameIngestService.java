@@ -41,6 +41,7 @@ import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.telephony.CallSessionRepository;
 import com.sentinelvoice.telephony.TelephonyModels;
+import com.sentinelvoice.telephony.LiveCallsBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
 import com.sentinelvoice.telemetry.TelemetryFrameBuilder;
 import com.sentinelvoice.transcript.BreakGlassTranscriptService;
@@ -88,6 +89,7 @@ public class FeatureFrameIngestService {
     private final AuditWriteDispatcher auditWriteDispatcher;
     private final TelemetryFrameBuilder telemetryFrameBuilder;
     private final TelemetryBroadcaster telemetryBroadcaster;
+    private final LiveCallsBroadcaster liveCallsBroadcaster;
     private final PlanRunner planRunner;
     private final ChallengeService challengeService;
     private final ScenarioSessionContext scenarioSessionContext;
@@ -121,6 +123,7 @@ public class FeatureFrameIngestService {
             AuditWriteDispatcher auditWriteDispatcher,
             TelemetryFrameBuilder telemetryFrameBuilder,
             TelemetryBroadcaster telemetryBroadcaster,
+            @Lazy LiveCallsBroadcaster liveCallsBroadcaster,
             @Lazy PlanRunner planRunner,
             ChallengeService challengeService,
             ScenarioSessionContext scenarioSessionContext,
@@ -143,6 +146,7 @@ public class FeatureFrameIngestService {
         this.auditWriteDispatcher = auditWriteDispatcher;
         this.telemetryFrameBuilder = telemetryFrameBuilder;
         this.telemetryBroadcaster = telemetryBroadcaster;
+        this.liveCallsBroadcaster = liveCallsBroadcaster;
         this.planRunner = planRunner;
         this.challengeService = challengeService;
         this.scenarioSessionContext = scenarioSessionContext;
@@ -293,6 +297,17 @@ public class FeatureFrameIngestService {
         List<String> ruleIds = frame.linguistic().matchedRuleIds();
         if (ruleIds != null && !ruleIds.isEmpty()) {
             session.recordBrokenRules(ruleIds, List.of());
+        }
+        // Captions / LLM / keyword rules must reach Live Calls even when this frame is
+        // later dropped as stale or out-of-order (pipeline lag behind ASR).
+        try {
+            liveCallsBroadcaster.publishSessionDelta(session);
+        } catch (RuntimeException ex) {
+            log.debug(
+                    "live_calls_linguistic_delta_failed sessionId={} cause={}",
+                    session.getSessionId(),
+                    ex.toString()
+            );
         }
     }
 

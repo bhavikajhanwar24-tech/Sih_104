@@ -243,6 +243,51 @@ public class CallSessionRepository {
         return n == null ? 0 : n;
     }
 
+    /** Operator clear — end every open call_sessions row for the tenant. */
+    public int finalizeAllActive(UUID tenantId, String finalOutcome) {
+        String outcome = finalOutcome == null || finalOutcome.isBlank() ? "OPERATOR_CLEAR" : finalOutcome;
+        return jdbc.update(
+                """
+                UPDATE call_sessions
+                SET ended_at = now(),
+                    final_outcome = COALESCE(final_outcome, ?)
+                WHERE tenant_id = ? AND ended_at IS NULL
+                """,
+                outcome,
+                tenantId
+        );
+    }
+
+    /** Lab / hangup-miss cleanup — SECURITY DEFINER, all tenants. */
+    public int finalizeAllActiveGlobal(String finalOutcome) {
+        String outcome = finalOutcome == null || finalOutcome.isBlank() ? "OPERATOR_CLEAR" : finalOutcome;
+        try {
+            Integer n = jdbc.queryForObject(
+                    "SELECT fn_telephony_clear_all_active(CAST(? AS text))",
+                    Integer.class,
+                    outcome
+            );
+            return n == null ? 0 : n;
+        } catch (org.springframework.dao.DataAccessException ex) {
+            // Function may be missing if Flyway history drifted — fall back per-tenant.
+            int total = 0;
+            for (UUID tenantId : listActiveTenantIds()) {
+                total += com.sentinelvoice.security.TenantContext.runAs(
+                        tenantId,
+                        () -> finalizeAllActive(tenantId, outcome)
+                );
+            }
+            return total;
+        }
+    }
+
+    public List<UUID> listActiveTenantIds() {
+        return jdbc.query(
+                "SELECT id FROM fn_list_active_tenant_ids()",
+                (rs, i) -> rs.getObject("id", UUID.class)
+        );
+    }
+
     /**
      * Recent call metadata with directory names for Live Calls (F10).
      */

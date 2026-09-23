@@ -1,6 +1,5 @@
 /**
- * Live Calls — simple operator workspace: call list + detail/actions.
- * Live data only (STOMP + poll). No scenarios, no bank-specific panels.
+ * Live Calls — operator workspace: list + live risk / captions / rules / actions.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
@@ -14,7 +13,7 @@ import { apiFetch, apiJson } from '@/services/api.js';
 import { Badge, Button, EmptyState } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
-const POLL_MS = 4000;
+const POLL_MS = 2500;
 const POLL_TIMEOUT_MS = 60_000;
 const L3_ALERT_KEY = 'sv-l3-mute';
 
@@ -52,9 +51,9 @@ function levelRank(level) {
 
 function levelChip(level) {
   const r = levelRank(level);
-  if (r >= 3) return 'bg-red-600/90 text-white';
-  if (r === 2) return 'bg-amber-500/90 text-black';
-  if (r === 1) return 'bg-emerald-700/80 text-white';
+  if (r >= 3) return 'bg-risk-critical text-white';
+  if (r === 2) return 'bg-risk-watch text-sv-bg';
+  if (r === 1) return 'bg-risk-clear text-white';
   return 'bg-sv-elevated text-sv-muted';
 }
 
@@ -68,6 +67,30 @@ function shortLevel(level) {
   if (!level) return '—';
   const m = String(level).match(/LEVEL_(\d)/);
   return m ? `L${m[1]}` : String(level).slice(0, 12);
+}
+
+function llmTone(state) {
+  if (state === 'pending') return 'warn';
+  if (state === 'ready' || state === 'live') return 'success';
+  return 'neutral';
+}
+
+function Panel({ title, hint, children, className = '' }) {
+  return (
+    <section className={`rounded-lg border border-sv-border bg-sv-panel p-3 shadow-sm shadow-black/5 ${className}`}>
+      {(title || hint) && (
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          {title ? (
+            <h3 className="font-mono text-[10px] font-semibold uppercase tracking-wider text-sv-muted">{title}</h3>
+          ) : (
+            <span />
+          )}
+          {hint ? <span className="text-[10px] text-sv-muted">{hint}</span> : null}
+        </div>
+      )}
+      {children}
+    </section>
+  );
 }
 
 export function LiveCallsPage() {
@@ -86,15 +109,19 @@ export function LiveCallsPage() {
   const [bridgeBusy, setBridgeBusy] = useState(false);
   const [callbackBusy, setCallbackBusy] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const thinkingByCallRef = useRef({});
   const transcriptByCallRef = useRef({});
+  const captionScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const prevL3Ref = useRef(/** @type {Set<string>} */ (new Set()));
 
   const canRead = hasPermission('calls:read');
   const canAct = hasPermission('calls:act');
   const canBridge = hasPermission('calls:bridge');
   const canKill = hasPermission('calls:kill');
+  const canClear = hasPermission('calls:kill') || hasPermission('calls:bridge');
 
   const selectedRow = useMemo(
     () => items.find((r) => r.id === selectedId) || items.find((r) => r.active) || null,
@@ -108,6 +135,7 @@ export function LiveCallsPage() {
     connectionState,
     stale,
     error: sockErr,
+    lastMessageAt,
   } = useTelemetrySocket({
     sessionId: selectedSession,
     tenantId,
@@ -127,7 +155,7 @@ export function LiveCallsPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiJson('/api/v2/calls?limit=80', {
+      const data = await apiJson('/api/v2/calls?limit=80&activeOnly=true', {
         skipErrorToast: true,
         timeoutMs: POLL_TIMEOUT_MS,
       });
@@ -151,12 +179,21 @@ export function LiveCallsPage() {
   }, [canRead, load]);
 
   useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const keys = Object.keys(callDeltas || {});
     if (!keys.length) return;
     setItems((prev) => {
       const byKey = new Map(prev.map((r) => [String(r.svSessionUuid || r.id), r]));
       for (const k of keys) {
         const d = callDeltas[k];
+        if (d.active === false) {
+          byKey.delete(k);
+          continue;
+        }
         const existing = byKey.get(k) || {};
         byKey.set(
           k,
@@ -168,9 +205,25 @@ export function LiveCallsPage() {
           }),
         );
       }
-      return Array.from(byKey.values());
+      return Array.from(byKey.values()).filter((r) => r.active !== false);
     });
   }, [callDeltas, mergeRow]);
+
+  // Merge live telemetry captions into the selected row immediately.
+  useEffect(() => {
+    const text = latest?.transcriptDelta?.text;
+    if (!selectedRow || !text || typeof text !== 'string' || !text.trim()) return;
+    const key = String(selectedRow.id || selectedRow.svSessionUuid || '');
+    if (!key) return;
+    transcriptByCallRef.current[key] = text.trim();
+    setItems((prev) =>
+      prev.map((r) =>
+        String(r.id) === String(selectedRow.id) || String(r.svSessionUuid) === String(selectedSession)
+          ? { ...r, asrTranscript: text.trim() }
+          : r,
+      ),
+    );
+  }, [latest?.transcriptDelta?.text, selectedRow?.id, selectedRow?.svSessionUuid, selectedSession]);
 
   useEffect(() => {
     const nowL3 = new Set(
@@ -194,9 +247,26 @@ export function LiveCallsPage() {
     window.dispatchEvent(new CustomEvent('sv-live-alerts', { detail: { count: unackedAlerts } }));
   }, [unackedAlerts]);
 
+  const liveCaption = useMemo(() => {
+    if (!selectedRow) return '';
+    const key = String(selectedRow.id || '');
+    return (
+      (typeof latest?.transcriptDelta?.text === 'string' && latest.transcriptDelta.text.trim()) ||
+      (typeof selectedRow.asrTranscript === 'string' && selectedRow.asrTranscript.trim()) ||
+      transcriptByCallRef.current[key] ||
+      ''
+    );
+  }, [selectedRow, latest?.transcriptDelta?.text, items]);
+
+  useEffect(() => {
+    const el = captionScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [liveCaption]);
+
   const sorted = useMemo(() => {
     const rows = items.slice();
     rows.sort((a, b) => {
+      if (Boolean(a.active) !== Boolean(b.active)) return a.active ? -1 : 1;
       const la = levelRank(a.liveLevel || (a.active ? null : a.peakLevel));
       const lb = levelRank(b.liveLevel || (b.active ? null : b.peakLevel));
       if (lb !== la) return lb - la;
@@ -205,6 +275,16 @@ export function LiveCallsPage() {
     return rows;
   }, [items]);
 
+  const liveDurationSec = useCallback(
+    (row) => {
+      if (!row?.active || !row.startedAt) return Number(row?.durationSec) || 0;
+      const start = Date.parse(row.startedAt);
+      if (Number.isNaN(start)) return Number(row.durationSec) || 0;
+      return Math.max(0, Math.floor((nowTick - start) / 1000));
+    },
+    [nowTick],
+  );
+
   if (!canRead) {
     return <Navigate to="/app" replace />;
   }
@@ -212,7 +292,7 @@ export function LiveCallsPage() {
   const showLiveLevels = !stale;
   const liveLevel =
     selectedRow?.active && showLiveLevels
-      ? selectedRow.liveLevel || latest?.risk?.level || null
+      ? selectedRow.liveLevel || latest?.intervention?.level || latest?.risk?.level || null
       : null;
   const connLabel =
     connectionState === CONNECTION_STATES.CONNECTED
@@ -221,6 +301,17 @@ export function LiveCallsPage() {
         ? 'reconnecting'
         : 'offline';
   const activeCount = items.filter((r) => r.active).length;
+  const llmState = selectedRow?.llmState || 'idle';
+  const thinking =
+    selectedRow?.llmThinking ||
+    thinkingByCallRef.current[String(selectedRow?.id || '')] ||
+    '';
+  const rules =
+    selectedRow?.brokenRuleTitles?.length
+      ? selectedRow.brokenRuleTitles
+      : selectedRow?.brokenRuleIds || [];
+  const ageSinceMsg =
+    lastMessageAt != null ? Math.max(0, Math.round((nowTick - lastMessageAt) / 1000)) : null;
 
   async function onBridge(row) {
     if (!canBridge || !row?.id) return;
@@ -276,51 +367,90 @@ export function LiveCallsPage() {
     }
   }
 
+  async function onClearAll() {
+    if (!canClear) return;
+    if (!window.confirm('End all active live calls for this tenant?')) return;
+    setClearBusy(true);
+    try {
+      const res = await apiJson('/api/v2/calls/clear-active', { method: 'POST' });
+      thinkingByCallRef.current = {};
+      transcriptByCallRef.current = {};
+      setSelectedId(null);
+      push(`Cleared ${res.clearedDb ?? 0} DB / ${res.clearedMemory ?? 0} memory sessions`, 'ok');
+      void load();
+    } catch (err) {
+      push(err instanceof Error ? err.message : 'Clear failed');
+    } finally {
+      setClearBusy(false);
+    }
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-sv-border bg-sv-panel px-4 py-2 text-xs">
-        <span className="font-display text-sm font-semibold text-sv-fg">Live calls</span>
+    <div className="flex h-full min-h-0 flex-col bg-sv-bg">
+      <header className="flex flex-wrap items-center gap-3 border-b border-sv-border bg-sv-panel px-4 py-2.5">
+        <div className="min-w-0">
+          <h1 className="font-display text-base font-semibold text-sv-fg">Live calls</h1>
+          <p className="text-[11px] text-sv-muted">
+            {activeCount} active · feed {connLabel}
+            {ageSinceMsg != null ? ` · last frame ${ageSinceMsg}s ago` : ''}
+          </p>
+        </div>
         <Badge tone={connLabel === 'live' ? 'success' : 'warn'}>{connLabel}</Badge>
-        <span className="text-sv-muted">
-          Active <strong className="text-sv-fg">{activeCount}</strong>
-        </span>
         {unackedAlerts > 0 ? (
           <button
             type="button"
-            className="rounded bg-red-700/80 px-2 py-0.5 font-semibold text-white"
+            className="rounded bg-risk-critical px-2 py-0.5 text-xs font-semibold text-white"
             onClick={() => setUnackedAlerts(0)}
           >
             {unackedAlerts} alert{unackedAlerts === 1 ? '' : 's'} — ack
           </button>
         ) : null}
-        <label className="ml-auto flex items-center gap-1.5 text-sv-muted">
-          <input type="checkbox" checked={muteAlerts} onChange={(e) => setMuteAlerts(e.target.checked)} />
-          Mute alerts
-        </label>
-        {canKill ? (
-          <Button variant="secondary" className="!py-1 text-[11px]" onClick={() => navigate('/app')}>
-            Kill switch
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-sv-muted">
+            <input type="checkbox" checked={muteAlerts} onChange={(e) => setMuteAlerts(e.target.checked)} />
+            Mute alerts
+          </label>
+          <Button variant="ghost" className="!py-1 text-[11px]" onClick={() => void load()}>
+            Refresh
           </Button>
-        ) : null}
+          {canClear ? (
+            <Button
+              variant="secondary"
+              className="!py-1 text-[11px]"
+              disabled={clearBusy || activeCount === 0}
+              onClick={() => void onClearAll()}
+            >
+              {clearBusy ? 'Clearing…' : 'Clear all'}
+            </Button>
+          ) : null}
+          {canKill ? (
+            <Button variant="secondary" className="!py-1 text-[11px]" onClick={() => navigate('/app')}>
+              Kill switch
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       {stale || sockErr || loadError ? (
-        <div role="alert" className="border-b border-amber-500/40 bg-amber-950/40 px-4 py-2 text-sm text-amber-100">
-          {loadError ? `API: ${loadError}. ` : null}
+        <div
+          role="alert"
+          className="border-b border-risk-watch/40 bg-risk-watch/10 px-4 py-2 text-sm text-sv-fg"
+        >
+          {loadError ? <span className="text-risk-critical">API: {loadError}. </span> : null}
           {stale || sockErr ? (
-            <>
+            <span>
               Connection {connLabel}
-              {sockErr ? ` — ${sockErr}` : ''}.
-            </>
+              {sockErr ? ` — ${sockErr}` : ''}. Captions still update on poll.
+            </span>
           ) : null}
-          <Button variant="ghost" className="ml-2 !py-0.5 text-xs" onClick={() => void load()}>
-            Refresh
-          </Button>
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r border-sv-border">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(300px,340px)_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r border-sv-border bg-sv-panel/60">
+          <div className="border-b border-sv-border px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-sv-muted">
+            Sessions
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {loading && !sorted.length ? (
               <p className="p-4 text-sm text-sv-muted">Loading…</p>
@@ -328,7 +458,7 @@ export function LiveCallsPage() {
               <div className="p-4">
                 <EmptyState
                   title="No live calls"
-                  description="No monitored sessions for this tenant. Softphone audio alone is not enough — Decision Plane must open the session (AGI sessions/start or bridge)."
+                  description="Place a softphone call with asterisk_bridge running so AudioSocket feeds ASR. Softphone audio alone will not generate captions."
                 />
                 <Link
                   to="/app/settings/telephony"
@@ -343,6 +473,8 @@ export function LiveCallsPage() {
                   const level =
                     row.active && showLiveLevels ? row.liveLevel : row.active ? null : row.peakLevel;
                   const selected = selectedRow && selectedRow.id === row.id;
+                  const preview =
+                    row.asrTranscript || transcriptByCallRef.current[String(row.id || '')] || '';
                   return (
                     <li key={row.id}>
                       <button
@@ -351,8 +483,8 @@ export function LiveCallsPage() {
                           setSelectedId(row.id);
                           setUnackedAlerts((n) => Math.max(0, n - 1));
                         }}
-                        className={`flex w-full flex-col gap-1 px-3 py-3 text-left hover:bg-sv-elevated/60 ${
-                          selected ? 'bg-sv-accent/10' : ''
+                        className={`flex w-full flex-col gap-1.5 px-3 py-3 text-left transition-colors hover:bg-sv-elevated/70 ${
+                          selected ? 'border-l-2 border-l-sv-accent bg-sv-accent/10' : 'border-l-2 border-l-transparent'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -368,7 +500,17 @@ export function LiveCallsPage() {
                             {row.active ? (showLiveLevels ? shortLevel(level) : '…') : 'ended'}
                           </span>
                         </div>
-                        <p className="font-mono text-[10px] text-sv-muted">{formatDuration(row.durationSec)}</p>
+                        <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-sv-muted">
+                          <span>{formatDuration(liveDurationSec(row))}</span>
+                          {row.active && row.llmState && row.llmState !== 'idle' ? (
+                            <Badge tone={llmTone(row.llmState)}>{row.llmState}</Badge>
+                          ) : null}
+                        </div>
+                        {preview ? (
+                          <p className="line-clamp-2 text-[11px] leading-snug text-sv-fg/75">{preview}</p>
+                        ) : row.active ? (
+                          <p className="text-[11px] italic text-sv-muted">Listening…</p>
+                        ) : null}
                       </button>
                     </li>
                   );
@@ -380,138 +522,185 @@ export function LiveCallsPage() {
 
         <section className="min-h-0 overflow-y-auto p-4">
           {!selectedRow ? (
-            <p className="text-sm text-sv-muted">Select a call.</p>
+            <div className="flex h-full items-center justify-center">
+              <p className="text-sm text-sv-muted">Select a call to monitor.</p>
+            </div>
           ) : (
-            <div className="mx-auto flex max-w-3xl flex-col gap-4">
+            <div className="mx-auto flex max-w-5xl flex-col gap-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-sv-fg">
-                    {selectedRow.callerName} → {selectedRow.calleeName}
+                <div className="min-w-0">
+                  <h2 className="font-display text-xl font-semibold text-sv-fg">
+                    {selectedRow.callerName}
+                    <span className="mx-2 text-sv-muted">→</span>
+                    {selectedRow.calleeName}
                   </h2>
-                  <p className="text-xs text-sv-muted">{formatDuration(selectedRow.durationSec)}</p>
-                </div>
-                {selectedRow.active && liveLevel ? (
-                  <span className={`rounded px-2 py-1 font-mono text-xs ${levelChip(liveLevel)}`}>
-                    {shortLevel(liveLevel)}
-                  </span>
-                ) : (
-                  <span className="text-xs text-sv-muted">{selectedRow.active ? 'Waiting…' : 'Ended'}</span>
-                )}
-              </div>
-
-              <div className="rounded border border-sv-border bg-sv-elevated/20 p-3">
-                {selectedRow.active && latest ? (
-                  <RiskGauge frame={latest} />
-                ) : (
-                  <p className="py-6 text-center text-sm text-sv-muted">
-                    {selectedRow.active ? 'Waiting for live risk…' : 'Call ended — open history for the dossier.'}
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded border border-sv-border bg-sv-elevated/20 p-3">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sv-muted">Why</p>
-                {latest ? (
-                  <WhyPanel frame={latest} channelProfile={latest?.channelProfile} />
-                ) : (
-                  <p className="text-xs text-sv-muted">Reasons appear with telemetry.</p>
-                )}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded border border-sv-border bg-sv-elevated/20 p-3">
-                  <p className="text-[11px] font-semibold uppercase text-sv-muted">Heard</p>
-                  <p className="mt-2 min-h-[3rem] whitespace-pre-wrap font-mono text-xs text-sv-fg/85">
-                    {selectedRow.asrTranscript ||
-                      transcriptByCallRef.current[String(selectedRow.id || '')] ||
-                      (selectedRow.active ? 'Waiting for speech…' : '—')}
+                  <p className="mt-0.5 font-mono text-xs text-sv-muted">
+                    {formatDuration(liveDurationSec(selectedRow))}
+                    {selectedRow.svSessionUuid
+                      ? ` · ${String(selectedRow.svSessionUuid).slice(0, 8)}…`
+                      : ''}
                   </p>
                 </div>
-                <div className="rounded border border-sv-border bg-sv-elevated/20 p-3">
-                  <p className="text-[11px] font-semibold uppercase text-sv-muted">Matched rules</p>
-                  <ul className="mt-2 space-y-1 font-mono text-xs">
-                    {(selectedRow.brokenRuleTitles?.length
-                      ? selectedRow.brokenRuleTitles
-                      : selectedRow.brokenRuleIds || []
-                    ).length === 0 ? (
-                      <li className="text-sv-muted">None</li>
-                    ) : (
-                      (selectedRow.brokenRuleTitles?.length
-                        ? selectedRow.brokenRuleTitles
-                        : selectedRow.brokenRuleIds
-                      ).map((t) => <li key={t}>{t}</li>)
-                    )}
-                  </ul>
-                  {(selectedRow.matchedKeywords || []).length ? (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {(selectedRow.matchedKeywords || []).map((k) => (
-                        <Badge key={k} tone="warn">
-                          {k}
-                        </Badge>
-                      ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedRow.active && liveLevel ? (
+                    <span className={`rounded px-2.5 py-1 font-mono text-xs font-semibold ${levelChip(liveLevel)}`}>
+                      {shortLevel(liveLevel)}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-sv-muted">
+                      {selectedRow.active ? 'Waiting for risk…' : 'Ended'}
+                    </span>
+                  )}
+                  <Badge tone={llmTone(llmState)}>ASR/LLM · {llmState}</Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+                <div className="flex flex-col gap-4">
+                  <Panel
+                    title="Live captions"
+                    hint={selectedRow.active ? 'updates as speech is recognized' : 'final'}
+                    className="min-h-[200px] flex-1"
+                  >
+                    <div
+                      ref={captionScrollRef}
+                      className="max-h-[280px] min-h-[140px] overflow-y-auto rounded border border-sv-border/70 bg-sv-bg/60 px-3 py-3"
+                    >
+                      {liveCaption ? (
+                        <p className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-sv-fg">
+                          {liveCaption}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-sv-muted">
+                          {selectedRow.active
+                            ? 'Waiting for speech… Ensure asterisk_bridge is running and LAB_MODE=true.'
+                            : 'No captions recorded.'}
+                        </p>
+                      )}
                     </div>
+                    {(selectedRow.matchedKeywords || []).length ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(selectedRow.matchedKeywords || []).map((k) => (
+                          <Badge key={k} tone="warn">
+                            {k}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </Panel>
+
+                  <Panel title="LLM judgment" hint={llmState}>
+                    {thinking ? (
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-sv-fg">{thinking}</p>
+                    ) : (
+                      <p className="text-sm text-sv-muted">
+                        {selectedRow.active
+                          ? llmState === 'pending'
+                            ? 'Model is judging the utterance…'
+                            : 'No judgment yet — speak, or publish ACTIVE policy rules.'
+                          : '—'}
+                      </p>
+                    )}
+                  </Panel>
+
+                  <Panel title="Matched rules">
+                    {rules.length === 0 ? (
+                      <p className="text-sm text-sv-muted">None yet.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {rules.map((t) => (
+                          <li
+                            key={t}
+                            className="rounded border border-risk-watch/30 bg-risk-watch/10 px-2 py-1.5 font-mono text-xs text-sv-fg"
+                          >
+                            {t}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Panel>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <Panel title="Risk">
+                    {selectedRow.active && latest ? (
+                      <RiskGauge frame={latest} />
+                    ) : (
+                      <p className="py-8 text-center text-sm text-sv-muted">
+                        {selectedRow.active ? 'Waiting for live risk frames…' : 'Call ended.'}
+                      </p>
+                    )}
+                  </Panel>
+
+                  <Panel title="Why">
+                    {latest ? (
+                      <WhyPanel frame={latest} channelProfile={latest?.channelProfile} />
+                    ) : (
+                      <p className="text-xs text-sv-muted">Reasons appear with telemetry.</p>
+                    )}
+                  </Panel>
+
+                  {selectedRow.active && selectedSession ? (
+                    <Panel title="Actions">
+                      {selectedRow.approvalLocked ? (
+                        <p className="mb-2 rounded border border-risk-critical/40 bg-risk-critical/10 px-2 py-2 text-xs text-risk-critical">
+                          {selectedRow.approvalLockReason || 'Action locked — confirm callback first.'}
+                        </p>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        {canAct && selectedRow.callbackRequired ? (
+                          <Button disabled={callbackBusy} onClick={() => void onConfirmCallback(selectedRow)}>
+                            Confirm callback
+                          </Button>
+                        ) : null}
+                        {canBridge ? (
+                          <Button
+                            variant="secondary"
+                            disabled={bridgeBusy}
+                            onClick={() => void onBridge(selectedRow)}
+                          >
+                            Bridge supervisor
+                          </Button>
+                        ) : null}
+                        {canAct ? (
+                          <Button
+                            disabled={approveBusy || Boolean(selectedRow.approvalLocked)}
+                            onClick={() => void onApprove()}
+                          >
+                            {approveBusy ? '…' : 'Approve action'}
+                          </Button>
+                        ) : null}
+                        {canAct ? (
+                          <Button variant="ghost" onClick={() => setOverrideOpen(true)}>
+                            Override level
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3">
+                        <ChallengePanel sessionId={selectedSession} />
+                      </div>
+                      <OverrideDialog
+                        open={overrideOpen}
+                        onClose={() => setOverrideOpen(false)}
+                        sessionId={selectedSession}
+                        currentLevel={liveLevel}
+                        actorId={me?.user?.id || me?.user?.email}
+                        onSuccess={() => {
+                          setOverrideOpen(false);
+                          void load();
+                        }}
+                      />
+                    </Panel>
                   ) : null}
                 </div>
               </div>
-
-              {selectedRow.active && selectedSession ? (
-                <div className="space-y-3 rounded border border-sv-border bg-sv-elevated/20 p-3">
-                  <p className="text-[11px] font-semibold uppercase text-sv-muted">Actions</p>
-                  {selectedRow.approvalLocked ? (
-                    <p className="rounded border border-red-500/40 bg-red-950/30 px-2 py-2 text-xs text-red-100">
-                      {selectedRow.approvalLockReason || 'Action locked — confirm callback first.'}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    {canAct && selectedRow.callbackRequired ? (
-                      <Button disabled={callbackBusy} onClick={() => void onConfirmCallback(selectedRow)}>
-                        Confirm callback
-                      </Button>
-                    ) : null}
-                    {canBridge ? (
-                      <Button
-                        variant="secondary"
-                        disabled={bridgeBusy}
-                        onClick={() => void onBridge(selectedRow)}
-                      >
-                        Bridge supervisor
-                      </Button>
-                    ) : null}
-                    {canAct ? (
-                      <Button
-                        disabled={approveBusy || Boolean(selectedRow.approvalLocked)}
-                        onClick={() => void onApprove()}
-                      >
-                        {approveBusy ? '…' : 'Approve action'}
-                      </Button>
-                    ) : null}
-                    {canAct ? (
-                      <Button variant="ghost" onClick={() => setOverrideOpen(true)}>
-                        Override level
-                      </Button>
-                    ) : null}
-                  </div>
-                  <ChallengePanel sessionId={selectedSession} />
-                  <OverrideDialog
-                    open={overrideOpen}
-                    onClose={() => setOverrideOpen(false)}
-                    sessionId={selectedSession}
-                    currentLevel={liveLevel}
-                    actorId={me?.user?.id || me?.user?.email}
-                    onSuccess={() => {
-                      setOverrideOpen(false);
-                      void load();
-                    }}
-                  />
-                </div>
-              ) : null}
 
               {selectedRow.svSessionUuid ? (
                 <Link
                   to={`/app/sessions/${encodeURIComponent(selectedRow.svSessionUuid)}`}
                   className="text-sm text-sv-accent hover:underline"
                 >
-                  Open dossier →
+                  Open full dossier →
                 </Link>
               ) : null}
             </div>

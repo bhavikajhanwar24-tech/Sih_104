@@ -153,11 +153,13 @@ class PipelineLatencyTest {
                 auditDispatcher,
                 new TelemetryFrameBuilder(),
                 mock(TelemetryBroadcaster.class),
+                mock(com.sentinelvoice.telephony.LiveCallsBroadcaster.class),
                 mock(PlanRunner.class),
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
                 mock(com.sentinelvoice.explain.SessionExplainRecorder.class),
+                mock(com.sentinelvoice.governance.EmergencyModeService.class),
                 meters,
                 clock
         );
