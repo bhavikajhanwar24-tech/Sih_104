@@ -2,19 +2,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/services/api.js';
 
 /**
- * Consent register — every ConsentRecord with DPDP §4/§5/§6 refs + withdraw (Context §13.3).
+ * Consent register — F15 GET /api/v2/compliance/consents
  */
 export function ConsentRegister() {
   const [rows, setRows] = useState(/** @type {any[]} */ ([]));
   const [error, setError] = useState(/** @type {string | null} */ (null));
-  const [busyId, setBusyId] = useState(/** @type {number | null} */ (null));
+  const [busyId, setBusyId] = useState(/** @type {string | null} */ (null));
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/v1/compliance/consent');
+      const res = await apiFetch('/api/v2/compliance/consents');
       if (!res.ok) throw new Error(`consent HTTP ${res.status}`);
       const data = await res.json();
-      setRows(Array.isArray(data.consents) ? data.consents : []);
+      setRows(Array.isArray(data.items) ? data.items : []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'load failed');
@@ -25,10 +25,19 @@ export function ConsentRegister() {
     load();
   }, [load]);
 
-  const withdraw = async (id) => {
-    setBusyId(id);
+  const withdraw = async (row) => {
+    setBusyId(row.id);
     try {
-      const res = await apiFetch(`/api/v1/compliance/consent/${id}/withdraw`, { method: 'POST' });
+      const res = await apiFetch('/api/v2/compliance/consents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: row.employeeId,
+          purpose: row.purpose,
+          status: 'WITHDRAWN',
+          method: 'ADMIN',
+        }),
+      });
       if (!res.ok) throw new Error(`withdraw HTTP ${res.status}`);
       await load();
     } catch (e) {
@@ -41,10 +50,7 @@ export function ConsentRegister() {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[11px] text-sv-muted">
-        Lawful basis · DPDP <span className="text-sv-accent">§4</span>, notice{' '}
-        <span className="text-sv-accent">§5</span>, consent{' '}
-        <span className="text-sv-accent">§6</span>. Withdrawal triggers erasure path under{' '}
-        <span className="text-sv-accent">§12</span>.
+        Prefer the full UI at <code className="text-sv-accent">/app/compliance?tab=consent</code>.
       </p>
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
       <div className="overflow-auto rounded border border-sv-border">
@@ -54,7 +60,6 @@ export function ConsentRegister() {
               <th className="px-2 py-1.5">Employee</th>
               <th className="px-2 py-1.5">Purpose</th>
               <th className="px-2 py-1.5">Notice</th>
-              <th className="px-2 py-1.5">Granted</th>
               <th className="px-2 py-1.5">Status</th>
               <th className="px-2 py-1.5">Action</th>
             </tr>
@@ -62,42 +67,29 @@ export function ConsentRegister() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-2 py-3 text-sv-muted">
+                <td colSpan={5} className="px-2 py-3 text-sv-muted">
                   No consent records.
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.id} className="border-t border-sv-border/80">
-                  <td className="px-2 py-1.5 font-mono text-sv-fg">{r.employeeId}</td>
+                  <td className="px-2 py-1.5 text-sv-fg">{r.employeeName || r.employeeId}</td>
                   <td className="px-2 py-1.5 text-sv-muted">{r.purpose}</td>
-                  <td className="px-2 py-1.5 font-mono text-[10px]">{r.noticeVersion}</td>
-                  <td className="px-2 py-1.5 text-sv-muted">
-                    {r.grantedAt ? String(r.grantedAt).slice(0, 19) : '—'}
-                  </td>
+                  <td className="px-2 py-1.5 font-mono text-[10px]">v{r.noticeVersion}</td>
+                  <td className="px-2 py-1.5">{r.status}</td>
                   <td className="px-2 py-1.5">
-                    <span
-                      className={
-                        r.status === 'ACTIVE' ? 'text-emerald-400' : 'text-sv-muted line-through'
-                      }
-                    >
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    {r.status === 'ACTIVE' ? (
+                    {r.status === 'GRANTED' ? (
                       <button
                         type="button"
+                        className="text-sv-accent underline-offset-2 hover:underline disabled:opacity-40"
                         disabled={busyId === r.id}
-                        onClick={() => withdraw(r.id)}
-                        className="rounded border border-sv-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-sv-fg hover:border-red-400 hover:text-red-300 disabled:opacity-40"
+                        onClick={() => withdraw(r)}
                       >
                         Withdraw
                       </button>
                     ) : (
-                      <span className="text-[10px] text-sv-muted">
-                        {r.withdrawnAt ? String(r.withdrawnAt).slice(0, 19) : '—'}
-                      </span>
+                      '—'
                     )}
                   </td>
                 </tr>

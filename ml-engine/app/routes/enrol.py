@@ -20,12 +20,23 @@ import numpy as np
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.modules import speaker as speaker_mod
 from app.types import ChannelProfile
 
 logger = logging.getLogger("sentinelvoice.ml.enrol")
 
 router = APIRouter(tags=["enrol"])
+
+
+def _require_service_token(request: Request) -> None:
+    token = request.headers.get("X-ML-Service-Token") or request.query_params.get("token")
+    expected = settings.service_token
+    if not expected or len(expected) < 16:
+        raise HTTPException(status_code=503, detail="service_token_not_configured")
+    if not token or token != expected:
+        raise HTTPException(status_code=401, detail="invalid_service_token")
+
 
 _ML_ROOT = Path(__file__).resolve().parents[2]
 _FIXTURE_DIRS = (
@@ -147,6 +158,7 @@ async def _enrol_from_upload_bytes(data: bytes) -> dict[str, Any]:
 @router.post("/enrol")
 async def enrol(request: Request) -> dict[str, Any]:
     """JSON ``{audioRef}`` or multipart WAV upload — never writes the upload to disk."""
+    _require_service_token(request)
     content_type = (request.headers.get("content-type") or "").lower()
 
     if "multipart/form-data" in content_type:
@@ -177,7 +189,8 @@ async def enrol(request: Request) -> dict[str, Any]:
 
 
 @router.post("/enrol/upload")
-async def enrol_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+async def enrol_upload(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
     """Back-compat alias for multipart WAV upload (same semantics as POST /enrol with file)."""
+    _require_service_token(request)
     data = await file.read()
     return await _enrol_from_upload_bytes(data)

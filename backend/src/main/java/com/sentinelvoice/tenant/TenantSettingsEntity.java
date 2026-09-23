@@ -63,6 +63,25 @@ public class TenantSettingsEntity {
     @Column(name = "monitor_only_ttl_minutes", nullable = false)
     private int monitorOnlyTtlMinutes = 60;
 
+    @Column(name = "play_call_notice", nullable = false)
+    private boolean playCallNotice;
+
+    @Column(name = "notice_asset_id")
+    private UUID noticeAssetId;
+
+    @Column(name = "notice_version", nullable = false)
+    private int noticeVersion = 1;
+
+    @Column(name = "consent_languages", nullable = false)
+    private String consentLanguages = "en,hi";
+
+    @Column(name = "last_retention_purge_at")
+    private Instant lastRetentionPurgeAt;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "last_retention_purge_stats", nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> lastRetentionPurgeStats = new LinkedHashMap<>();
+
     public UUID getTenantId() {
         return tenantId;
     }
@@ -76,7 +95,13 @@ public class TenantSettingsEntity {
     }
 
     public void setRetentionDays(int retentionDays) {
-        this.retentionDays = retentionDays;
+        if (retentionDays < 7) {
+            this.retentionDays = 7;
+        } else if (retentionDays > 365) {
+            this.retentionDays = 365;
+        } else {
+            this.retentionDays = retentionDays;
+        }
     }
 
     public boolean isAllowExternalLlm() {
@@ -197,5 +222,55 @@ public class TenantSettingsEntity {
 
     public void setMonitorOnlyTtlMinutes(int monitorOnlyTtlMinutes) {
         this.monitorOnlyTtlMinutes = monitorOnlyTtlMinutes <= 0 ? 60 : monitorOnlyTtlMinutes;
+    }
+
+    public boolean isPlayCallNotice() {
+        return playCallNotice;
+    }
+
+    public void setPlayCallNotice(boolean playCallNotice) {
+        this.playCallNotice = playCallNotice;
+    }
+
+    public UUID getNoticeAssetId() {
+        return noticeAssetId;
+    }
+
+    public void setNoticeAssetId(UUID noticeAssetId) {
+        this.noticeAssetId = noticeAssetId;
+    }
+
+    public int getNoticeVersion() {
+        return noticeVersion <= 0 ? 1 : noticeVersion;
+    }
+
+    public void setNoticeVersion(int noticeVersion) {
+        this.noticeVersion = noticeVersion <= 0 ? 1 : noticeVersion;
+    }
+
+    public String getConsentLanguages() {
+        return consentLanguages == null || consentLanguages.isBlank() ? "en,hi" : consentLanguages;
+    }
+
+    public void setConsentLanguages(String consentLanguages) {
+        this.consentLanguages = consentLanguages == null || consentLanguages.isBlank() ? "en,hi" : consentLanguages.trim();
+    }
+
+    public Instant getLastRetentionPurgeAt() {
+        return lastRetentionPurgeAt;
+    }
+
+    public void setLastRetentionPurgeAt(Instant lastRetentionPurgeAt) {
+        this.lastRetentionPurgeAt = lastRetentionPurgeAt;
+    }
+
+    public Map<String, Object> getLastRetentionPurgeStats() {
+        return lastRetentionPurgeStats == null ? Map.of() : lastRetentionPurgeStats;
+    }
+
+    public void setLastRetentionPurgeStats(Map<String, Object> lastRetentionPurgeStats) {
+        this.lastRetentionPurgeStats = lastRetentionPurgeStats == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(lastRetentionPurgeStats);
     }
 }

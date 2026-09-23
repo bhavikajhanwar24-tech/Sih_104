@@ -57,7 +57,7 @@ export function DashboardPage() {
       });
       setData(snap);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+      setError(err?.message || err?.body?.message || 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }

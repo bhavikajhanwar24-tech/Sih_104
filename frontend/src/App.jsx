@@ -52,6 +52,12 @@ const RiskTuningPage = lazy(() =>
 const TelephonySettingsPage = lazy(() =>
   import('@/pages/TelephonySettingsPage.jsx').then((m) => ({ default: m.TelephonySettingsPage })),
 );
+const CompliancePage = lazy(() =>
+  import('@/pages/CompliancePage.jsx').then((m) => ({ default: m.CompliancePage })),
+);
+const ConsentPublicPage = lazy(() =>
+  import('@/pages/ConsentPublicPage.jsx').then((m) => ({ default: m.ConsentPublicPage })),
+);
 const IntegrationsPage = lazy(() =>
   import('@/pages/IntegrationsPage.jsx').then((m) => ({ default: m.IntegrationsPage })),
 );
@@ -82,6 +88,7 @@ export default function App() {
               <Route path="/" element={<Navigate to="/app" replace />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/consent/:token" element={<ConsentPublicPage />} />
               <Route element={<RequireAuth />}>
                 <Route path="/app" element={<AppShell />}>
                   <Route index element={<DashboardPage />} />
@@ -99,6 +106,7 @@ export default function App() {
                   <Route path="response" element={<ResponsePlansPage />} />
                   <Route path="response-plans" element={<ResponsePlansPage />} />
                   <Route path="audit" element={<AuditPage />} />
+                  <Route path="compliance" element={<CompliancePage />} />
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
                   <Route path="settings/telephony" element={<TelephonySettingsPage />} />

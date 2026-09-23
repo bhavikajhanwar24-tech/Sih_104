@@ -13,6 +13,7 @@ const NAV = [
   { to: '/app/response', label: 'Response Plans', permission: 'response:read' },
   { to: '/app/changes', label: 'Change history', permission: 'governance:read' },
   { to: '/app/audit', label: 'Audit', permission: 'audit:read' },
+  { to: '/app/compliance', label: 'Compliance', permission: 'compliance:read' },
   { to: '/app/settings', label: 'Settings', permission: 'settings:read' },
   { to: '/app/users', label: 'Users', permission: 'users:read' },
 ];

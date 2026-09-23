@@ -75,7 +75,7 @@ public class TenantSettingsController {
             int days = body.get("retentionDays") instanceof Number n
                     ? n.intValue()
                     : Integer.parseInt(String.valueOf(body.get("retentionDays")));
-            s.setRetentionDays(Math.max(1, Math.min(days, 3650)));
+            s.setRetentionDays(Math.max(7, Math.min(days, 365)));
         }
         if (body.containsKey("monitorOnlyTtlMinutes") && body.get("monitorOnlyTtlMinutes") != null) {
             int ttl = body.get("monitorOnlyTtlMinutes") instanceof Number n

@@ -16,7 +16,7 @@ export function FairnessChart() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiFetch('/api/v1/compliance/fairness');
+        const res = await apiFetch('/api/v2/compliance/fairness');
         if (!res.ok) throw new Error(`fairness HTTP ${res.status}`);
         const json = await res.json();
         if (!cancelled) {
