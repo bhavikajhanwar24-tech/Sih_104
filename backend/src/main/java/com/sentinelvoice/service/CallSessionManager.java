@@ -176,6 +176,13 @@ public class CallSessionManager {
         return List.copyOf(copy);
     }
 
+    /** Snapshot of every in-memory session (lab clear-all). */
+    public List<CallSession> listAllSessions() {
+        List<CallSession> copy = new ArrayList<>(sessions.values());
+        copy.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+        return List.copyOf(copy);
+    }
+
     /** @deprecated use {@link #listSessionsForTenant(UUID)} */
     public List<CallSession> listSessions() {
         TenantContext ctx = TenantContext.get();

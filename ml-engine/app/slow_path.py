@@ -151,8 +151,8 @@ class SlowPathRunner:
                     llm_pending=pending,
                 )
 
-        # Stage B: ALWAYS judge transcript against ACTIVE live rules when we have
-        # speech text + rules. Keywords are optional hints only — never a gate.
+        # Stage B: judge transcript against ACTIVE live rules. In lab mode, still run
+        # LLM so operators see thinking even before a policy set is published.
         silence_end = False
         last_speech = self._last_speech_mono.get(session.session_id)
         if last_speech is not None and (time.monotonic() - last_speech) >= 0.6:
@@ -161,7 +161,8 @@ class SlowPathRunner:
 
         schedule_text = raw.strip()
         has_rules = bool(lexicon and getattr(lexicon, "rules", None))
-        if schedule_text and has_rules:
+        allow_stage_b = bool(schedule_text) and (has_rules or settings.lab_mode)
+        if allow_stage_b:
             try:
                 from app.llm_gateway.gateway import gateway as llm_gateway
 
@@ -182,12 +183,14 @@ class SlowPathRunner:
                 len(schedule_text),
             )
 
-        # Push frames when keywords OR LLM-matched rules are present on the linguistic overlay.
+        # Push frames when captions, keywords, or LLM-matched rules update.
         ling_now = session.slow_path_linguistic or {}
         if (
             ling_now.get("matchedKeywords")
             or ling_now.get("matchedRuleIds")
             or ling_now.get("llmThinking")
+            or ling_now.get("redactedSnippet")
+            or ling_now.get("redactedDelta")
             or pending
         ):
             session.force_emit = True

@@ -249,6 +249,44 @@ public class LiveCallsController {
     }
 
     /**
+     * End every active live call for this tenant (DB + in-memory). Use before a clean lab re-test.
+     * Also runs global SECURITY DEFINER clear so hangup-miss ghosts disappear.
+     */
+    @PostMapping("/clear-active")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','SUPERVISOR')")
+    public Map<String, Object> clearActive() {
+        UUID tenantId = TenantContext.require().tenantId();
+        int closedDbTenant = callSessionRepository.finalizeAllActive(tenantId, "OPERATOR_CLEAR");
+        int closedDbGlobal = callSessionRepository.finalizeAllActiveGlobal("OPERATOR_CLEAR");
+        int closedMemory = 0;
+        for (CallSession mem : List.copyOf(callSessionManager.listSessionsForTenant(tenantId))) {
+            try {
+                callSessionManager.closeSession(mem.getSessionId());
+                closedMemory++;
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+        }
+        // Also drop any orphan memory sessions from other paths.
+        for (CallSession mem : List.copyOf(callSessionManager.listAllSessions())) {
+            try {
+                callSessionManager.closeSession(mem.getSessionId());
+                closedMemory++;
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("schemaVersion", "2");
+        out.put("clearedDb", Math.max(closedDbTenant, closedDbGlobal));
+        out.put("clearedDbTenant", closedDbTenant);
+        out.put("clearedDbGlobal", closedDbGlobal);
+        out.put("clearedMemory", closedMemory);
+        out.put("serverTime", Instant.now().toString());
+        return out;
+    }
+
+    /**
      * Bridge supervisor into an active call. Requires {@code calls:bridge} (TENANT_ADMIN only).
      */
     @PostMapping("/{id}/bridge")

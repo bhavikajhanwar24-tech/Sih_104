@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
@@ -43,16 +44,19 @@ public class TelemetryBroadcaster {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Counter droppedOldest;
     private final LiveCallsBroadcaster liveCallsBroadcaster;
+    private final boolean labMode;
 
     public TelemetryBroadcaster(
             @Lazy SimpMessagingTemplate messagingTemplate,
             @Lazy CallSessionManager callSessionManager,
             @Lazy LiveCallsBroadcaster liveCallsBroadcaster,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            @Value("${LAB_MODE:false}") boolean labMode
     ) {
         this.messagingTemplate = messagingTemplate;
         this.callSessionManager = callSessionManager;
         this.liveCallsBroadcaster = liveCallsBroadcaster;
+        this.labMode = labMode;
         this.droppedOldest = Counter.builder("sentinel.telemetry.dropped_oldest")
                 .description("Oldest TelemetryFrames dropped under STOMP backpressure")
                 .register(meterRegistry);
@@ -157,7 +161,9 @@ public class TelemetryBroadcaster {
                     continue;
                 }
                 String destination = topic(session.get().getTenantId(), sessionId);
-                messagingTemplate.convertAndSend(destination, redactTranscriptForWire(next));
+                // Lab operator workspace needs live captions on the selected-call topic.
+                TelemetryFrame wire = labMode ? next : redactTranscriptForWire(next);
+                messagingTemplate.convertAndSend(destination, wire);
                 try {
                     liveCallsBroadcaster.onTelemetry(next);
                 } catch (RuntimeException ex) {

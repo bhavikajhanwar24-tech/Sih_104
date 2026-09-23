@@ -252,6 +252,28 @@ public class CallLifecycleService {
         });
     }
 
+    /**
+     * End every stuck active call (DB via SECURITY DEFINER + all in-memory sessions).
+     * Used when hangup finalize was missed and Live Calls still shows ghost actives.
+     */
+    public Map<String, Object> clearAllActive(String outcome) {
+        int closedDb = callSessionRepository.finalizeAllActiveGlobal(outcome);
+        int closedMemory = 0;
+        for (CallSession mem : List.copyOf(callSessionManager.listAllSessions())) {
+            try {
+                callSessionManager.closeSession(mem.getSessionId());
+                closedMemory++;
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("clearedDb", closedDb);
+        out.put("clearedMemory", closedMemory);
+        out.put("outcome", outcome == null || outcome.isBlank() ? "OPERATOR_CLEAR" : outcome);
+        return out;
+    }
+
     private static String resolveDirection(UUID callerEmp, UUID calleeEmp, String requested) {
         if (requested != null && !requested.isBlank()) {
             String d = requested.trim().toUpperCase();

@@ -74,9 +74,8 @@ public class ScenarioService {
             }
         }
         if (scenarios.isEmpty()) {
-            throw new IllegalStateException(
-                    "No scenario fixtures found. Expected YAML under scenarios/ or classpath:scenarios/"
-            );
+            log.warn("No scenario fixtures found — live telephony path is unaffected (domain agnostic mode)");
+            return;
         }
         log.info("Loaded {} scenario fixtures: {}", scenarios.size(), scenarios.keySet());
     }

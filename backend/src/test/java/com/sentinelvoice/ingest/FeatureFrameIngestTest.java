@@ -219,11 +219,13 @@ class FeatureFrameIngestTest {
                 auditDispatcher,
                 new TelemetryFrameBuilder(),
                 broadcaster,
+                mock(com.sentinelvoice.telephony.LiveCallsBroadcaster.class),
                 PlanRunner,
                 challengeService,
                 new com.sentinelvoice.scenario.ScenarioSessionContext(),
                 mock(com.sentinelvoice.transcript.BreakGlassTranscriptService.class),
                 mock(com.sentinelvoice.explain.SessionExplainRecorder.class),
+                mock(com.sentinelvoice.governance.EmergencyModeService.class),
                 meters,
                 clock
         );

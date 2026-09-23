@@ -63,16 +63,36 @@ public class LiveCallsBroadcaster {
         if (mem.isEmpty()) {
             return;
         }
-        CallSession session = mem.get();
+        publishSessionDelta(mem.get(), frame);
+    }
+
+    /**
+     * Push captions / LLM / rules / level even when the FeatureFrame was dropped as
+     * stale or out-of-order (common when Decision Plane lags ASR).
+     */
+    public void publishSessionDelta(CallSession session) {
+        publishSessionDelta(session, null);
+    }
+
+    public void publishSessionDelta(CallSession session, TelemetryFrame frame) {
+        if (session == null || session.getSessionId() == null || session.getSessionId().isBlank()) {
+            return;
+        }
         UUID tenantId = session.getTenantId();
         if (tenantId == null) {
             return;
         }
-        Optional<TelephonyModels.CallSessionListItem> row =
-                callSessionRepository.findListItemBySvSession(tenantId, UUID.fromString(frame.sessionId()));
-        Map<String, Object> delta = buildDelta(tenantId, session, row.orElse(null), frame);
+        TelephonyModels.CallSessionListItem row = null;
+        try {
+            row = callSessionRepository
+                    .findListItemBySvSession(tenantId, UUID.fromString(session.getSessionId()))
+                    .orElse(null);
+        } catch (IllegalArgumentException ignored) {
+            // memory-only / non-UUID session ids
+        }
+        Map<String, Object> delta = buildDelta(tenantId, session, row, frame);
         messagingTemplate.convertAndSend(topic(tenantId), delta);
-        log.debug("live_calls_delta sessionId={} level={}", frame.sessionId(), delta.get("liveLevel"));
+        log.debug("live_calls_delta sessionId={} level={}", session.getSessionId(), delta.get("liveLevel"));
     }
 
     private Map<String, Object> buildDelta(
