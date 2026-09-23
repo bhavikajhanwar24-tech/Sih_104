@@ -147,6 +147,9 @@ sentinelvoice:
     # P12 harness writes here; portal shows "evaluation not yet run" if missing.
     fairness-results-path: ../ml-engine/benchmarks/results.json
     raw-audio-enforcing-path: ml-engine/app/ring_buffer.py
+  public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8081}
+  webhooks:
+    poll-ms: 5000
 
 # AuthZ lab users are registered in SecurityConfig (password: password).
 # Do not put bcrypt hashes with bare $ under sentinelvoice.* — Spring treats $ as placeholders
@@ -154,6 +157,15 @@ sentinelvoice:
 sv:
   security:
     enabled: true
+
+springdoc:
+  api-docs:
+    path: /api/v2/docs/openapi
+  swagger-ui:
+    path: /api/v2/docs
+    operationsSorter: method
+    tagsSorter: alpha
+  show-actuator: false
 
 resilience4j:
   circuitbreaker:

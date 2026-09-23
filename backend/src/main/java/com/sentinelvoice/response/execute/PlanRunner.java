@@ -3,6 +3,7 @@ package com.sentinelvoice.response.execute;
 import com.sentinelvoice.actuation.CallControlPort;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.integrations.WebhookService;
 import com.sentinelvoice.governance.EmergencyModeService;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.InterventionLevel;
@@ -15,6 +16,7 @@ import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.service.CallSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -61,6 +63,7 @@ public class PlanRunner {
     private final Executor actuationExecutor;
     private final Clock clock;
     private final EmergencyModeService emergencyModeService;
+    private final ObjectProvider<WebhookService> webhookService;
     private final ConcurrentMap<String, String> entryTokenBySessionLevel = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, InterventionLevel> lastLevelBySession = new ConcurrentHashMap<>();
 
@@ -72,7 +75,8 @@ public class PlanRunner {
             CallControlPort callControl,
             @Qualifier("actuationExecutor") Executor actuationExecutor,
             Clock clock,
-            EmergencyModeService emergencyModeService
+            EmergencyModeService emergencyModeService,
+            ObjectProvider<WebhookService> webhookService
     ) {
         this.callSessionManager = callSessionManager;
         this.executors = executors;
@@ -82,6 +86,7 @@ public class PlanRunner {
         this.actuationExecutor = actuationExecutor;
         this.clock = clock;
         this.emergencyModeService = emergencyModeService;
+        this.webhookService = webhookService;
     }
 
     public void onLevelChanged(String sessionId, InterventionLevel previous, InterventionLevel level) {
@@ -101,6 +106,18 @@ public class PlanRunner {
             lastLevelBySession.put(sessionId, level);
             if (from == level) {
                 return;
+            }
+            try {
+                WebhookService wh = webhookService.getIfAvailable();
+                if (wh != null && tenantId != null) {
+                    wh.enqueue(tenantId, "risk.level_changed", Map.of(
+                            "sessionId", sessionId,
+                            "previousLevel", from.name(),
+                            "level", level.name()
+                    ));
+                }
+            } catch (Exception ex) {
+                log.debug("webhook_enqueue_skipped sessionId={} err={}", sessionId, ex.toString());
             }
             String levelKey = ResponsePlanDocument.levelKeyFor(level);
             String entryToken = sessionId + ":" + levelKey + ":" + clock.millis();

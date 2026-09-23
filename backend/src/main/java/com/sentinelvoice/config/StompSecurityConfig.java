@@ -8,6 +8,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
@@ -24,7 +25,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * STOMP CONNECT authenticates via {@code sv_access} JWT cookie; SUBSCRIBE is tenant-scoped.
+ * STOMP CONNECT uses JWT from the WebSocket handshake (HttpOnly cookie) or
+ * optional Authorization Bearer / cookie native headers; SUBSCRIBE is tenant-scoped.
  */
 @Configuration
 @Order(Ordered.HIGHEST_PRECEDENCE + 99)
@@ -50,10 +52,14 @@ public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
                 if (accessor == null) {
                     return message;
                 }
-                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    authenticateConnect(accessor);
-                } else if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
-                    authorizeSubscribe(accessor);
+                try {
+                    if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                        authenticateConnect(accessor);
+                    } else if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+                        authorizeSubscribe(accessor);
+                    }
+                } catch (IllegalArgumentException ex) {
+                    throw new MessageDeliveryException(message, ex.getMessage(), ex);
                 }
                 return message;
             }
@@ -61,24 +67,47 @@ public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
     }
 
     private void authenticateConnect(StompHeaderAccessor accessor) {
-        String cookieHeader = firstHeader(accessor, "cookie");
-        String token = readCookie(cookieHeader, AuthService.ACCESS_COOKIE);
+        Map<String, Object> attrs = accessor.getSessionAttributes();
+        if (attrs != null && attrs.get("tenantId") != null && attrs.get("userId") != null) {
+            String roleName = String.valueOf(attrs.getOrDefault("role", Role.ANALYST.name()));
+            bindUser(accessor, String.valueOf(attrs.get("userId")), roleName);
+            return;
+        }
+
+        String token = null;
+        String authHeader = firstHeader(accessor, "Authorization");
+        if (authHeader == null) {
+            authHeader = firstHeader(accessor, "authorization");
+        }
+        if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            token = authHeader.substring(7).trim();
+        }
         if (token == null || token.isBlank()) {
-            throw new IllegalArgumentException("STOMP CONNECT requires access cookie");
+            String cookieHeader = firstHeader(accessor, "cookie");
+            if (cookieHeader == null) {
+                cookieHeader = firstHeader(accessor, "Cookie");
+            }
+            token = readCookie(cookieHeader, AuthService.ACCESS_COOKIE);
+        }
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("STOMP CONNECT requires login session");
         }
         JwtService.AccessClaims claims = jwtService.parseAccessToken(token);
-        var auth = new UsernamePasswordAuthenticationToken(
-                claims.userId().toString(),
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))
-        );
-        accessor.setUser(auth);
-        Map<String, Object> attrs = accessor.getSessionAttributes();
+        bindUser(accessor, claims.userId().toString(), claims.role().name());
         if (attrs != null) {
             attrs.put("tenantId", claims.tenantId().toString());
             attrs.put("role", claims.role().name());
             attrs.put("userId", claims.userId().toString());
         }
+    }
+
+    private static void bindUser(StompHeaderAccessor accessor, String userId, String roleName) {
+        var auth = new UsernamePasswordAuthenticationToken(
+                userId,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + roleName))
+        );
+        accessor.setUser(auth);
     }
 
     private void authorizeSubscribe(StompHeaderAccessor accessor) {
@@ -101,7 +130,11 @@ public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
         }
         String roleName = String.valueOf(attrs.get("role"));
         Role role = Role.from(roleName);
-        if (role != Role.TENANT_ADMIN && role != Role.ANALYST && role != Role.AUDITOR && role != Role.SUPERVISOR) {
+        if (role != Role.TENANT_ADMIN
+                && role != Role.ANALYST
+                && role != Role.AUDITOR
+                && role != Role.SUPERVISOR
+                && role != Role.POLICY_APPROVER) {
             throw new IllegalArgumentException("SUBSCRIBE denied: role not permitted");
         }
     }
@@ -109,9 +142,9 @@ public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
     private static String firstHeader(StompHeaderAccessor accessor, String name) {
         List<String> values = accessor.getNativeHeader(name);
         if (values == null || values.isEmpty()) {
-            values = accessor.getNativeHeader(name.substring(0, 1).toUpperCase() + name.substring(1));
+            return null;
         }
-        return values == null || values.isEmpty() ? null : values.get(0);
+        return values.get(0);
     }
 
     private static String readCookie(String cookieHeader, String name) {

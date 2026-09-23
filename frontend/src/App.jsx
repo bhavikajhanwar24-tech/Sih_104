@@ -52,6 +52,9 @@ const RiskTuningPage = lazy(() =>
 const TelephonySettingsPage = lazy(() =>
   import('@/pages/TelephonySettingsPage.jsx').then((m) => ({ default: m.TelephonySettingsPage })),
 );
+const IntegrationsPage = lazy(() =>
+  import('@/pages/IntegrationsPage.jsx').then((m) => ({ default: m.IntegrationsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -99,6 +102,7 @@ export default function App() {
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
                   <Route path="settings/telephony" element={<TelephonySettingsPage />} />
+                  <Route path="settings/integrations" element={<IntegrationsPage />} />
                   <Route path="users" element={<UsersPage />} />
                 </Route>
               </Route>

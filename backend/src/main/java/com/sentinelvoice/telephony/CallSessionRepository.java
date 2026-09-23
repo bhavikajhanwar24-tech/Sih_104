@@ -92,13 +92,15 @@ public class CallSessionRepository {
     }
 
     public Optional<TelephonyModels.CallSessionView> findBySvSessionAnyTenant(UUID svSessionUuid) {
-        // Used at end-of-call when we already know the session UUID from the wire.
-        List<TelephonyModels.CallSessionView> rows = jdbc.query(
-                "SELECT * FROM call_sessions WHERE sv_session_uuid = ?",
-                (rs, i) -> mapRow(rs),
+        UUID tenantId = jdbc.query(
+                "SELECT fn_telephony_session_tenant(?)",
+                (rs) -> rs.next() ? rs.getObject(1, UUID.class) : null,
                 svSessionUuid
         );
-        return rows.stream().findFirst();
+        if (tenantId == null) {
+            return Optional.empty();
+        }
+        return com.sentinelvoice.security.TenantContext.runAs(tenantId, () -> findBySvSession(tenantId, svSessionUuid));
     }
 
     public void finalizeSession(

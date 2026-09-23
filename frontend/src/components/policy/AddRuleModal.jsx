@@ -36,7 +36,7 @@ export function AddRuleModal({
   const [fact, setFact] = useState(prefill.when?.all?.[0]?.fact || facts[0]?.path || 'ask.type');
   const [op, setOp] = useState(prefill.when?.all?.[0]?.op || 'EQ');
   const [value, setValue] = useState(
-    prefill.when?.all?.[0]?.value != null ? String(prefill.when.all[0].value) : 'WIRE_TRANSFER'
+    prefill.when?.all?.[0]?.value != null ? String(prefill.when.all[0].value) : ''
   );
   const [amountFact, setAmountFact] = useState('ask.amountInr');
   const [amountOp, setAmountOp] = useState('GT');

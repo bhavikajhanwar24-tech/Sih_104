@@ -30,6 +30,7 @@ public enum Role {
                     "approvals:read", "approvals:decide",
                     "governance:read", "governance:kill",
                     "settings:read", "settings:write",
+                    "integrations:read", "integrations:write",
                     "users:read", "users:write",
                     "mfa:manage",
                     "lab:robustness"

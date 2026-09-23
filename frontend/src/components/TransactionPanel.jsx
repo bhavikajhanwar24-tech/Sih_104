@@ -97,38 +97,10 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
     }
   }
 
-  async function probeServerLock() {
-    if (!sessionId || busy) return;
-    setBusy(true);
-    setResult(null);
-    try {
-      const res = await apiFetch(
-        `/api/v1/transaction/${encodeURIComponent(sessionId)}/approve`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actorId: 'judge-probe' }),
-        },
-      );
-      const body = await res.json().catch(() => ({}));
-      if (res.status === 423) {
-        setResult(`423 LOCKED (server) — ${body.reason ?? 'locked'}`);
-      } else if (res.ok) {
-        setResult('Server allowed approve (not locked)');
-      } else {
-        setResult(`Probe failed (${res.status})`);
-      }
-    } catch (err) {
-      setResult(err instanceof Error ? err.message : 'network error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-2" data-testid="transaction-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wider text-sv-muted">Transaction</p>
+        <p className="text-[10px] uppercase tracking-wider text-sv-muted">Sensitive action</p>
         <span
           className={`font-mono text-[10px] ${
             lockedByTelemetry ? 'text-risk-critical' : 'text-risk-clear'
@@ -140,7 +112,7 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <label className="col-span-2 flex flex-col gap-0.5">
-          <span className="text-sv-muted">Beneficiary</span>
+          <span className="text-sv-muted">Counterparty</span>
           <input
             className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sv-fg"
             value={beneficiary}
@@ -149,7 +121,7 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-sv-muted">IFSC</span>
+          <span className="text-sv-muted">Reference</span>
           <input
             className="rounded border border-sv-border bg-sv-bg px-2 py-1 font-mono text-sv-fg"
             value={ifsc}
@@ -158,17 +130,17 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-sv-muted">Amount</span>
+          <span className="text-sv-muted">Amount / value</span>
           <input
             className="rounded border border-sv-border bg-sv-bg px-2 py-1 font-mono text-sv-fg"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             disabled={lockedByTelemetry}
-            placeholder="Asked amount"
+            placeholder="If spoken"
           />
         </label>
         <label className="col-span-2 flex flex-col gap-0.5">
-          <span className="text-sv-muted">Purpose</span>
+          <span className="text-sv-muted">Notes</span>
           <input
             className="rounded border border-sv-border bg-sv-bg px-2 py-1 text-sv-fg"
             value={purpose}
@@ -192,7 +164,7 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
               : 'bg-risk-clear text-sv-bg hover:brightness-110',
           ].join(' ')}
         >
-          {busy ? 'Submitting…' : 'Approve Transfer'}
+          {busy ? 'Submitting…' : 'Approve action'}
         </button>
         {lockOverlay ? (
           <div
@@ -204,27 +176,14 @@ export function TransactionPanel({ sessionId, frame, locked = false, lockReason 
         ) : null}
       </div>
 
-      {lockedByTelemetry && sessionId ? (
-        <button
-          type="button"
-          data-testid="probe-server-lock"
-          onClick={probeServerLock}
-          disabled={busy}
-          className="w-full rounded border border-dashed border-sv-border px-2 py-1 font-mono text-[10px] text-sv-muted hover:border-sv-accent hover:text-sv-accent"
-          title="POST /api/v1/transaction/{id}/approve — expect HTTP 423"
-        >
-          Probe server lock (expect 423)
-        </button>
-      ) : null}
-
       {showMfa ? (
         <div
           className="rounded border border-risk-elevated/50 bg-risk-elevated/10 p-2 text-[11px]"
           data-testid="oob-mfa-card"
         >
-          <p className="font-medium text-sv-fg">Out-of-band MFA</p>
+          <p className="font-medium text-sv-fg">Step-up verification</p>
           <p className="mt-0.5 text-sv-muted">
-            Step-up verification required before approve can unlock.
+            Extra confirmation required before approve can unlock.
           </p>
           <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[10px]">
             <span
