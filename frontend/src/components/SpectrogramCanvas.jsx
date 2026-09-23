@@ -7,7 +7,6 @@ import {
   SPECTROGRAM_SAMPLE_RATE,
 } from '@/audio/spectrogram.js';
 import { CHANNEL_PROFILES } from '@/contracts';
-import { useSession } from '@/context/SessionContext.jsx';
 import { palette } from '@/theme.js';
 
 const FREQ_4K = 4000;
@@ -24,9 +23,12 @@ const FREQ_8K = 8000;
  * @param {import('@/contracts').TelemetryFrame | null | undefined} [props.frame]
  * @param {string} [props.className]
  */
-export function SpectrogramCanvas({ channelProfile, frame = null, className = '' }) {
-  const { channelProfile: sessionProfile } = useSession();
-  const profile = channelProfile ?? sessionProfile;
+export function SpectrogramCanvas({
+  channelProfile = CHANNEL_PROFILES.PSTN_NARROWBAND,
+  frame = null,
+  className = '',
+}) {
+  const profile = channelProfile;
   const narrowband = profile === CHANNEL_PROFILES.PSTN_NARROWBAND;
 
   const canvasRef = useRef(/** @type {HTMLCanvasElement | null} */ (null));

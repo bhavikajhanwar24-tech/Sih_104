@@ -21,14 +21,18 @@ import java.util.UUID;
 
 /**
  * Java client for the Inference-plane LLM gateway (F5). Never used on the 500 ms fast path.
+ * Health probes use a short RestTemplate timeout so a hung Ollama cannot exhaust Tomcat threads.
  */
 @Component
 @EnableConfigurationProperties(LlmGatewayProperties.class)
 public class LlmGatewayClient {
 
     private static final Logger log = LoggerFactory.getLogger(LlmGatewayClient.class);
+    private static final int HEALTH_CONNECT_MS = 1_500;
+    private static final int HEALTH_READ_MS = 3_000;
 
     private final RestTemplate restTemplate;
+    private final RestTemplate healthRestTemplate;
     private final LlmGatewayProperties properties;
     private final ObjectMapper objectMapper;
 
@@ -40,15 +44,19 @@ public class LlmGatewayClient {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.restTemplate = builder
-                .setConnectTimeout(Duration.ofMillis(properties.connectTimeoutMs()))
-                .setReadTimeout(Duration.ofMillis(properties.readTimeoutMs()))
+                .setConnectTimeout(Duration.ofMillis(Math.max(1, properties.connectTimeoutMs())))
+                .setReadTimeout(Duration.ofMillis(Math.max(1, properties.readTimeoutMs())))
+                .build();
+        this.healthRestTemplate = builder
+                .setConnectTimeout(Duration.ofMillis(HEALTH_CONNECT_MS))
+                .setReadTimeout(Duration.ofMillis(HEALTH_READ_MS))
                 .build();
     }
 
     @CircuitBreaker(name = "llmGateway", fallbackMethod = "healthFallback")
     public Map<String, Object> health() {
         HttpHeaders headers = authHeaders();
-        ResponseEntity<Map> resp = restTemplate.exchange(
+        ResponseEntity<Map> resp = healthRestTemplate.exchange(
                 properties.baseUrl() + "/llm/v1/health",
                 org.springframework.http.HttpMethod.GET,
                 new HttpEntity<>(headers),
@@ -62,7 +70,12 @@ public class LlmGatewayClient {
     @CircuitBreaker(name = "llmGateway", fallbackMethod = "selftestFallback")
     public Map<String, Object> selftest() {
         HttpHeaders headers = authHeaders();
-        ResponseEntity<Map> resp = restTemplate.exchange(
+        // Cap self-test so Settings cannot pin a servlet thread for 120s.
+        RestTemplate probe = new RestTemplateBuilder()
+                .setConnectTimeout(Duration.ofMillis(HEALTH_CONNECT_MS))
+                .setReadTimeout(Duration.ofSeconds(20))
+                .build();
+        ResponseEntity<Map> resp = probe.exchange(
                 properties.baseUrl() + "/llm/v1/selftest",
                 org.springframework.http.HttpMethod.POST,
                 new HttpEntity<>(headers),

@@ -22,6 +22,7 @@ import com.sentinelvoice.fusion.config.FusionConfigDocument;
 import com.sentinelvoice.fusion.engine.FusionRuntimeService;
 import com.sentinelvoice.fusion.engine.FusionTickInputs;
 import com.sentinelvoice.fusion.engine.RiskAssessment;
+import com.sentinelvoice.governance.EmergencyModeService;
 import com.sentinelvoice.identity.IdentityResolutionService;
 import com.sentinelvoice.identity.model.IdentityAssessment;
 import com.sentinelvoice.intervention.InterventionDecision;
@@ -92,6 +93,7 @@ public class FeatureFrameIngestService {
     private final ScenarioSessionContext scenarioSessionContext;
     private final BreakGlassTranscriptService breakGlassTranscriptService;
     private final SessionExplainRecorder sessionExplainRecorder;
+    private final EmergencyModeService emergencyModeService;
     private final Clock clock;
     private final Counter received;
     private final Counter dropped;
@@ -124,6 +126,7 @@ public class FeatureFrameIngestService {
             ScenarioSessionContext scenarioSessionContext,
             BreakGlassTranscriptService breakGlassTranscriptService,
             SessionExplainRecorder sessionExplainRecorder,
+            EmergencyModeService emergencyModeService,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
@@ -145,6 +148,7 @@ public class FeatureFrameIngestService {
         this.scenarioSessionContext = scenarioSessionContext;
         this.breakGlassTranscriptService = breakGlassTranscriptService;
         this.sessionExplainRecorder = sessionExplainRecorder;
+        this.emergencyModeService = emergencyModeService;
         this.clock = clock;
         this.received = Counter.builder("sentinel.frames.received")
                 .description("FeatureFrames accepted into a CallSession")
@@ -181,6 +185,11 @@ public class FeatureFrameIngestService {
             return;
         }
         CallSession session = existing.get();
+        if (session.getTenantId() != null && emergencyModeService.isSuspended(session.getTenantId())) {
+            // F14 SUSPEND_MONITORING — calls continue; Decision Plane stops analysing.
+            log.debug("feature_frame_skip_suspended sessionId={} tenantId={}", frame.sessionId(), session.getTenantId());
+            return;
+        }
         TenantContext.runAs(session.getTenantId(), () -> {
             ingestUnderTenant(session, frame);
             return null;

@@ -65,6 +65,32 @@ public class CallSessionRepository {
         return rows.stream().findFirst();
     }
 
+    /** Directory-enriched row for live-call STOMP deltas. */
+    public Optional<TelephonyModels.CallSessionListItem> findListItemBySvSession(UUID tenantId, UUID svSessionUuid) {
+        List<TelephonyModels.CallSessionListItem> rows = jdbc.query(
+                """
+                SELECT cs.id, cs.tenant_id, cs.started_at, cs.ended_at,
+                       cs.caller_number, cs.callee_number,
+                       cs.caller_employee_id, cs.callee_employee_id,
+                       cs.direction, cs.peak_score, cs.peak_level, cs.final_outcome,
+                       cs.sip_call_id, cs.sv_session_uuid,
+                       caller.full_name AS caller_name, caller.job_title AS caller_title,
+                       callee.full_name AS callee_name, callee.job_title AS callee_title,
+                       caller_dept.name AS caller_department,
+                       callee_dept.name AS callee_department
+                FROM call_sessions cs
+                LEFT JOIN employees caller ON caller.id = cs.caller_employee_id
+                LEFT JOIN employees callee ON callee.id = cs.callee_employee_id
+                LEFT JOIN departments caller_dept ON caller_dept.id = caller.department_id
+                LEFT JOIN departments callee_dept ON callee_dept.id = callee.department_id
+                WHERE cs.tenant_id = ? AND cs.sv_session_uuid = ?
+                """,
+                (rs, i) -> mapListItem(rs),
+                tenantId, svSessionUuid
+        );
+        return rows.stream().findFirst();
+    }
+
     public Optional<TelephonyModels.CallSessionView> findBySvSessionAnyTenant(UUID svSessionUuid) {
         // Used at end-of-call when we already know the session UUID from the wire.
         List<TelephonyModels.CallSessionView> rows = jdbc.query(

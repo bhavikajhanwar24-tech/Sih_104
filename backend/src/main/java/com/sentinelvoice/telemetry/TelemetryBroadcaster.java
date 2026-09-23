@@ -3,6 +3,7 @@ package com.sentinelvoice.telemetry;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.service.CallSessionManager;
+import com.sentinelvoice.telephony.LiveCallsBroadcaster;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -41,14 +42,17 @@ public class TelemetryBroadcaster {
     });
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Counter droppedOldest;
+    private final LiveCallsBroadcaster liveCallsBroadcaster;
 
     public TelemetryBroadcaster(
             @Lazy SimpMessagingTemplate messagingTemplate,
             @Lazy CallSessionManager callSessionManager,
+            @Lazy LiveCallsBroadcaster liveCallsBroadcaster,
             MeterRegistry meterRegistry
     ) {
         this.messagingTemplate = messagingTemplate;
         this.callSessionManager = callSessionManager;
+        this.liveCallsBroadcaster = liveCallsBroadcaster;
         this.droppedOldest = Counter.builder("sentinel.telemetry.dropped_oldest")
                 .description("Oldest TelemetryFrames dropped under STOMP backpressure")
                 .register(meterRegistry);
@@ -154,6 +158,11 @@ public class TelemetryBroadcaster {
                 }
                 String destination = topic(session.get().getTenantId(), sessionId);
                 messagingTemplate.convertAndSend(destination, redactTranscriptForWire(next));
+                try {
+                    liveCallsBroadcaster.onTelemetry(next);
+                } catch (RuntimeException ex) {
+                    log.debug("live_calls_delta_failed sessionId={} cause={}", sessionId, ex.toString());
+                }
                 log.debug(
                         "telemetry_publish sessionId={} seq={} destination={}",
                         sessionId,

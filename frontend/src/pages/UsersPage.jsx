@@ -9,6 +9,7 @@ const ROLES = [
   { value: 'TENANT_ADMIN', label: 'Tenant admin' },
   { value: 'POLICY_APPROVER', label: 'Policy approver' },
   { value: 'ANALYST', label: 'Analyst' },
+  { value: 'SUPERVISOR', label: 'Supervisor' },
   { value: 'AUDITOR', label: 'Auditor' },
 ];
 

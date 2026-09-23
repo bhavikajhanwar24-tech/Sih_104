@@ -96,9 +96,13 @@ public class ChallengeResponseController {
 
     @GetMapping("/session/{sessionId}")
     public ResponseEntity<Map<String, Object>> current(@PathVariable String sessionId) {
+        // Always 200 — empty challenge is normal for polling (404 floods browser console).
         return challengeService.current(sessionId)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+                .map(body -> {
+                    body.put("active", true);
+                    return ResponseEntity.ok(body);
+                })
+                .orElseGet(() -> ResponseEntity.ok(Map.of("active", false, "sessionId", sessionId)));
     }
 
     private static String str(Object o) {

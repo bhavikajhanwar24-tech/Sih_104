@@ -27,10 +27,12 @@ export function ChallengePanel({ sessionId }) {
   const poll = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
-      if (res.status === 404) return;
-      if (!res.ok) return;
+      const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`, {
+        skipErrorToast: true,
+      });
+      if (res.status === 404 || !res.ok) return;
       const body = await res.json();
+      if (body.active === false) return;
       setStatus(body.status ?? null);
       if (typeof body.latencyMs === 'number') setLatencyMs(body.latencyMs);
       if (typeof body.remainingMs === 'number') setRemainingMs(body.remainingMs);
@@ -53,10 +55,13 @@ export function ChallengePanel({ sessionId }) {
     let cancelled = false;
     const syncAutoIssued = async () => {
       try {
-        const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`);
+        const res = await apiFetch(`/api/v1/challenge/session/${encodeURIComponent(sessionId)}`, {
+          skipErrorToast: true,
+        });
         if (cancelled || res.status === 404 || !res.ok) return;
         const body = await res.json();
-        if (!body || body.status === 'EVALUATED' || body.status === 'TIMEOUT') return;
+        if (!body || body.active === false) return;
+        if (body.status === 'EVALUATED' || body.status === 'TIMEOUT') return;
         // Auto-issued by Decision Plane on L3 — adopt into panel without clicking Issue.
         if (!issued && (body.phrase || body.nonce)) {
           setIssued({

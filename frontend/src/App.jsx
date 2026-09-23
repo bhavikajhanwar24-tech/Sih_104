@@ -17,7 +17,13 @@ const DirectoryPage = lazy(() =>
   import('@/pages/DirectoryPage.jsx').then((m) => ({ default: m.DirectoryPage })),
 );
 const DashboardPage = lazy(() =>
-  import('@/pages/ComingSoonPages.jsx').then((m) => ({ default: m.DashboardPage })),
+  import('@/pages/DashboardPage.jsx').then((m) => ({ default: m.DashboardPage })),
+);
+const ApprovalsPage = lazy(() =>
+  import('@/pages/ApprovalsPage.jsx').then((m) => ({ default: m.ApprovalsPage })),
+);
+const ChangeHistoryPage = lazy(() =>
+  import('@/pages/ChangeHistoryPage.jsx').then((m) => ({ default: m.ChangeHistoryPage })),
 );
 const LiveCallsPage = lazy(() =>
   import('@/pages/LiveCallsPage.jsx').then((m) => ({ default: m.LiveCallsPage })),
@@ -76,7 +82,11 @@ export default function App() {
               <Route element={<RequireAuth />}>
                 <Route path="/app" element={<AppShell />}>
                   <Route index element={<DashboardPage />} />
-                  <Route path="calls" element={<LiveCallsPage />} />
+                  <Route path="dashboard" element={<Navigate to="/app" replace />} />
+                  <Route path="approvals" element={<ApprovalsPage />} />
+                  <Route path="changes" element={<ChangeHistoryPage />} />
+                  <Route path="live" element={<LiveCallsPage />} />
+                  <Route path="calls" element={<Navigate to="/app/live" replace />} />
                   <Route path="history" element={<CallHistoryPage />} />
                   <Route path="sessions" element={<Navigate to="/app/history" replace />} />
                   <Route path="sessions/:id" element={<CallDetailPage />} />

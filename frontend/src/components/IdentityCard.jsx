@@ -120,15 +120,35 @@ export function IdentityCard({ frame, className = '' }) {
         <p
           className="rounded border px-2 py-1 font-mono text-[10px]"
           style={{
-            borderColor: `${riskRamp.watch}66`,
-            background: `${riskRamp.watch}14`,
+            borderColor: `${
+              String(presence.expected || presence.observed || '').includes('ON_LEAVE') ||
+              String(presence.status || '').includes('ON_LEAVE')
+                ? riskRamp.critical
+                : riskRamp.watch
+            }66`,
+            background: `${
+              String(presence.expected || presence.observed || '').includes('ON_LEAVE') ||
+              String(presence.status || '').includes('ON_LEAVE')
+                ? riskRamp.critical
+                : riskRamp.watch
+            }14`,
             color: palette.fg,
           }}
         >
-          <span className="font-semibold uppercase tracking-wide" style={{ color: riskRamp.watch }}>
+          <span
+            className="font-semibold uppercase tracking-wide"
+            style={{
+              color:
+                String(presence.expected || presence.observed || '').includes('ON_LEAVE') ||
+                String(presence.status || '').includes('ON_LEAVE')
+                  ? riskRamp.critical
+                  : riskRamp.watch,
+            }}
+          >
             Presence ·{' '}
           </span>
           expected {presence.expected ?? '—'} · observed {presence.observed ?? '—'}
+          {presence.status ? ` · ${presence.status}` : ''}
         </p>
       ) : null}
 

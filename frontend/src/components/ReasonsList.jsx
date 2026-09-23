@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { getTopReasons, REASON_SEVERITIES } from '@/contracts';
-import { useSession } from '@/context/SessionContext.jsx';
 import { familyForReasonCode } from '@/lib/reasonMeta.js';
 import { palette, riskRamp } from '@/theme.js';
 
@@ -14,22 +13,21 @@ const SEVERITY_RANK = Object.freeze({
 });
 
 /**
- * Top reasons ordered by severity. Click highlights the evidence-family axis
- * (wired via SessionContext for P6.3).
+ * Top reasons ordered by severity. Click highlights a reason locally
+ * (or via optional onSelectReason callback).
  *
  * @param {Object} props
  * @param {TelemetryFrame | null | undefined} props.frame
  * @param {(code: string | null, family: string | null) => void} [props.onSelectReason]
- *   Optional override; defaults to {@link useSession}.setHighlightedReason
  * @param {string} [props.className]
  */
 export function ReasonsList({ frame, onSelectReason, className = '' }) {
-  const session = useSession();
-  const highlighted = session.highlightedReasonCode;
+  const [localHighlight, setLocalHighlight] = useState(/** @type {string | null} */ (null));
+  const highlighted = localHighlight;
   const select =
     onSelectReason ??
-    ((code, family) => {
-      session.setHighlightedReason(code, family);
+    ((code) => {
+      setLocalHighlight(code);
     });
 
   const reasons = useMemo(() => {

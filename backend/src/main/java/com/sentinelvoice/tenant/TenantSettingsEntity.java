@@ -48,6 +48,21 @@ public class TenantSettingsEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "emergency_mode", length = 32)
+    private String emergencyMode;
+
+    @Column(name = "emergency_mode_set_at")
+    private Instant emergencyModeSetAt;
+
+    @Column(name = "emergency_mode_expires_at")
+    private Instant emergencyModeExpiresAt;
+
+    @Column(name = "emergency_mode_set_by")
+    private UUID emergencyModeSetBy;
+
+    @Column(name = "monitor_only_ttl_minutes", nullable = false)
+    private int monitorOnlyTtlMinutes = 60;
+
     public UUID getTenantId() {
         return tenantId;
     }
@@ -142,5 +157,45 @@ public class TenantSettingsEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getEmergencyMode() {
+        return emergencyMode;
+    }
+
+    public void setEmergencyMode(String emergencyMode) {
+        this.emergencyMode = emergencyMode;
+    }
+
+    public Instant getEmergencyModeSetAt() {
+        return emergencyModeSetAt;
+    }
+
+    public void setEmergencyModeSetAt(Instant emergencyModeSetAt) {
+        this.emergencyModeSetAt = emergencyModeSetAt;
+    }
+
+    public Instant getEmergencyModeExpiresAt() {
+        return emergencyModeExpiresAt;
+    }
+
+    public void setEmergencyModeExpiresAt(Instant emergencyModeExpiresAt) {
+        this.emergencyModeExpiresAt = emergencyModeExpiresAt;
+    }
+
+    public UUID getEmergencyModeSetBy() {
+        return emergencyModeSetBy;
+    }
+
+    public void setEmergencyModeSetBy(UUID emergencyModeSetBy) {
+        this.emergencyModeSetBy = emergencyModeSetBy;
+    }
+
+    public int getMonitorOnlyTtlMinutes() {
+        return monitorOnlyTtlMinutes <= 0 ? 60 : monitorOnlyTtlMinutes;
+    }
+
+    public void setMonitorOnlyTtlMinutes(int monitorOnlyTtlMinutes) {
+        this.monitorOnlyTtlMinutes = monitorOnlyTtlMinutes <= 0 ? 60 : monitorOnlyTtlMinutes;
     }
 }

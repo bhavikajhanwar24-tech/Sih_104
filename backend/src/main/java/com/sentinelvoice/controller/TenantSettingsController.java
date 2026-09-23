@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,6 +68,31 @@ public class TenantSettingsController {
             s.setConsentNoticeText(body.get("consentNoticeText") == null
                     ? null : String.valueOf(body.get("consentNoticeText")));
         }
+        if (body.containsKey("timezone") && body.get("timezone") != null) {
+            s.setTimezone(String.valueOf(body.get("timezone")));
+        }
+        if (body.containsKey("retentionDays") && body.get("retentionDays") != null) {
+            int days = body.get("retentionDays") instanceof Number n
+                    ? n.intValue()
+                    : Integer.parseInt(String.valueOf(body.get("retentionDays")));
+            s.setRetentionDays(Math.max(1, Math.min(days, 3650)));
+        }
+        if (body.containsKey("monitorOnlyTtlMinutes") && body.get("monitorOnlyTtlMinutes") != null) {
+            int ttl = body.get("monitorOnlyTtlMinutes") instanceof Number n
+                    ? n.intValue()
+                    : Integer.parseInt(String.valueOf(body.get("monitorOnlyTtlMinutes")));
+            s.setMonitorOnlyTtlMinutes(Math.max(5, Math.min(ttl, 24 * 60)));
+        }
+        Map<String, Object> extras = new LinkedHashMap<>(s.getExtras() == null ? Map.of() : s.getExtras());
+        for (String key : List.of(
+                "languages", "notificationRecipients", "allowedOrigins",
+                "hideCallerNames", "organisationDisplayName"
+        )) {
+            if (body.containsKey(key)) {
+                extras.put(key, body.get(key));
+            }
+        }
+        s.setExtras(extras);
         s.setUpdatedAt(Instant.now());
         settingsRepository.save(s);
         auditLedgerService.append(
@@ -76,6 +102,15 @@ public class TenantSettingsController {
                 "USER",
                 ctx.userId().toString(),
                 Map.of(
+                        "change", Map.of(
+                                "area", "settings",
+                                "after", Map.of(
+                                        "allowExternalLlm", s.isAllowExternalLlm(),
+                                        "llmFailPolicy", s.getLlmFailPolicy(),
+                                        "timezone", s.getTimezone(),
+                                        "retentionDays", s.getRetentionDays()
+                                )
+                        ),
                         "allowExternalLlm", s.isAllowExternalLlm(),
                         "llmFailPolicy", s.getLlmFailPolicy()
                 )
@@ -108,7 +143,19 @@ public class TenantSettingsController {
         m.put("asrLanguages", s.getAsrLanguages());
         m.put("consentNoticeText", s.getConsentNoticeText());
         m.put("maxConcurrentCalls", s.getMaxConcurrentCalls());
+        m.put("timezone", s.getTimezone());
+        m.put("monitorOnlyTtlMinutes", s.getMonitorOnlyTtlMinutes());
+        m.put("emergencyMode", s.getEmergencyMode());
+        m.put("emergencyModeExpiresAt",
+                s.getEmergencyModeExpiresAt() == null ? null : s.getEmergencyModeExpiresAt().toString());
         m.put("extras", s.getExtras());
+        Map<String, Object> extras = s.getExtras() == null ? Map.of() : s.getExtras();
+        m.put("languages", extras.getOrDefault("languages", s.getAsrLanguages()));
+        m.put("notificationRecipients", extras.getOrDefault("notificationRecipients", List.of()));
+        m.put("allowedOrigins", extras.getOrDefault("allowedOrigins", List.of()));
+        m.put("hideCallerNames", Boolean.TRUE.equals(extras.get("hideCallerNames")));
+        m.put("organisationDisplayName", extras.get("organisationDisplayName"));
+        m.put("apiKeysEntry", "/app/settings#api-keys");
         return m;
     }
 }

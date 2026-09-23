@@ -3,6 +3,7 @@ package com.sentinelvoice.response.execute;
 import com.sentinelvoice.actuation.CallControlPort;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
+import com.sentinelvoice.governance.EmergencyModeService;
 import com.sentinelvoice.model.CallSession;
 import com.sentinelvoice.model.InterventionLevel;
 import com.sentinelvoice.policy.engine.ConditionEvaluator;
@@ -59,6 +60,7 @@ public class PlanRunner {
     private final CallControlPort callControl;
     private final Executor actuationExecutor;
     private final Clock clock;
+    private final EmergencyModeService emergencyModeService;
     private final ConcurrentMap<String, String> entryTokenBySessionLevel = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, InterventionLevel> lastLevelBySession = new ConcurrentHashMap<>();
 
@@ -69,7 +71,8 @@ public class PlanRunner {
             AuditWriteDispatcher auditWriteDispatcher,
             CallControlPort callControl,
             @Qualifier("actuationExecutor") Executor actuationExecutor,
-            Clock clock
+            Clock clock,
+            EmergencyModeService emergencyModeService
     ) {
         this.callSessionManager = callSessionManager;
         this.executors = executors;
@@ -78,6 +81,7 @@ public class PlanRunner {
         this.callControl = callControl;
         this.actuationExecutor = actuationExecutor;
         this.clock = clock;
+        this.emergencyModeService = emergencyModeService;
     }
 
     public void onLevelChanged(String sessionId, InterventionLevel previous, InterventionLevel level) {
@@ -87,6 +91,10 @@ public class PlanRunner {
         try {
             CallSession session = callSessionManager.requireSession(sessionId);
             UUID tenantId = session.getTenantId();
+            if (tenantId != null && emergencyModeService.isSuspended(tenantId)) {
+                log.info("plan_runner_skip_suspended sessionId={}", sessionId);
+                return;
+            }
             InterventionLevel from = previous != null
                     ? previous
                     : lastLevelBySession.getOrDefault(sessionId, InterventionLevel.LEVEL_1_SILENT);
@@ -97,10 +105,11 @@ public class PlanRunner {
             String levelKey = ResponsePlanDocument.levelKeyFor(level);
             String entryToken = sessionId + ":" + levelKey + ":" + clock.millis();
             entryTokenBySessionLevel.put(sessionId + "|" + levelKey, entryToken);
+            boolean monitorOnly = tenantId != null && emergencyModeService.isMonitorOnly(tenantId);
             // Async actuation must re-bind tenant for RLS on session_actions.
             actuationExecutor.execute(() -> TenantContext.runAs(
                     tenantId,
-                    () -> runLevelEntry(sessionId, from, level, levelKey, entryToken)
+                    () -> runLevelEntry(sessionId, from, level, levelKey, entryToken, monitorOnly)
             ));
         } catch (Exception ex) {
             log.error("plan_runner_schedule_failed sessionId={} level={} err={}", sessionId, level, ex.toString(), ex);
@@ -204,7 +213,8 @@ public class PlanRunner {
             InterventionLevel previous,
             InterventionLevel level,
             String levelKey,
-            String entryToken
+            String entryToken,
+            boolean monitorOnly
     ) {
         CallSession session;
         try {
@@ -235,6 +245,10 @@ public class PlanRunner {
         for (ResponsePlanDocument.PlanStep step : lp.steps()) {
             final int stepIndex = idx++;
             if (!"ON_ENTER".equals(step.trigger())) {
+                continue;
+            }
+            if (monitorOnly && !isAdvisoryAction(step.action())) {
+                auditFired(sessionId, step.action(), "monitor_only_suppressed", true, false, null);
                 continue;
             }
             if (step.operatorConfirm() && !step.autoExecute()) {
@@ -384,6 +398,14 @@ public class PlanRunner {
             return ActionExecutor.ActionOutcome.degraded("absolute fail-safe advisory", "OPERATOR_ADVISORY");
         }
         return null;
+    }
+
+    private static boolean isAdvisoryAction(String action) {
+        if (action == null) return true;
+        return "OPERATOR_ADVISORY".equals(action)
+                || "NOTIFY_SUPERVISOR".equals(action)
+                || "LOG_ONLY".equals(action)
+                || action.startsWith("NOTIFY_");
     }
 
     private ResponsePlanDocument resolvePlan(CallSession session) {

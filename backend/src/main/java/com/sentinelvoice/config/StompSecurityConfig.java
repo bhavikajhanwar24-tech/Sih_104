@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
 public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final Pattern TENANT_TOPIC = Pattern.compile(
-            "^/topic/tenant/([0-9a-fA-F-]{36})/(telemetry|actuation)/.+$"
+            "^/topic/tenant/([0-9a-fA-F-]{36})/(telemetry|actuation|calls)(/.*)?$"
     );
 
     private final JwtService jwtService;
@@ -101,7 +101,7 @@ public class StompSecurityConfig implements WebSocketMessageBrokerConfigurer {
         }
         String roleName = String.valueOf(attrs.get("role"));
         Role role = Role.from(roleName);
-        if (role != Role.TENANT_ADMIN && role != Role.ANALYST && role != Role.AUDITOR) {
+        if (role != Role.TENANT_ADMIN && role != Role.ANALYST && role != Role.AUDITOR && role != Role.SUPERVISOR) {
             throw new IllegalArgumentException("SUBSCRIBE denied: role not permitted");
         }
     }

@@ -69,7 +69,7 @@ public class LiveCallsController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('TENANT_ADMIN','ANALYST')")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','ANALYST','SUPERVISOR','AUDITOR')")
     public Map<String, Object> list(
             @RequestParam(defaultValue = "40") int limit,
             @RequestParam(defaultValue = "false") boolean activeOnly
@@ -99,6 +99,8 @@ public class LiveCallsController {
             m.put("calleeEmployeeId", row.calleeEmployeeId() == null ? null : row.calleeEmployeeId().toString());
             m.put("callerName", displayName(row.callerName(), row.callerTitle(), row.callerNumber()));
             m.put("calleeName", displayName(row.calleeName(), row.calleeTitle(), row.calleeNumber()));
+            m.put("callerTitle", row.callerTitle());
+            m.put("calleeTitle", row.calleeTitle());
             m.put("callerDepartment", row.callerDepartment());
             m.put("calleeDepartment", row.calleeDepartment());
             m.put("peakScore", row.peakScore());
@@ -107,23 +109,31 @@ public class LiveCallsController {
             m.put("sipCallId", row.sipCallId());
             m.put("svSessionUuid", row.svSessionUuid() == null ? null : row.svSessionUuid().toString());
 
+            long durationSec = 0L;
+            if (row.startedAt() != null) {
+                Instant end = row.endedAt() == null ? Instant.now() : row.endedAt();
+                durationSec = Math.max(0L, java.time.Duration.between(row.startedAt(), end).getSeconds());
+            }
+            m.put("durationSec", durationSec);
+
             String liveLevel = null;
             Double liveScore = null;
+            String llmState = "idle";
+            List<Double> scoreHistory = List.of();
             if (row.svSessionUuid() != null) {
                 Optional<CallSession> mem = callSessionManager.getSession(row.svSessionUuid().toString());
                 if (mem.isPresent()) {
                     CallSession s = mem.get();
                     liveLevel = s.getCurrentLevel() == null ? null : s.getCurrentLevel().name();
                     liveScore = s.getSmoothedRisk();
-                    String lingStatus = "unavailable";
                     if (Boolean.TRUE.equals(s.getLastLinguisticPending())) {
-                        lingStatus = "pending";
-                    } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
-                        lingStatus = "live";
+                        llmState = "pending";
                     } else if (s.getLastLlmThinking() != null && !s.getLastLlmThinking().isBlank()) {
-                        lingStatus = "live";
+                        llmState = "ready";
+                    } else if (s.getLastLinguisticSource() != null && !s.getLastLinguisticSource().isBlank()) {
+                        llmState = "live";
                     }
-                    m.put("linguisticStatus", lingStatus);
+                    m.put("linguisticStatus", llmState.equals("idle") ? "unavailable" : llmState);
                     m.put("linguisticSource", s.getLastLinguisticSource());
                     m.put("linguisticAgeMs", s.getLastLinguisticAgeMs());
                     m.put("linguisticConfidence", s.getLastLinguisticConfidence());
@@ -132,10 +142,18 @@ public class LiveCallsController {
                     m.put("asrTranscript", s.getLastAsrTranscript());
                     m.put("brokenRuleIds", s.getLastBrokenRuleIds());
                     m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
+                    scoreHistory = s.getTelemetryHistory().snapshot().stream()
+                            .map(TelemetryEntry::smoothedRisk)
+                            .collect(Collectors.toList());
+                    if (scoreHistory.size() > 24) {
+                        scoreHistory = scoreHistory.subList(scoreHistory.size() - 24, scoreHistory.size());
+                    }
                 }
             }
             m.put("liveLevel", liveLevel);
             m.put("liveScore", liveScore);
+            m.put("llmState", llmState);
+            m.put("scoreHistory", scoreHistory);
 
             String effectiveLevel = liveLevel != null ? liveLevel : null;
             boolean isL3 = effectiveLevel != null && effectiveLevel.contains("LEVEL_3");
@@ -155,6 +173,17 @@ public class LiveCallsController {
             m.put("callbackVerified", callbackVerified);
             m.put("bridgeFired", bridgeFired);
             m.put("activeActions", flags.stream().sorted().collect(Collectors.toList()));
+            String pending = null;
+            if (callbackRequired) {
+                pending = "Confirm callback";
+            } else if (approvalLocked) {
+                pending = "Approval locked";
+            } else if (bridgeFired) {
+                pending = "Bridge supervisor";
+            } else if (!flags.isEmpty()) {
+                pending = flags.iterator().next();
+            }
+            m.put("pendingAction", pending);
             if (approvalLocked) {
                 m.put("approvalLockReason",
                         "Approval locked — confirm callback verification first, then Approve unlocks.");
@@ -175,7 +204,7 @@ public class LiveCallsController {
      * Bridge supervisor into an active call. Requires {@code calls:bridge} (TENANT_ADMIN only).
      */
     @PostMapping("/{id}/bridge")
-    @PreAuthorize("hasRole('TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('TENANT_ADMIN','SUPERVISOR')")
     public ResponseEntity<Map<String, Object>> bridge(
             @PathVariable String id,
             @RequestBody(required = false) Map<String, Object> body

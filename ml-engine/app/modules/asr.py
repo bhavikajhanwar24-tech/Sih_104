@@ -242,6 +242,76 @@ def _novel_suffix(previous: str, current: str) -> str:
     return cur
 
 
+def _norm_words(text: str) -> list[str]:
+    return [t for t in (text or "").lower().split() if t]
+
+
+def _collapse_repeated_phrases(tokens: list[str]) -> list[str]:
+    """Remove adjacent repeated phrases anywhere (Whisper echo: ABAB… → AB…)."""
+    if len(tokens) < 6:
+        return tokens
+    out = list(tokens)
+    changed = True
+    while changed and len(out) >= 6:
+        changed = False
+        for plen in range(min(12, len(out) // 2), 2, -1):
+            i = 0
+            while i + 2 * plen <= len(out):
+                if out[i : i + plen] == out[i + plen : i + 2 * plen]:
+                    del out[i + plen : i + 2 * plen]
+                    changed = True
+                    break
+                i += 1
+            if changed:
+                break
+    return out
+
+
+def _append_novel_transcript(rolling: str, window: str) -> str:
+    """Grow rolling transcript with only new words from this ASR window.
+
+    Example:
+      rolling: \"please share the password\"
+      window:  \"please share the password please share the password for my account\"
+      result:  \"please share the password for my account\"
+    """
+    r_toks = _collapse_repeated_phrases(_norm_words(rolling))
+    w_toks = _collapse_repeated_phrases(_norm_words(window))
+    if not w_toks:
+        return " ".join(r_toks)
+    if not r_toks:
+        return " ".join(w_toks)
+
+    # After echo-collapse, window extends rolling → take window.
+    if len(w_toks) >= len(r_toks) and w_toks[: len(r_toks)] == r_toks:
+        return " ".join(w_toks)
+
+    # Window already fully present as rolling suffix → no change.
+    if len(r_toks) >= len(w_toks) and r_toks[-len(w_toks) :] == w_toks:
+        return " ".join(r_toks)
+
+    # Longest suffix of rolling matching prefix of window → append rest.
+    max_n = min(len(r_toks), len(w_toks))
+    best = 0
+    for n in range(max_n, 0, -1):
+        if r_toks[-n:] == w_toks[:n]:
+            best = n
+            break
+    if best:
+        return " ".join(_collapse_repeated_phrases(r_toks + w_toks[best:])).strip()
+
+    for n in range(len(w_toks), 0, -1):
+        chunk = w_toks[:n]
+        lim = max(0, len(r_toks) - len(chunk) - 8)
+        for i in range(len(r_toks) - len(chunk), lim - 1, -1):
+            if i < 0:
+                break
+            if r_toks[i : i + len(chunk)] == chunk:
+                return " ".join(_collapse_repeated_phrases(r_toks + w_toks[n:])).strip()
+
+    return " ".join(_collapse_repeated_phrases(r_toks + w_toks))
+
+
 def _snippet(redacted_full: str, max_chars: Optional[int] = None) -> str:
     n = max_chars if max_chars is not None else settings.asr_snippet_chars
     text = " ".join(redacted_full.split())
@@ -490,10 +560,9 @@ def _transcribe_sync(
         x_new = np.linspace(0.0, 1.0, max(n_out, 1), dtype=np.float64)
         audio = np.interp(x_new, x_old, audio.astype(np.float64)).astype(np.float32)
 
+    # Do NOT pass rolling transcript as initial_prompt — Whisper echoes it into
+    # the next window ("please share… please share… please share…").
     prompt = initial_prompt
-    if prompt is None and state._rolling_raw:
-        # Continuity across overlapping windows; keep prompt short.
-        prompt = state._rolling_raw[-220:]
 
     try:
         # Prefer English when configured — auto-detect on softphone often flips to zh/noise
@@ -575,24 +644,19 @@ def _transcribe_sync(
     elif info_lang and window_raw:
         _record_languages(state, [str(info_lang)])
 
-    delta_raw = _novel_suffix(state._last_window_raw, window_raw) if window_raw else ""
-    # Prefer appending only novel text; if first window, take full.
-    if not state._last_window_raw and window_raw:
-        delta_raw = window_raw
-
-    if delta_raw:
-        if state._rolling_raw:
-            state._rolling_raw = (state._rolling_raw + " " + delta_raw).strip()
-        else:
-            state._rolling_raw = delta_raw
-        state.words.extend(new_words)
-        # Cap in-memory word list (rolling, not persisted).
-        if len(state.words) > 2000:
-            del state.words[:-1000]
-        trim_rolling_window(state)
-
     if window_raw:
+        before = state._rolling_raw
+        state._rolling_raw = _append_novel_transcript(state._rolling_raw, window_raw)
+        grew = state._rolling_raw != before
+        if grew:
+            state.words.extend(new_words)
+            if len(state.words) > 2000:
+                del state.words[:-1000]
+            trim_rolling_window(state)
         state._last_window_raw = window_raw
+        delta_raw = _novel_suffix(before, state._rolling_raw) if grew else ""
+    else:
+        delta_raw = ""
 
     # Emit only the redacted delta since last emission.
     emitted_before = state._emitted_raw_len

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
 import { INTERVENTION_LEVELS } from '@/contracts';
 import { apiFetch } from '@/services/api.js';
 
@@ -11,25 +10,39 @@ const LOCK_LEVELS = new Set([
 ]);
 
 /**
- * Mock banking transfer panel. Approve enablement comes ONLY from TelemetryFrame.intervention.level.
+ * Operator transaction panel. Approve locks from telemetry level and/or plan lock action.
  *
  * @param {Object} props
  * @param {string | null | undefined} props.sessionId
  * @param {import('@/contracts').TelemetryFrame | null | undefined} props.frame
+ * @param {boolean} [props.locked]
+ * @param {string | null | undefined} [props.lockReason]
  */
-export function TransactionPanel({ sessionId, frame }) {
+export function TransactionPanel({ sessionId, frame, locked = false, lockReason = null }) {
   const level = frame?.intervention?.level ?? INTERVENTION_LEVELS.LEVEL_1_SILENT;
   /** Server-authoritative lock — never a local useState toggle. */
-  const lockedByTelemetry = LOCK_LEVELS.has(level);
+  const lockedByTelemetry = locked || LOCK_LEVELS.has(level);
 
-  const [beneficiary, setBeneficiary] = useState('Acme Vendors Pvt Ltd');
-  const [ifsc, setIfsc] = useState('HDFC0001234');
-  const [amount] = useState('₹50,00,000');
-  const [purpose, setPurpose] = useState('Urgent vendor settlement — do not delay');
+  const askedAmount =
+    frame?.linguistic?.amountAsked ??
+    frame?.families?.transaction?.amountAsked ??
+    frame?.transaction?.amountAsked ??
+    null;
+
+  const [beneficiary, setBeneficiary] = useState('');
+  const [ifsc, setIfsc] = useState('');
+  const [amount, setAmount] = useState('');
+  const [purpose, setPurpose] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(/** @type {string | null} */ (null));
   const [mfaState, setMfaState] = useState(/** @type {'pending'|'approved'|'denied'} */ ('pending'));
   const [mfaSeconds, setMfaSeconds] = useState(45);
+
+  useEffect(() => {
+    if (askedAmount != null && askedAmount !== '') {
+      setAmount(String(askedAmount));
+    }
+  }, [askedAmount]);
 
   const showMfa = level === INTERVENTION_LEVELS.LEVEL_3_STEP_UP_MFA;
 
@@ -50,9 +63,9 @@ export function TransactionPanel({ sessionId, frame }) {
   const lockOverlay = useMemo(
     () =>
       lockedByTelemetry
-        ? 'Locked by SentinelVoice — step-up authentication required'
+        ? lockReason || 'Locked by SentinelVoice — confirm callback / step-up required'
         : null,
-    [lockedByTelemetry],
+    [lockedByTelemetry, lockReason],
   );
 
   async function onApprove() {
@@ -75,7 +88,7 @@ export function TransactionPanel({ sessionId, frame }) {
       } else if (!res.ok) {
         setResult(`Approve failed (${res.status})`);
       } else {
-        setResult('Approved (mock)');
+        setResult('Approved');
       }
     } catch (err) {
       setResult(err instanceof Error ? err.message : 'network error');
@@ -115,12 +128,7 @@ export function TransactionPanel({ sessionId, frame }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-2" data-testid="transaction-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[10px] uppercase tracking-wider text-sv-muted">
-            CBS · Wire transfer
-          </p>
-          <SimulatedSignalBadge label="mock CBS — not a real bank API" />
-        </div>
+        <p className="text-[10px] uppercase tracking-wider text-sv-muted">Transaction</p>
         <span
           className={`font-mono text-[10px] ${
             lockedByTelemetry ? 'text-risk-critical' : 'text-risk-clear'
@@ -154,7 +162,9 @@ export function TransactionPanel({ sessionId, frame }) {
           <input
             className="rounded border border-sv-border bg-sv-bg px-2 py-1 font-mono text-sv-fg"
             value={amount}
-            readOnly
+            onChange={(e) => setAmount(e.target.value)}
+            disabled={lockedByTelemetry}
+            placeholder="Asked amount"
           />
         </label>
         <label className="col-span-2 flex flex-col gap-0.5">
@@ -214,7 +224,7 @@ export function TransactionPanel({ sessionId, frame }) {
         >
           <p className="font-medium text-sv-fg">Out-of-band MFA</p>
           <p className="mt-0.5 text-sv-muted">
-            Push notification sent to Rajesh Kumar&apos;s registered device +91-XXXXX-43210
+            Step-up verification required before approve can unlock.
           </p>
           <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[10px]">
             <span
@@ -229,22 +239,6 @@ export function TransactionPanel({ sessionId, frame }) {
               {mfaState.toUpperCase()}
             </span>
             <span className="text-sv-muted">{mfaSeconds}s</span>
-          </div>
-          <div className="mt-1 flex gap-1">
-            <button
-              type="button"
-              className="rounded border border-sv-border px-2 py-0.5 text-[10px] text-sv-muted hover:text-sv-fg"
-              onClick={() => setMfaState('approved')}
-            >
-              Simulate approve
-            </button>
-            <button
-              type="button"
-              className="rounded border border-sv-border px-2 py-0.5 text-[10px] text-sv-muted hover:text-sv-fg"
-              onClick={() => setMfaState('denied')}
-            >
-              Simulate deny
-            </button>
           </div>
         </div>
       ) : null}
@@ -261,4 +255,6 @@ export function TransactionPanel({ sessionId, frame }) {
 TransactionPanel.propTypes = {
   sessionId: PropTypes.string,
   frame: PropTypes.object,
+  locked: PropTypes.bool,
+  lockReason: PropTypes.string,
 };

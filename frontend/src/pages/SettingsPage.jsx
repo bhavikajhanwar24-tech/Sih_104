@@ -149,6 +149,188 @@ export function SettingsPage() {
         <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open telephony →</span>
       </Link>
 
+      <section className="space-y-4" id="tenant-profile">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-sv-muted">
+          Tenant profile &amp; governance (F14)
+        </h2>
+        {loading || !settings ? (
+          <p className="text-sm text-sv-muted">Loading…</p>
+        ) : (
+          <div className="space-y-3 rounded border border-sv-border bg-sv-elevated/40 p-4 text-sm">
+            <label className="block text-xs text-sv-muted">
+              Timezone
+              <input
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={settings.timezone || 'Asia/Kolkata'}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) => (prev ? { ...prev, timezone: e.target.value } : prev))
+                }
+              />
+            </label>
+            <label className="block text-xs text-sv-muted">
+              Languages / ASR (comma-separated)
+              <input
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={settings.languages || settings.asrLanguages || 'en,hi'}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, languages: e.target.value, asrLanguages: e.target.value } : prev,
+                  )
+                }
+              />
+            </label>
+            <label className="block text-xs text-sv-muted">
+              LLM fail policy
+              <select
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 text-xs"
+                value={settings.llmFailPolicy || 'CONTINUE_RULES_ONLY'}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) => (prev ? { ...prev, llmFailPolicy: e.target.value } : prev))
+                }
+              >
+                <option value="CONTINUE_RULES_ONLY">Continue rules only</option>
+                <option value="FAIL_CLOSED">Fail closed</option>
+                <option value="FAIL_OPEN">Fail open</option>
+              </select>
+            </label>
+            <label className="block text-xs text-sv-muted">
+              Retention days (F15)
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={settings.retentionDays ?? 90}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, retentionDays: Number(e.target.value) } : prev,
+                  )
+                }
+              />
+            </label>
+            <label className="block text-xs text-sv-muted">
+              Allowed origins for embeds (comma-separated)
+              <input
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={
+                  Array.isArray(settings.allowedOrigins)
+                    ? settings.allowedOrigins.join(',')
+                    : settings.allowedOrigins || ''
+                }
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          allowedOrigins: e.target.value
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        }
+                      : prev,
+                  )
+                }
+              />
+            </label>
+            <label className="block text-xs text-sv-muted">
+              Notification recipients (comma-separated emails)
+              <input
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={
+                  Array.isArray(settings.notificationRecipients)
+                    ? settings.notificationRecipients.join(',')
+                    : settings.notificationRecipients || ''
+                }
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          notificationRecipients: e.target.value
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        }
+                      : prev,
+                  )
+                }
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-sv-muted">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.hideCallerNames)}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, hideCallerNames: e.target.checked } : prev,
+                  )
+                }
+              />
+              Hide caller names in dashboard aggregates
+            </label>
+            <label className="block text-xs text-sv-muted">
+              Monitor-only TTL (minutes)
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                className="mt-1 w-full rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs"
+                value={settings.monitorOnlyTtlMinutes ?? 60}
+                disabled={!canWrite || saving}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, monitorOnlyTtlMinutes: Number(e.target.value) } : prev,
+                  )
+                }
+              />
+            </label>
+            {canWrite ? (
+              <Button
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    const updated = await apiJson('/api/v2/settings', {
+                      method: 'PATCH',
+                      body: JSON.stringify({
+                        timezone: settings.timezone,
+                        asrLanguages: settings.asrLanguages || settings.languages,
+                        languages: settings.languages || settings.asrLanguages,
+                        llmFailPolicy: settings.llmFailPolicy,
+                        retentionDays: settings.retentionDays,
+                        allowedOrigins: settings.allowedOrigins,
+                        notificationRecipients: settings.notificationRecipients,
+                        hideCallerNames: settings.hideCallerNames,
+                        monitorOnlyTtlMinutes: settings.monitorOnlyTtlMinutes,
+                      }),
+                    });
+                    setSettings(updated);
+                    push('Settings saved');
+                  } catch (err) {
+                    push(err.message || 'Save failed');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                Save profile
+              </Button>
+            ) : null}
+            <p id="api-keys" className="text-xs text-sv-muted">
+              API keys entry point (F17):{' '}
+              <span className="font-mono text-sv-fg">coming in F17</span>
+            </p>
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-sv-muted">AI &amp; Privacy</h2>
 

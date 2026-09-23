@@ -29,17 +29,20 @@ export default defineConfig({
     // Fail loudly if 5173 is taken — never silently drift to 5174 (CORS trap).
     strictPort: true,
     host: '127.0.0.1',
-    proxy: {
+      proxy: {
       '/api': {
         // Prefer 127.0.0.1 — on Windows `localhost` can resolve to ::1 and miss
         // services bound only on IPv4.
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,
+        timeout: 60_000,
+        proxyTimeout: 60_000,
       },
       '/ws-sentinel': {
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,
         ws: true,
+        timeout: 60_000,
       },
       // Narrow prefix — MUST NOT be '/ws' or it can steal /ws-sentinel traffic.
       '/ws/ingest': {
@@ -52,6 +55,8 @@ export default defineConfig({
       '/engine': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        timeout: 30_000,
+        proxyTimeout: 30_000,
         rewrite: (p) => p.replace(/^\/engine/, ''),
       },
     },

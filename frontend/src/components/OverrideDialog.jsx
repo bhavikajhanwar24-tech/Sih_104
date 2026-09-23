@@ -15,8 +15,8 @@ const LEVEL_OPTIONS = Object.values(INTERVENTION_LEVELS);
  * @param {string} [props.currentLevel]
  * @param {(result: object) => void} [props.onSuccess]
  */
-export function OverrideDialog({ open, onClose, sessionId, currentLevel, onSuccess }) {
-  const [analystId, setAnalystId] = useState('analyst-demo');
+export function OverrideDialog({ open, onClose, sessionId, currentLevel, onSuccess, actorId }) {
+  const [analystId, setAnalystId] = useState(actorId || 'operator');
   const [targetLevel, setTargetLevel] = useState(
     currentLevel ?? INTERVENTION_LEVELS.LEVEL_2_SOFT_NUDGE,
   );
@@ -29,7 +29,8 @@ export function OverrideDialog({ open, onClose, sessionId, currentLevel, onSucce
     setTargetLevel(currentLevel ?? INTERVENTION_LEVELS.LEVEL_2_SOFT_NUDGE);
     setReason('');
     setError(null);
-  }, [open, currentLevel]);
+    if (actorId) setAnalystId(actorId);
+  }, [open, currentLevel, actorId]);
 
   const reasonOk = reason.trim().length >= 10;
   const canSubmit = useMemo(
@@ -177,4 +178,5 @@ OverrideDialog.propTypes = {
   sessionId: PropTypes.string.isRequired,
   currentLevel: PropTypes.string,
   onSuccess: PropTypes.func,
+  actorId: PropTypes.string,
 };

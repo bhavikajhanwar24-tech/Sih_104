@@ -5,11 +5,13 @@ import { Button } from '@/ui/Button.jsx';
 
 const NAV = [
   { to: '/app', end: true, label: 'Dashboard', permission: 'dashboard:read' },
-  { to: '/app/calls', label: 'Live Calls', permission: 'calls:read' },
+  { to: '/app/live', label: 'Live Calls', permission: 'calls:read', alertKey: 'live' },
   { to: '/app/history', label: 'Call History', permission: 'calls:read' },
   { to: '/app/directory', label: 'Directory', permission: 'directory:read' },
   { to: '/app/policies', label: 'Policies', permission: 'policies:read' },
+  { to: '/app/approvals', label: 'Approvals', permission: 'approvals:read' },
   { to: '/app/response', label: 'Response Plans', permission: 'response:read' },
+  { to: '/app/changes', label: 'Change history', permission: 'governance:read' },
   { to: '/app/audit', label: 'Audit', permission: 'audit:read' },
   { to: '/app/settings', label: 'Settings', permission: 'settings:read' },
   { to: '/app/users', label: 'Users', permission: 'users:read' },
@@ -22,11 +24,45 @@ export function AppShell() {
   const { me, hasPermission, logout } = useAuth();
   const navigate = useNavigate();
   const [theme, setTheme] = useState(() => localStorage.getItem('sv-theme') || 'dark');
+  const [liveAlerts, setLiveAlerts] = useState(0);
+  const [emergency, setEmergency] = useState(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('sv-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const onAlerts = (e) => {
+      const n = Number(e?.detail?.count);
+      if (Number.isFinite(n)) setLiveAlerts(Math.max(0, n));
+    };
+    window.addEventListener('sv-live-alerts', onAlerts);
+    return () => window.removeEventListener('sv-live-alerts', onAlerts);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function pollEmergency() {
+      if (!hasPermission('dashboard:read')) return;
+      try {
+        const { apiJson } = await import('@/services/api.js');
+        const st = await apiJson('/api/v2/governance/emergency', {
+          skipErrorToast: true,
+          timeoutMs: 12_000,
+        });
+        if (!cancelled) setEmergency(st);
+      } catch {
+        /* ignore — never toast poll failures */
+      }
+    }
+    void pollEmergency();
+    const id = window.setInterval(() => void pollEmergency(), 45_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [hasPermission]);
 
   const onLogout = useCallback(async () => {
     await logout();
@@ -57,14 +93,19 @@ export function AppShell() {
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `block rounded-md px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
+                    `flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sv-accent ${
                       isActive
                         ? 'bg-sv-accent/15 font-medium text-sv-accent'
                         : 'text-sv-muted hover:bg-sv-elevated hover:text-sv-fg'
                     }`
                   }
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.alertKey === 'live' && liveAlerts > 0 ? (
+                    <span className="rounded-full bg-red-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
+                      {liveAlerts > 99 ? '99+' : liveAlerts}
+                    </span>
+                  ) : null}
                 </NavLink>
               </li>
             ))}
@@ -89,8 +130,21 @@ export function AppShell() {
           </div>
         </div>
       </aside>
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <Outlet />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {emergency?.active ? (
+          <div
+            role="alert"
+            className="shrink-0 border-b border-red-500/50 bg-red-950/60 px-4 py-2 text-center text-xs font-medium text-red-100"
+          >
+            Emergency: {emergency.mode}
+            {emergency.mode === 'SUSPEND_MONITORING'
+              ? ' — monitoring suspended for this tenant'
+              : ' — automatic actions suppressed (monitor-only)'}
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

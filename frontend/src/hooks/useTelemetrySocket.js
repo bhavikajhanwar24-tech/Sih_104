@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   assertTelemetryFrame,
   getTelemetryValidationError,
@@ -12,33 +12,45 @@ import {
   subscribe,
 } from '@/services/stompClient.js';
 
-const HISTORY_LIMIT = 300;
+const HISTORY_LIMIT = 240;
+const STALE_AFTER_MS = 3000;
 
 /**
- * @typedef {Object} TelemetrySocketApi
- * @property {TelemetryFrame | null} latest
- * @property {TelemetryFrame[]} history
- * @property {string} connectionState
- * @property {string | null} error
- * @property {string | null} lastValidationError
- */
-
-/**
- * Sole boundary where Decision Plane telemetry enters React.
- * Topic: `/topic/tenant/{tenantId}/telemetry/{sessionId}` (F3).
+ * V2 telemetry + live-calls STOMP boundary (F13).
  *
- * @param {string | null | undefined} sessionId
- * @param {string | null | undefined} [tenantId]
- * @returns {TelemetrySocketApi}
+ * - `/topic/tenant/{tid}/calls` — list deltas
+ * - `/topic/tenant/{tid}/telemetry/{sessionId}` — selected call frames
+ *
+ * Accepts either an options object or a legacy sessionId string.
+ *
+ * @param {Object | string | null | undefined} [sessionIdOrOpts]
+ * @param {string | null | undefined} [tenantIdMaybe]
  */
-export function useTelemetrySocket(sessionId, tenantId) {
-  const [latest, setLatest] = useState(/** @type {TelemetryFrame | null} */ (null));
-  const [history, setHistory] = useState(/** @type {TelemetryFrame[]} */ ([]));
+export function useTelemetrySocket(sessionIdOrOpts = null, tenantIdMaybe = undefined) {
+  const opts =
+    sessionIdOrOpts != null && typeof sessionIdOrOpts === 'object' && !Array.isArray(sessionIdOrOpts)
+      ? sessionIdOrOpts
+      : { sessionId: sessionIdOrOpts, tenantId: tenantIdMaybe, subscribeCalls: false };
+  return useTelemetrySocketImpl(opts);
+}
+
+/**
+ * @param {Object} opts
+ * @param {string | null | undefined} [opts.sessionId]
+ * @param {string | null | undefined} [opts.tenantId]
+ * @param {boolean} [opts.subscribeCalls=false]
+ */
+function useTelemetrySocketImpl({ sessionId = null, tenantId = null, subscribeCalls = false } = {}) {
+  const [latest, setLatest] = useState(/** @type {import('@/contracts').TelemetryFrame | null} */ (null));
+  const [history, setHistory] = useState(/** @type {import('@/contracts').TelemetryFrame[]} */ ([]));
+  const [callDeltas, setCallDeltas] = useState(/** @type {Record<string, object>} */ ({}));
   const [connectionState, setConnectionState] = useState(getConnectionState);
   const [error, setError] = useState(/** @type {string | null} */ (null));
   const [lastValidationError, setLastValidationError] = useState(
     /** @type {string | null} */ (null),
   );
+  const [lastMessageAt, setLastMessageAt] = useState(/** @type {number | null} */ (null));
+  const [stale, setStale] = useState(false);
 
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
@@ -48,6 +60,7 @@ export function useTelemetrySocket(sessionId, tenantId) {
       setConnectionState(state);
       if (state === CONNECTION_STATES.CONNECTED) {
         setError(null);
+        setStale(false);
       } else if (state === CONNECTION_STATES.RECONNECTING || state === CONNECTION_STATES.DISCONNECTED) {
         const transportErr = getLastError();
         if (transportErr) setError(transportErr);
@@ -57,6 +70,21 @@ export function useTelemetrySocket(sessionId, tenantId) {
     return unlisten;
   }, []);
 
+  useEffect(() => {
+    if (connectionState === CONNECTION_STATES.CONNECTED) {
+      setStale(false);
+      return undefined;
+    }
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      if (Date.now() - started >= STALE_AFTER_MS) {
+        setStale(true);
+      }
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [connectionState]);
+
+  // Selected-call telemetry
   useEffect(() => {
     if (!sessionId || !tenantId) {
       setLatest(null);
@@ -83,11 +111,14 @@ export function useTelemetrySocket(sessionId, tenantId) {
 
       const validationError = getTelemetryValidationError(parsed);
       setLastValidationError(validationError);
-
-      const frame = assertTelemetryFrame(/** @type {TelemetryFrame} */ (parsed));
+      const frame = assertTelemetryFrame(/** @type {import('@/contracts').TelemetryFrame} */ (parsed));
       setLatest(frame);
+      setLastMessageAt(Date.now());
       setHistory((prev) => {
-        const next = prev.length >= HISTORY_LIMIT ? prev.slice(prev.length - HISTORY_LIMIT + 1) : prev.slice();
+        const next =
+          prev.length >= HISTORY_LIMIT
+            ? prev.slice(prev.length - HISTORY_LIMIT + 1)
+            : prev.slice();
         next.push(frame);
         return next;
       });
@@ -96,12 +127,45 @@ export function useTelemetrySocket(sessionId, tenantId) {
     return unsubscribe;
   }, [sessionId, tenantId]);
 
+  // Live calls list deltas
+  useEffect(() => {
+    if (!subscribeCalls || !tenantId) {
+      return undefined;
+    }
+    const destination = `/topic/tenant/${tenantId}/calls`;
+    const unsubscribe = subscribe(destination, (body) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        return;
+      }
+      const key = String(parsed.svSessionUuid || parsed.id || '');
+      if (!key) return;
+      setLastMessageAt(Date.now());
+      setCallDeltas((prev) => ({ ...prev, [key]: { ...prev[key], ...parsed, _at: Date.now() } }));
+    });
+    return unsubscribe;
+  }, [subscribeCalls, tenantId]);
+
+  const clearCallDelta = useCallback((key) => {
+    setCallDeltas((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
   return {
     latest,
     history,
+    callDeltas,
+    clearCallDelta,
     connectionState,
     error,
     lastValidationError,
+    lastMessageAt,
+    stale: stale || (connectionState !== CONNECTION_STATES.CONNECTED && Date.now() - (lastMessageAt || 0) > STALE_AFTER_MS),
   };
 }
 
