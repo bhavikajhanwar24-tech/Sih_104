@@ -32,6 +32,7 @@ public enum Role {
                     "settings:read", "settings:write",
                     "compliance:read", "compliance:write",
                     "integrations:read", "integrations:write",
+                    "analytics:read",
                     "users:read", "users:write",
                     "mfa:manage",
                     "lab:robustness"
@@ -44,20 +45,23 @@ public enum Role {
                     "approvals:read", "approvals:decide",
                     "governance:read",
                     "settings:read",
-                    "compliance:read"
+                    "compliance:read",
+                    "analytics:read"
             );
             case ANALYST -> Set.of(
                     "dashboard:read",
                     "calls:read", "calls:act",
                     "policies:read",
-                    "audit:read"
+                    "audit:read",
+                    "analytics:read"
             );
             case SUPERVISOR -> Set.of(
                     "dashboard:read",
                     "calls:read", "calls:act", "calls:bridge",
                     "policies:read",
                     "audit:read",
-                    "directory:read"
+                    "directory:read",
+                    "analytics:read"
             );
             case AUDITOR -> Set.of(
                     "dashboard:read",
@@ -65,6 +69,7 @@ public enum Role {
                     "governance:read",
                     "settings:read",
                     "compliance:read",
+                    "analytics:read",
                     "users:read",
                     "policies:read",
                     "response:read",

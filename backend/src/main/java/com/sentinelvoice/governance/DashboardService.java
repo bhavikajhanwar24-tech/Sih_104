@@ -2,6 +2,7 @@ package com.sentinelvoice.governance;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.sentinelvoice.analytics.AnalyticsService;
 import com.sentinelvoice.llm.LlmGatewayClient;
 import com.sentinelvoice.security.TenantContext;
 import com.sentinelvoice.tenant.TenantSettingsRepository;
@@ -27,6 +28,7 @@ public class DashboardService {
     private final LlmGatewayClient llmGatewayClient;
     private final TenantSettingsRepository settingsRepository;
     private final EmergencyModeService emergencyModeService;
+    private final AnalyticsService analyticsService;
     private final Cache<UUID, Map<String, Object>> cache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofSeconds(15))
             .maximumSize(500)
@@ -36,12 +38,14 @@ public class DashboardService {
             JdbcTemplate jdbc,
             LlmGatewayClient llmGatewayClient,
             TenantSettingsRepository settingsRepository,
-            EmergencyModeService emergencyModeService
+            EmergencyModeService emergencyModeService,
+            AnalyticsService analyticsService
     ) {
         this.jdbc = jdbc;
         this.llmGatewayClient = llmGatewayClient;
         this.settingsRepository = settingsRepository;
         this.emergencyModeService = emergencyModeService;
+        this.analyticsService = analyticsService;
     }
 
     public Map<String, Object> snapshot() {
@@ -87,10 +91,19 @@ public class DashboardService {
                 : (Boolean.TRUE.equals(llm.get("degraded")) ? 50.0 : 0.0);
         body.put("llmAvailabilityPct", llmAvail);
         body.put("pipelineLatencyP95Ms", llm.get("p95LatencyMs"));
-        body.put("falsePositiveRate", Map.of(
-                "available", false,
-                "note", "F16 labels not yet available"
-        ));
+        try {
+            body.put("falsePositiveRate", analyticsService.falsePositiveSnapshot(tenantId));
+        } catch (Exception ex) {
+            body.put("falsePositiveRate", Map.of(
+                    "available", false,
+                    "note", "Analytics unavailable: " + ex.getMessage()
+            ));
+        }
+        try {
+            body.put("rulesNeedingReview", analyticsService.rulesNeedingReview(tenantId));
+        } catch (Exception ex) {
+            body.put("rulesNeedingReview", List.of());
+        }
         return body;
     }
 

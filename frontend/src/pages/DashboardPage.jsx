@@ -179,12 +179,47 @@ export function DashboardPage() {
               />
               <Kpi
                 label="False-positive rate"
-                value="—"
-                hint={data.falsePositiveRate?.note || 'F16'}
+                value={
+                  data.falsePositiveRate?.available
+                    ? data.falsePositiveRate.rate != null
+                      ? `${(Number(data.falsePositiveRate.rate) * 100).toFixed(1)}%`
+                      : '—'
+                    : '—'
+                }
+                hint={
+                  data.falsePositiveRate?.available
+                    ? `30d · ${data.falsePositiveRate.labelledSessions ?? 0} labels`
+                    : data.falsePositiveRate?.note || 'Label alerts on Call Detail'
+                }
               />
               <Kpi label="Calls 30d" value={kpis.d30?.callsMonitored} />
             </div>
           </section>
+
+          {(data.rulesNeedingReview || []).length > 0 ? (
+            <section className="rounded border border-amber-500/40 bg-amber-500/5 p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-sv-fg">Rules needing review</h2>
+                <Link to="/app/analytics" className="text-xs text-sv-accent hover:underline">
+                  Open Analytics →
+                </Link>
+              </div>
+              <ul className="space-y-1 text-xs">
+                {(data.rulesNeedingReview || []).slice(0, 6).map((r) => (
+                  <li key={r.ruleId} className="flex flex-wrap items-center gap-2 font-mono">
+                    <Badge tone="warn">review</Badge>
+                    <span className="truncate">{r.ruleId}</span>
+                    <span className="text-sv-muted">
+                      fire {(Number(r.fireRate) * 100).toFixed(0)}%
+                      {r.fpContribution != null
+                        ? ` · FP ${(Number(r.fpContribution) * 100).toFixed(0)}%`
+                        : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className="grid gap-4 lg:grid-cols-2">
             <div className="rounded border border-sv-border p-3">

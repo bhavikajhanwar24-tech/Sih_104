@@ -4,8 +4,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -49,6 +53,10 @@ public class EmployeeEntity {
 
     @Column(name = "high_authority", nullable = false)
     private boolean highAuthority;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "fairness_tags", nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> fairnessTags = new LinkedHashMap<>();
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -158,6 +166,14 @@ public class EmployeeEntity {
 
     public void setHighAuthority(boolean highAuthority) {
         this.highAuthority = highAuthority;
+    }
+
+    public Map<String, Object> getFairnessTags() {
+        return fairnessTags == null ? Map.of() : fairnessTags;
+    }
+
+    public void setFairnessTags(Map<String, Object> fairnessTags) {
+        this.fairnessTags = fairnessTags == null ? new LinkedHashMap<>() : new LinkedHashMap<>(fairnessTags);
     }
 
     public Instant getCreatedAt() {

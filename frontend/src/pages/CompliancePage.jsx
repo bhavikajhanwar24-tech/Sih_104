@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiFetch, apiJson, ensureCsrf } from '@/services/api.js';
+import { FairnessReport } from '@/components/fairness/FairnessReport.jsx';
 import { Badge, Button, EmptyState, Input, Modal, Select, Table, Tabs } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
@@ -32,7 +33,7 @@ export function CompliancePage() {
       <header>
         <h1 className="font-display text-2xl font-semibold text-sv-fg">Compliance</h1>
         <p className="mt-1 text-sm text-sv-muted">
-          Consent, retention, notice assets, voice passports, and data-subject operations.
+          Consent, retention, notice assets, voice passports, data-subject operations, and fairness.
         </p>
       </header>
       <Tabs
@@ -976,16 +977,9 @@ function encodePcm16Wav(samples, sampleRate) {
 }
 
 function FairnessTab() {
-  const [report, setReport] = useState(null);
-  useEffect(() => {
-    apiJson('/api/v2/compliance/fairness').then(setReport).catch(() => setReport(null));
-  }, []);
-  if (!report) return <p className="text-sm text-sv-muted">Loading…</p>;
   return (
-    <div className="max-w-xl space-y-2">
-      <Badge tone="neutral">{report.status}</Badge>
-      <p className="text-sm text-sv-muted">{report.message}</p>
-      <p className="text-xs text-sv-muted">F16 evaluation harness will populate group FPR series here.</p>
+    <div className="max-w-4xl">
+      <FairnessReport endpoint="/api/v2/analytics/fairness" compact />
     </div>
   );
 }

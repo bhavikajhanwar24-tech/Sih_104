@@ -47,6 +47,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-22 | F12 Mark FP / Confirmed live (`POST …/review`); Force L3 records operator explain ticks | F12 — closed review stubs + softphone empty timeline |
 | 2026-09-23 | F15 consent/passport/retention/DSR; audit_blocks never purged; `/app/compliance`; v1 compliance re-pointed | F15 — tenant DPDP-oriented controls |
 | 2026-09-23 | F17 integrations migration renumbered V025→V028 (F15 already occupied V025–V027 on this branch) | Avoid Flyway version clash on merge |
+| 2026-09-23 | F16 session_labels + analytics MVs; fairness from directory tags only (never voice); L3 suggestion → fusion DRAFT | F16 — labelled metrics / fairness / threshold UI |
 
 ## New dependencies
 
@@ -88,4 +89,6 @@ Keep entries short (one line reason where possible).
 | 2026-09-21 | F10 | Multi-tenant Asterisk PJSIP REALTIME; AGI dialplan; Directory/Settings telephony UI |
 | 2026-09-22 | F11 | Streaming ASR + Stage A/B intent; FeatureFrame linguistic (no transcript on wire); gate-check; languages settings |
 | 2026-09-22 | F12 | session_ticks/reasons/extractions; ForensicDossier from DB; `/api/v2/sessions` + Call History/Detail; verify-dossier |
+| 2026-09-23 | F15 | Consent, notice, retention, DSR, encrypted passports; `/app/compliance` |
+| 2026-09-23 | F16 | session_labels, analytics overview/rules/fairness, L3 suggestion→draft, `/app/analytics` |
 

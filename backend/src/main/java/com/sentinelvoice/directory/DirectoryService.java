@@ -650,6 +650,16 @@ public class DirectoryService {
         if (body.containsKey("highAuthority")) {
             e.setHighAuthority(bool(body, "highAuthority", false));
         }
+        if (body.containsKey("fairnessTags") && body.get("fairnessTags") instanceof Map<?, ?> rawTags) {
+            Map<String, Object> tags = new LinkedHashMap<>();
+            for (String key : List.of("language", "region", "gender", "ageBand")) {
+                Object v = rawTags.get(key);
+                if (v != null && !String.valueOf(v).isBlank()) {
+                    tags.put(key, String.valueOf(v).trim());
+                }
+            }
+            e.setFairnessTags(tags);
+        }
         if (body.containsKey("fullName") && !creating) {
             String n = str(body, "fullName");
             if (n != null) {
@@ -735,6 +745,7 @@ public class DirectoryService {
         m.put("status", e.getStatus());
         m.put("statusUntil", e.getStatusUntil());
         m.put("highAuthority", e.isHighAuthority());
+        m.put("fairnessTags", e.getFairnessTags());
         phoneRepository.findByTenantIdAndEmployeeIdOrderByPrimaryDescCreatedAtAsc(tenantId, e.getId())
                 .stream().findFirst()
                 .ifPresent(p -> m.put("primaryPhone", p.getE164()));

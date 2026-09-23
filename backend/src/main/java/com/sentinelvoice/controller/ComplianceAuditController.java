@@ -1,5 +1,6 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.analytics.AnalyticsService;
 import com.sentinelvoice.audit.AuditLedgerService;
 import com.sentinelvoice.audit.ChainVerificationResult;
 import com.sentinelvoice.audit.TenantChainVerification;
@@ -27,13 +28,16 @@ public class ComplianceAuditController {
 
     private final AuditLedgerService auditLedgerService;
     private final ComplianceService complianceService;
+    private final AnalyticsService analyticsService;
 
     public ComplianceAuditController(
             AuditLedgerService auditLedgerService,
-            ComplianceService complianceService
+            ComplianceService complianceService,
+            AnalyticsService analyticsService
     ) {
         this.auditLedgerService = auditLedgerService;
         this.complianceService = complianceService;
+        this.analyticsService = analyticsService;
     }
 
     @GetMapping("/verify/{sessionId}")
@@ -83,13 +87,8 @@ public class ComplianceAuditController {
 
     @GetMapping("/fairness")
     public ResponseEntity<Map<String, Object>> fairness() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("schemaVersion", "2");
-        out.put("status", "EVALUATION_NOT_RUN");
-        out.put("message", "Fairness metrics land with F16; see GET /api/v2/compliance/fairness");
-        out.put("synthetic", false);
-        out.put("results", null);
-        return ResponseEntity.ok(out);
+        UUIDTenant tenant = resolveTenant();
+        return ResponseEntity.ok(TenantContext.runAs(tenant.id(), analyticsService::fairnessReport));
     }
 
     @GetMapping("/consent")

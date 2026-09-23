@@ -18,9 +18,13 @@ export function CallDetailPage() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [lang, setLang] = useState('en');
+  const [label, setLabel] = useState('');
+  const [labelNote, setLabelNote] = useState('');
+  const [labelBusy, setLabelBusy] = useState(false);
 
   const canRead = hasPermission('calls:read');
   const canAct = hasPermission('calls:act');
+  const canRelabel = canAct; // analysts + supervisors + admins with calls:act
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -31,6 +35,16 @@ export function CallDetailPage() {
         { skipErrorToast: true },
       );
       setData(body);
+      try {
+        const lbl = await apiJson(`/api/v2/sessions/${encodeURIComponent(id)}/label`, {
+          skipErrorToast: true,
+        });
+        setLabel(lbl?.label || '');
+        setLabelNote(lbl?.note || '');
+      } catch {
+        setLabel(body?.metadata?.reviewStatus || '');
+        setLabelNote('');
+      }
     } catch (err) {
       setData(null);
       push(err instanceof Error ? err.message : 'Failed to load session');
@@ -97,6 +111,23 @@ export function CallDetailPage() {
       push(err instanceof Error ? err.message : 'Review update failed');
     } finally {
       setReviewBusy(false);
+    }
+  }
+
+  async function saveLabel() {
+    if (!id || !canRelabel || !label) return;
+    setLabelBusy(true);
+    try {
+      await apiJson(`/api/v2/sessions/${encodeURIComponent(id)}/label`, {
+        method: 'POST',
+        body: JSON.stringify({ label, note: labelNote || null }),
+      });
+      push(`Labelled ${label}`);
+      await load();
+    } catch (err) {
+      push(err instanceof Error ? err.message : 'Label update failed');
+    } finally {
+      setLabelBusy(false);
     }
   }
 
@@ -210,6 +241,41 @@ export function CallDetailPage() {
           ) : null}
         </div>
       </div>
+
+      <section className="rounded-lg border border-sv-border bg-sv-panel p-4">
+        <h2 className="text-sm font-semibold text-sv-fg">Alert label (F16)</h2>
+        <p className="mt-0.5 text-xs text-sv-muted">
+          Analyst disposition for metrics. Supervisors may re-label; changes are audited.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <Select
+            label="Label"
+            className="w-52"
+            value={label || ''}
+            disabled={!canRelabel || labelBusy}
+            onChange={(e) => setLabel(e.target.value)}
+          >
+            <option value="">Select…</option>
+            <option value="CONFIRMED_FRAUD">Confirmed fraud</option>
+            <option value="FALSE_POSITIVE">False positive</option>
+            <option value="BENIGN_HIGH_RISK">Benign high risk</option>
+            <option value="UNKNOWN">Unknown</option>
+          </Select>
+          <label className="block text-xs text-sv-muted">
+            Note (optional)
+            <input
+              className="mt-1 block w-72 rounded border border-sv-border bg-sv-bg px-2 py-1.5 text-sm text-sv-fg"
+              value={labelNote}
+              disabled={!canRelabel || labelBusy}
+              onChange={(e) => setLabelNote(e.target.value)}
+              maxLength={2000}
+            />
+          </label>
+          <Button disabled={!canRelabel || labelBusy || !label} onClick={() => void saveLabel()}>
+            {labelBusy ? 'Saving…' : 'Save label'}
+          </Button>
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-sv-border bg-sv-panel p-4">

@@ -82,6 +82,18 @@ public class TenantSettingsEntity {
     @Column(name = "last_retention_purge_stats", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> lastRetentionPurgeStats = new LinkedHashMap<>();
 
+    @Column(name = "analytics_rule_fire_rate_max", nullable = false)
+    private double analyticsRuleFireRateMax = 0.35;
+
+    @Column(name = "analytics_rule_fp_contrib_max", nullable = false)
+    private double analyticsRuleFpContribMax = 0.40;
+
+    @Column(name = "analytics_fairness_min_group", nullable = false)
+    private int analyticsFairnessMinGroup = 30;
+
+    @Column(name = "analytics_label_warn_below", nullable = false)
+    private int analyticsLabelWarnBelow = 30;
+
     public UUID getTenantId() {
         return tenantId;
     }
@@ -272,5 +284,37 @@ public class TenantSettingsEntity {
         this.lastRetentionPurgeStats = lastRetentionPurgeStats == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(lastRetentionPurgeStats);
+    }
+
+    public double getAnalyticsRuleFireRateMax() {
+        return analyticsRuleFireRateMax <= 0 ? 0.35 : analyticsRuleFireRateMax;
+    }
+
+    public void setAnalyticsRuleFireRateMax(double analyticsRuleFireRateMax) {
+        this.analyticsRuleFireRateMax = analyticsRuleFireRateMax;
+    }
+
+    public double getAnalyticsRuleFpContribMax() {
+        return analyticsRuleFpContribMax <= 0 ? 0.40 : analyticsRuleFpContribMax;
+    }
+
+    public void setAnalyticsRuleFpContribMax(double analyticsRuleFpContribMax) {
+        this.analyticsRuleFpContribMax = analyticsRuleFpContribMax;
+    }
+
+    public int getAnalyticsFairnessMinGroup() {
+        return analyticsFairnessMinGroup <= 0 ? 30 : analyticsFairnessMinGroup;
+    }
+
+    public void setAnalyticsFairnessMinGroup(int analyticsFairnessMinGroup) {
+        this.analyticsFairnessMinGroup = analyticsFairnessMinGroup;
+    }
+
+    public int getAnalyticsLabelWarnBelow() {
+        return analyticsLabelWarnBelow <= 0 ? 30 : analyticsLabelWarnBelow;
+    }
+
+    public void setAnalyticsLabelWarnBelow(int analyticsLabelWarnBelow) {
+        this.analyticsLabelWarnBelow = analyticsLabelWarnBelow;
     }
 }

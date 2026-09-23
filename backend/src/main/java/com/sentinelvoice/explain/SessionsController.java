@@ -1,5 +1,6 @@
 package com.sentinelvoice.explain;
 
+import com.sentinelvoice.analytics.AnalyticsService;
 import com.sentinelvoice.audit.AuditEventType;
 import com.sentinelvoice.audit.AuditWriteDispatcher;
 import com.sentinelvoice.forensics.ForensicDossierService;
@@ -38,6 +39,7 @@ public class SessionsController {
     private final SessionExplainService sessionExplainService;
     private final ForensicDossierService forensicDossierService;
     private final AuditWriteDispatcher auditWriteDispatcher;
+    private final AnalyticsService analyticsService;
 
     private static final Set<String> REVIEW_STATUSES = Set.of(
             "UNREVIEWED", "FALSE_POSITIVE", "CONFIRMED_FRAUD"
@@ -47,12 +49,14 @@ public class SessionsController {
             CallSessionRepository callSessionRepository,
             SessionExplainService sessionExplainService,
             ForensicDossierService forensicDossierService,
-            AuditWriteDispatcher auditWriteDispatcher
+            AuditWriteDispatcher auditWriteDispatcher,
+            AnalyticsService analyticsService
     ) {
         this.callSessionRepository = callSessionRepository;
         this.sessionExplainService = sessionExplainService;
         this.forensicDossierService = forensicDossierService;
         this.auditWriteDispatcher = auditWriteDispatcher;
+        this.analyticsService = analyticsService;
     }
 
     @GetMapping
@@ -157,6 +161,9 @@ public class SessionsController {
         int updated = callSessionRepository.updateReviewStatus(tenantId, cs.id(), status, userId);
         if (updated == 0) {
             return ResponseEntity.notFound().build();
+        }
+        if ("FALSE_POSITIVE".equals(status) || "CONFIRMED_FRAUD".equals(status)) {
+            analyticsService.syncFromReview(tenantId, userId, cs.id(), status);
         }
         String sessionKey = cs.svSessionUuid() == null ? cs.id().toString() : cs.svSessionUuid().toString();
         auditWriteDispatcher.submit(sessionKey, AuditEventType.SESSION_REVIEWED, Map.of(

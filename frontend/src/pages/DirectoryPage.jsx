@@ -559,6 +559,12 @@ function EmployeeTelephonyTab({ employee, canWrite, push, onChanged }) {
 function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
   const [drawerTab, setDrawerTab] = useState('profile');
   const [statusForm, setStatusForm] = useState({ status: 'ACTIVE', statusUntil: '', statusNote: '' });
+  const [fairnessForm, setFairnessForm] = useState({
+    language: '',
+    region: '',
+    gender: '',
+    ageBand: '',
+  });
   const [phoneForm, setPhoneForm] = useState({ e164: '', label: 'MOBILE', primary: true, sipExtension: '' });
   const [authForm, setAuthForm] = useState({
     actionType: 'WIRE_TRANSFER',
@@ -574,6 +580,13 @@ function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
       status: employee.status || 'ACTIVE',
       statusUntil: employee.statusUntil ? String(employee.statusUntil).slice(0, 16) : '',
       statusNote: employee.statusNote || '',
+    });
+    const tags = employee.fairnessTags || {};
+    setFairnessForm({
+      language: tags.language || '',
+      region: tags.region || '',
+      gender: tags.gender || '',
+      ageBand: tags.ageBand || '',
     });
     setDrawerTab('profile');
     apiJson(`/api/v2/directory/employees/${employee.id}/relationships`)
@@ -635,6 +648,66 @@ function EmployeeDrawer({ employee, onClose, canWrite, push, onChanged }) {
                 </dd>
               </div>
             </dl>
+            <div className="space-y-2 rounded-lg border border-sv-border p-3">
+              <p className="text-sm font-medium">Fairness tags (optional)</p>
+              <p className="text-[11px] text-sv-muted">
+                Tenant-supplied only — never inferred from voice. Used on /app/fairness.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  label="Language"
+                  value={fairnessForm.language}
+                  disabled={!canWrite}
+                  onChange={(e) => setFairnessForm((f) => ({ ...f, language: e.target.value }))}
+                  placeholder="e.g. hi"
+                />
+                <Input
+                  label="Region"
+                  value={fairnessForm.region}
+                  disabled={!canWrite}
+                  onChange={(e) => setFairnessForm((f) => ({ ...f, region: e.target.value }))}
+                  placeholder="e.g. west"
+                />
+                <Input
+                  label="Gender"
+                  value={fairnessForm.gender}
+                  disabled={!canWrite}
+                  onChange={(e) => setFairnessForm((f) => ({ ...f, gender: e.target.value }))}
+                />
+                <Input
+                  label="Age band"
+                  value={fairnessForm.ageBand}
+                  disabled={!canWrite}
+                  onChange={(e) => setFairnessForm((f) => ({ ...f, ageBand: e.target.value }))}
+                  placeholder="e.g. 25-34"
+                />
+              </div>
+              {canWrite ? (
+                <Button
+                  onClick={async () => {
+                    try {
+                      await apiJson(`/api/v2/directory/employees/${employee.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                          fairnessTags: {
+                            language: fairnessForm.language || undefined,
+                            region: fairnessForm.region || undefined,
+                            gender: fairnessForm.gender || undefined,
+                            ageBand: fairnessForm.ageBand || undefined,
+                          },
+                        }),
+                      });
+                      push('Fairness tags saved');
+                      await onChanged();
+                    } catch (err) {
+                      push(err.message || 'Fairness tags update failed');
+                    }
+                  }}
+                >
+                  Save fairness tags
+                </Button>
+              ) : null}
+            </div>
             {canWrite ? (
               <div className="space-y-2 rounded-lg border border-sv-border p-3">
                 <p className="text-sm font-medium">Quick status</p>

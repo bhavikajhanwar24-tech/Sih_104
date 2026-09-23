@@ -1,5 +1,6 @@
 package com.sentinelvoice.controller;
 
+import com.sentinelvoice.analytics.AnalyticsService;
 import com.sentinelvoice.compliance.ComplianceService;
 import com.sentinelvoice.passport.ConsentRequiredException;
 import com.sentinelvoice.security.TenantContext;
@@ -33,9 +34,11 @@ import java.util.UUID;
 public class ComplianceController {
 
     private final ComplianceService complianceService;
+    private final AnalyticsService analyticsService;
 
-    public ComplianceController(ComplianceService complianceService) {
+    public ComplianceController(ComplianceService complianceService, AnalyticsService analyticsService) {
         this.complianceService = complianceService;
+        this.analyticsService = analyticsService;
     }
 
     @GetMapping("/retention")
@@ -215,16 +218,10 @@ public class ComplianceController {
         return complianceService.dpdpMapping();
     }
 
-    /** Fairness — re-points v1 portal; numbers come from ml benchmarks when present. */
+    /** Fairness — tenant directory tags + labelled FP rates (F16). Never inferred from voice. */
     @GetMapping("/fairness")
     @PreAuthorize("hasAnyRole('TENANT_ADMIN','AUDITOR','POLICY_APPROVER','ANALYST')")
     public Map<String, Object> fairness() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("schemaVersion", "2");
-        out.put("status", "EVALUATION_NOT_RUN");
-        out.put("message", "Fairness metrics land with F16 evaluation harness; this endpoint supports the Compliance UI.");
-        out.put("synthetic", false);
-        out.put("results", null);
-        return out;
+        return analyticsService.fairnessReport();
     }
 }

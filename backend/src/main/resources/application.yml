@@ -149,6 +149,8 @@ sentinelvoice:
     # P12 harness writes here; portal shows "evaluation not yet run" if missing.
     fairness-results-path: ../ml-engine/benchmarks/results.json
     raw-audio-enforcing-path: ml-engine/app/ring_buffer.py
+  analytics:
+    refresh-interval-ms: 900000
   public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8081}
   webhooks:
     poll-ms: 5000

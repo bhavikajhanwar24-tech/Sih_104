@@ -61,6 +61,12 @@ const ConsentPublicPage = lazy(() =>
 const IntegrationsPage = lazy(() =>
   import('@/pages/IntegrationsPage.jsx').then((m) => ({ default: m.IntegrationsPage })),
 );
+const AnalyticsPage = lazy(() =>
+  import('@/pages/AnalyticsPage.jsx').then((m) => ({ default: m.AnalyticsPage })),
+);
+const FairnessPage = lazy(() =>
+  import('@/pages/FairnessPage.jsx').then((m) => ({ default: m.FairnessPage })),
+);
 
 function RouteFallback() {
   return (
@@ -98,6 +104,8 @@ export default function App() {
                   <Route path="live" element={<LiveCallsPage />} />
                   <Route path="calls" element={<Navigate to="/app/live" replace />} />
                   <Route path="history" element={<CallHistoryPage />} />
+                  <Route path="analytics" element={<AnalyticsPage />} />
+                  <Route path="fairness" element={<FairnessPage />} />
                   <Route path="sessions" element={<Navigate to="/app/history" replace />} />
                   <Route path="sessions/:id" element={<CallDetailPage />} />
                   <Route path="directory" element={<DirectoryPage />} />
