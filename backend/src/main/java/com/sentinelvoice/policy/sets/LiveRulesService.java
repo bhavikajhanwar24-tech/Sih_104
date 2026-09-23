@@ -826,14 +826,7 @@ public class LiveRulesService {
     private static List<Map<String, Object>> seedSimExamples(Map<String, Object> when) {
         Map<String, Object> fire = new LinkedHashMap<>();
         Map<String, Object> noFire = new LinkedHashMap<>();
-        fire.put("ask.type", "WIRE_TRANSFER");
-        fire.put("ask.amountInr", 2_500_000);
-        fire.put("ask.beneficiaryKnown", false);
-        fire.put("time.isBusinessHours", true);
-        noFire.put("ask.type", "INFORMATION");
-        noFire.put("ask.amountInr", 1000);
-        noFire.put("ask.beneficiaryKnown", true);
-        noFire.put("time.isBusinessHours", true);
+        // Domain-neutral: derive templates only from the rule's own leaf facts.
         for (Map<String, Object> leaf : ConditionEnglish.collectLeaves(when)) {
             String fact = String.valueOf(leaf.get("fact"));
             String op = String.valueOf(leaf.get("op"));
@@ -841,6 +834,15 @@ public class LiveRulesService {
             if ("EQ".equals(op) || "GTE".equals(op) || "GT".equals(op)) {
                 fire.put(fact, value);
             }
+            if ("NE".equals(op) || "LT".equals(op) || "LTE".equals(op)) {
+                noFire.put(fact, value);
+            }
+        }
+        if (fire.isEmpty()) {
+            fire.put("time.isBusinessHours", true);
+        }
+        if (noFire.isEmpty()) {
+            noFire.put("time.isBusinessHours", false);
         }
         Map<String, Object> a = new LinkedHashMap<>();
         a.put("label", "should fire");
@@ -857,15 +859,6 @@ public class LiveRulesService {
         Map<String, Object> when = asMap(rule.get("when"));
         Map<String, Object> fire = new LinkedHashMap<>();
         Map<String, Object> noFire = new LinkedHashMap<>();
-        fire.put("ask.type", "WIRE_TRANSFER");
-        fire.put("ask.amountInr", 2_500_000);
-        fire.put("ask.beneficiaryKnown", false);
-        fire.put("time.isBusinessHours", true);
-        noFire.put("ask.type", "INFORMATION");
-        noFire.put("ask.amountInr", 1000);
-        noFire.put("ask.beneficiaryKnown", true);
-        noFire.put("time.isBusinessHours", true);
-        // Overlay leaf EQ facts into fire template
         for (Map<String, Object> leaf : ConditionEnglish.collectLeaves(when)) {
             String fact = String.valueOf(leaf.get("fact"));
             String op = String.valueOf(leaf.get("op"));
@@ -876,6 +869,12 @@ public class LiveRulesService {
             if ("NE".equals(op)) {
                 noFire.put(fact, value);
             }
+        }
+        if (fire.isEmpty()) {
+            fire.put("time.isBusinessHours", true);
+        }
+        if (noFire.isEmpty()) {
+            noFire.put("time.isBusinessHours", false);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("shouldFire", fire);

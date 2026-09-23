@@ -46,6 +46,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-22 | Live Calls upgraded to multi-call operator workspace (L3 amber/alert/callback/lock, Bridge=`calls:bridge`, stale banner) | F10 — manual acceptance for operator console |
 | 2026-09-22 | F12 Mark FP / Confirmed live (`POST …/review`); Force L3 records operator explain ticks | F12 — closed review stubs + softphone empty timeline |
 | 2026-09-23 | F15 consent/passport/retention/DSR; audit_blocks never purged; `/app/compliance`; v1 compliance re-pointed | F15 — tenant DPDP-oriented controls |
+| 2026-09-23 | F17 integrations migration renumbered V025→V028 (F15 already occupied V025–V027 on this branch) | Avoid Flyway version clash on merge |
 
 ## New dependencies
 

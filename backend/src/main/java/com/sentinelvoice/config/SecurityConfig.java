@@ -3,6 +3,7 @@ package com.sentinelvoice.config;
 import com.sentinelvoice.security.AuthProperties;
 import com.sentinelvoice.security.JwtAuthenticationFilter;
 import com.sentinelvoice.security.ServiceTokenAuthFilter;
+import com.sentinelvoice.integrations.ApiKeyAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,17 +41,20 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ServiceTokenAuthFilter serviceTokenAuthFilter;
+    private final ApiKeyAuthFilter apiKeyAuthFilter;
     private final AuthProperties authProperties;
     private final Environment environment;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter,
             ServiceTokenAuthFilter serviceTokenAuthFilter,
+            ApiKeyAuthFilter apiKeyAuthFilter,
             AuthProperties authProperties,
             Environment environment
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.serviceTokenAuthFilter = serviceTokenAuthFilter;
+        this.apiKeyAuthFilter = apiKeyAuthFilter;
         this.authProperties = authProperties;
         this.environment = environment;
     }
@@ -80,6 +84,7 @@ public class SecurityConfig {
                                 "/api/v2/auth/login",
                                 "/api/v2/auth/refresh",
                                 "/api/v2/auth/logout",
+                                "/api/v2/integrations/**",
                                 "/internal/v2/**",
                                 "/api/v1/session/**",
                                 "/api/v1/actuation/**",
@@ -113,7 +118,8 @@ public class SecurityConfig {
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(serviceTokenAuthFilter, JwtAuthenticationFilter.class);
+                .addFilterAfter(serviceTokenAuthFilter, JwtAuthenticationFilter.class)
+                .addFilterAfter(apiKeyAuthFilter, ServiceTokenAuthFilter.class);
         return http.build();
     }
 

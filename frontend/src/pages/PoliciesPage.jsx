@@ -809,7 +809,7 @@ function RulesTab({
             className="mt-3 min-h-[100px] w-full rounded border border-sv-border bg-sv-elevated p-2 text-sm text-sv-fg"
             value={clauseText}
             onChange={(e) => setClauseText(e.target.value)}
-            placeholder="e.g. Staff must not process wire transfers above INR 10,00,000 to unknown beneficiaries…"
+            placeholder="e.g. Staff must not approve sensitive actions without verification…"
           />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button disabled={busy || clauseText.trim().length < 15} onClick={submitRule}>
@@ -1865,12 +1865,6 @@ function relativeAgo(iso) {
 }
 
 const DEFAULT_SIM_FACTS = {
-  'ask.type': 'WIRE_TRANSFER',
-  'ask.amountInr': 2500000,
-  'ask.beneficiaryKnown': false,
-  'ask.amountInr.assertedByCaller': true,
-  'caller.matchType': 'NONE',
-  'relationship.isFirstContact': true,
   'time.isBusinessHours': true,
 };
 

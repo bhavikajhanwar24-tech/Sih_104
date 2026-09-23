@@ -149,6 +149,18 @@ export function SettingsPage() {
         <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open telephony →</span>
       </Link>
 
+      <Link
+        to="/app/settings/integrations"
+        className="block rounded border border-sv-border bg-sv-elevated/40 p-4 transition-colors hover:border-sv-accent/50 hover:bg-sv-elevated/60"
+      >
+        <p className="text-sm font-semibold text-sv-fg">Integrations</p>
+        <p className="mt-1 text-xs text-sv-muted">
+          API keys, outbound webhooks, OpenAPI quickstart, and pre-action gate checks for
+          external systems (F17).
+        </p>
+        <span className="mt-2 inline-block text-xs font-medium text-sv-accent">Open integrations →</span>
+      </Link>
+
       <section className="space-y-4" id="tenant-profile">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-sv-muted">
           Tenant profile &amp; governance (F14)

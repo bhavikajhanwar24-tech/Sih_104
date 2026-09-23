@@ -26,9 +26,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSoc
     };
 
     private final FeatureFrameSocketHandler featureFrameSocketHandler;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
-    public WebSocketConfig(FeatureFrameSocketHandler featureFrameSocketHandler) {
+    public WebSocketConfig(
+            FeatureFrameSocketHandler featureFrameSocketHandler,
+            JwtHandshakeInterceptor jwtHandshakeInterceptor
+    ) {
         this.featureFrameSocketHandler = featureFrameSocketHandler;
+        this.jwtHandshakeInterceptor = jwtHandshakeInterceptor;
     }
 
     @Override
@@ -40,8 +45,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSoc
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint(STOMP_ENDPOINT)
+                .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns(ALLOWED_ORIGIN_PATTERNS);
         registry.addEndpoint(STOMP_ENDPOINT)
+                .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns(ALLOWED_ORIGIN_PATTERNS)
                 .withSockJS();
     }

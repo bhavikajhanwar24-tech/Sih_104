@@ -84,7 +84,7 @@ public class LiveCallsController {
                 .toList();
         Map<String, Set<String>> actionFlags = sessionActionRepository.liveActionFlags(tenantId, sessionKeys);
 
-        List<Map<String, Object>> items = rows.stream().map(row -> {
+        List<Map<String, Object>> items = new java.util.ArrayList<>(rows.stream().map(row -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("schemaVersion", "2");
             m.put("id", row.id().toString());
@@ -189,15 +189,63 @@ public class LiveCallsController {
                         "Approval locked — confirm callback verification first, then Approve unlocks.");
             }
             return m;
-        }).toList();
+        }).toList());
+
+        // Bridge /api/v1/session/start opens memory without AGI — include those too.
+        java.util.Set<String> seen = items.stream()
+                .map(m -> String.valueOf(m.get("svSessionUuid")))
+                .collect(Collectors.toSet());
+        for (CallSession mem : callSessionManager.listSessionsForTenant(tenantId)) {
+            if (mem.getSessionId() == null || seen.contains(mem.getSessionId())) {
+                continue;
+            }
+            if (activeOnly) {
+                // memory sessions are always "active"
+            }
+            items.add(0, mapMemorySession(mem));
+            seen.add(mem.getSessionId());
+        }
+
+        int activeCount = (int) items.stream().filter(m -> Boolean.TRUE.equals(m.get("active"))).count();
+        if (activeCount == 0) {
+            activeCount = callSessionRepository.countActive(tenantId);
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("schemaVersion", "2");
         body.put("tenantId", tenantId.toString());
-        body.put("activeCount", callSessionRepository.countActive(tenantId));
+        body.put("activeCount", activeCount);
         body.put("serverTime", Instant.now().toString());
         body.put("items", items);
         return body;
+    }
+
+    private Map<String, Object> mapMemorySession(CallSession s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("schemaVersion", "2");
+        m.put("id", s.getSessionId());
+        m.put("tenantId", s.getTenantId() == null ? null : s.getTenantId().toString());
+        m.put("active", true);
+        m.put("startedAt", s.getCreatedAt() == null ? null : s.getCreatedAt().toString());
+        m.put("endedAt", null);
+        m.put("callerName", s.getCallerId() == null ? "Caller" : s.getCallerId());
+        m.put("calleeName", s.getCalleeId() == null ? "Callee" : s.getCalleeId());
+        m.put("svSessionUuid", s.getSessionId());
+        long durationSec = s.getCreatedAt() == null
+                ? 0L
+                : Math.max(0L, java.time.Duration.between(s.getCreatedAt(), Instant.now()).getSeconds());
+        m.put("durationSec", durationSec);
+        m.put("liveLevel", s.getCurrentLevel() == null ? null : s.getCurrentLevel().name());
+        m.put("liveScore", s.getSmoothedRisk());
+        m.put("llmThinking", s.getLastLlmThinking());
+        m.put("asrTranscript", s.getLastAsrTranscript());
+        m.put("matchedKeywords", s.getLastMatchedKeywords());
+        m.put("brokenRuleIds", s.getLastBrokenRuleIds());
+        m.put("brokenRuleTitles", s.getLastBrokenRuleTitles());
+        m.put("llmState", "live");
+        m.put("scoreHistory", List.of());
+        m.put("activeActions", List.of());
+        return m;
     }
 
     /**

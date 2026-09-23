@@ -58,6 +58,9 @@ const CompliancePage = lazy(() =>
 const ConsentPublicPage = lazy(() =>
   import('@/pages/ConsentPublicPage.jsx').then((m) => ({ default: m.ConsentPublicPage })),
 );
+const IntegrationsPage = lazy(() =>
+  import('@/pages/IntegrationsPage.jsx').then((m) => ({ default: m.IntegrationsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -107,6 +110,7 @@ export default function App() {
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="settings/risk-tuning" element={<RiskTuningPage />} />
                   <Route path="settings/telephony" element={<TelephonySettingsPage />} />
+                  <Route path="settings/integrations" element={<IntegrationsPage />} />
                   <Route path="users" element={<UsersPage />} />
                 </Route>
               </Route>

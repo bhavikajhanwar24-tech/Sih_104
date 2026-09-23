@@ -1,0 +1,18 @@
+{
+  "name": "@sentinelvoice/sdk",
+  "version": "0.1.0",
+  "description": "SentinelVoice Integrations SDK (F17)",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "examples",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

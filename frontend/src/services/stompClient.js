@@ -181,7 +181,16 @@ function connect() {
     },
     onStompError: (frame) => {
       const msg = frame?.headers?.message || frame?.body || 'STOMP error';
-      lastError = String(msg);
+      // Strip Spring's noisy channel wrapper so the UI shows the real reason.
+      let clean = String(msg);
+      const nested = clean.match(/Failed to send message to ExecutorSubscribableChannel\[[^\]]+\]\.?\s*(.*)/i);
+      if (nested && nested[1]) {
+        clean = nested[1].trim() || clean;
+      }
+      if (/STOMP CONNECT requires/i.test(clean)) {
+        clean = 'Session expired — refresh and log in again';
+      }
+      lastError = clean;
       setState(connectionState, lastError);
     },
     onWebSocketClose: () => {

@@ -31,6 +31,7 @@ public enum Role {
                     "governance:read", "governance:kill",
                     "settings:read", "settings:write",
                     "compliance:read", "compliance:write",
+                    "integrations:read", "integrations:write",
                     "users:read", "users:write",
                     "mfa:manage",
                     "lab:robustness"

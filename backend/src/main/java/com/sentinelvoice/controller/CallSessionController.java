@@ -29,6 +29,7 @@ import com.sentinelvoice.model.TelemetryFrame;
 import com.sentinelvoice.service.CallSessionManager;
 import com.sentinelvoice.service.NaturalLanguageFraudService;
 import com.sentinelvoice.telemetry.TelemetryBroadcaster;
+import com.sentinelvoice.telephony.LiveCallEnsureService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,6 +60,7 @@ public class CallSessionController {
     private final DirectoryService directoryService;
     private final TelemetryBroadcaster telemetryBroadcaster;
     private final PlanRunner planRunner;
+    private final LiveCallEnsureService liveCallEnsureService;
 
     public CallSessionController(
             CallSessionManager callSessionManager,
@@ -71,7 +73,8 @@ public class CallSessionController {
             IdentityResolutionService identityResolutionService,
             DirectoryService directoryService,
             TelemetryBroadcaster telemetryBroadcaster,
-            PlanRunner planRunner
+            PlanRunner planRunner,
+            LiveCallEnsureService liveCallEnsureService
     ) {
         this.callSessionManager = callSessionManager;
         this.fusionRuntimeService = fusionRuntimeService;
@@ -84,11 +87,13 @@ public class CallSessionController {
         this.directoryService = directoryService;
         this.telemetryBroadcaster = telemetryBroadcaster;
         this.planRunner = planRunner;
+        this.liveCallEnsureService = liveCallEnsureService;
     }
 
     @PostMapping("/start")
     public ResponseEntity<Map<String, Object>> startSession(@Valid @RequestBody SessionStartRequest request) {
         CallSession session = callSessionManager.createSession(request);
+        liveCallEnsureService.ensurePersisted(session);
         return ResponseEntity.ok(descriptor(session, "started"));
     }
 
