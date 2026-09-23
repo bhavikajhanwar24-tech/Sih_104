@@ -17,10 +17,19 @@ import {
 
 function Kpi({ label, value, hint }) {
   return (
-    <div className="rounded border border-sv-border bg-sv-elevated/30 px-3 py-2">
+    <div className="rounded border border-sv-border bg-sv-panel px-3 py-2 shadow-sm shadow-black/5">
       <p className="font-mono text-[10px] uppercase tracking-wide text-sv-muted">{label}</p>
       <p className="mt-1 font-display text-xl text-sv-fg">{value ?? '—'}</p>
       {hint ? <p className="mt-0.5 text-[11px] text-sv-muted">{hint}</p> : null}
+    </div>
+  );
+}
+
+function Panel({ title, children, className = '' }) {
+  return (
+    <div className={`rounded border border-sv-border bg-sv-panel p-3 shadow-sm shadow-black/5 ${className}`}>
+      {title ? <h2 className="mb-2 text-sm font-semibold text-sv-fg">{title}</h2> : null}
+      {children}
     </div>
   );
 }
@@ -111,9 +120,9 @@ export function DashboardPage() {
       {emergency?.active ? (
         <div
           role="alert"
-          className="mb-4 rounded border border-red-500/50 bg-red-950/50 px-4 py-3 text-sm text-red-100"
+          className="mb-4 rounded border border-risk-critical/50 bg-risk-critical/10 px-4 py-3 text-sm text-sv-fg"
         >
-          <strong className="font-semibold">{emergency.mode}</strong>
+          <strong className="font-semibold text-risk-critical">{emergency.mode}</strong>
           {emergency.mode === 'SUSPEND_MONITORING'
             ? ' — analysing is stopped; calls continue unmonitored.'
             : ' — automatic actions suppressed to advisory + notification.'}
@@ -148,7 +157,7 @@ export function DashboardPage() {
       {loading && !data ? (
         <p className="text-sm text-sv-muted">Loading dashboard…</p>
       ) : error ? (
-        <div className="rounded border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-100">
+        <div className="rounded border border-risk-critical/40 bg-risk-critical/10 p-4 text-sm text-risk-critical">
           {error}
           <Button className="ml-3" variant="ghost" onClick={() => void load()}>
             Retry
@@ -187,29 +196,25 @@ export function DashboardPage() {
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded border border-sv-border p-3">
-              <h2 className="mb-2 text-sm font-semibold">Calls by max level (7d)</h2>
+            <Panel title="Calls by max level (7d)">
               <LevelBarChart rows={data.callsByMaxLevel || []} />
-            </div>
-            <div className="rounded border border-sv-border p-3">
-              <h2 className="mb-2 text-sm font-semibold">Volume — calls vs actions</h2>
+            </Panel>
+            <Panel title="Volume — calls vs actions">
               <VolumeGroupedChart kpis={kpis} />
-            </div>
+            </Panel>
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded border border-sv-border p-3">
-              <h2 className="mb-2 text-sm font-semibold">Level mix (7d)</h2>
+            <Panel title="Level mix (7d)">
               <LevelDonut rows={data.callsByMaxLevel || []} />
-            </div>
-            <div className="rounded border border-sv-border p-3">
-              <h2 className="mb-2 text-sm font-semibold">Pending approvals</h2>
+            </Panel>
+            <Panel title="Pending approvals">
               {(data.pendingApprovals || []).length === 0 ? (
                 <p className="text-xs text-sv-muted">None pending.</p>
               ) : (
                 <ul className="space-y-1.5">
                   {(data.pendingApprovals || []).map((p) => (
-                    <li key={`${p.area}-${p.id}`} className="flex items-center justify-between gap-2 text-xs">
+                    <li key={`${p.area}-${p.id}`} className="flex items-center justify-between gap-2 text-xs text-sv-fg">
                       <span>
                         <Badge tone="warn">{p.area}</Badge> {p.title}
                       </span>
@@ -218,14 +223,13 @@ export function DashboardPage() {
                   ))}
                 </ul>
               )}
-            </div>
+            </Panel>
           </section>
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded border border-sv-border p-3">
-              <h2 className="mb-2 text-sm font-semibold">Configuration health</h2>
+            <Panel title="Configuration health">
               {(health.checklist || []).length === 0 ? (
-                <ul className="space-y-1 text-xs">
+                <ul className="space-y-1 text-xs text-sv-fg">
                   <li>Policy active: {health.policyActive ? 'yes' : 'no'}</li>
                   <li>Response plan floors: {health.responsePlanFloorsSatisfied ? 'ok' : 'missing'}</li>
                   <li>Phone coverage: {health.directoryPhoneCoveragePct}%</li>
@@ -237,16 +241,16 @@ export function DashboardPage() {
                       key={item.id}
                       className={`flex flex-wrap items-start justify-between gap-2 rounded border px-2 py-1.5 text-xs ${
                         item.ok
-                          ? 'border-emerald-700/40 bg-emerald-950/20 text-emerald-100'
-                          : 'border-amber-600/40 bg-amber-950/20 text-amber-100'
+                          ? 'border-risk-clear/40 bg-risk-clear/10 text-sv-fg'
+                          : 'border-risk-watch/40 bg-risk-watch/10 text-sv-fg'
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="font-medium">
+                        <p className={`font-medium ${item.ok ? 'text-risk-clear' : 'text-risk-watch'}`}>
                           {item.ok ? '✓' : '○'} {item.label}
                         </p>
                         {!item.ok && item.hint ? (
-                          <p className="mt-0.5 text-[11px] opacity-90">{item.hint}</p>
+                          <p className="mt-0.5 text-[11px] text-sv-muted">{item.hint}</p>
                         ) : null}
                       </div>
                       {!item.ok && item.href ? (
@@ -257,7 +261,7 @@ export function DashboardPage() {
                           Fix →
                         </Link>
                       ) : (
-                        <span className="shrink-0 text-[10px] uppercase tracking-wide opacity-70">ok</span>
+                        <span className="shrink-0 text-[10px] uppercase tracking-wide text-risk-clear">ok</span>
                       )}
                     </li>
                   ))}
@@ -267,52 +271,49 @@ export function DashboardPage() {
                 phonePct={health.directoryPhoneCoveragePct}
                 authPct={health.directoryAuthorityCoveragePct}
               />
-            </div>
+            </Panel>
             <div className="space-y-4">
-              <div className="rounded border border-sv-border p-3">
-                <h2 className="mb-2 text-sm font-semibold">Top targeted departments (7d)</h2>
+              <Panel title="Top targeted departments (7d)">
                 <HorizontalBars
                   rows={(data.topTargets || []).map((t) => ({
                     label: t.department || 'Unknown',
                     count: t.count,
                   }))}
-                  color="#f59e0b"
+                  color="#d97706"
                   empty="No elevated calls."
                 />
-              </div>
-              <div className="rounded border border-sv-border p-3">
-                <h2 className="mb-2 text-sm font-semibold">Top risk reasons (7d)</h2>
+              </Panel>
+              <Panel title="Top risk reasons (7d)">
                 <HorizontalBars
                   rows={(data.topRiskReasons || []).map((t) => ({
                     label: t.code || '—',
                     count: t.count,
                   }))}
-                  color="#ef4444"
+                  color="#dc2626"
                   empty="No reason codes yet."
                 />
-              </div>
+              </Panel>
             </div>
           </section>
 
-          <section className="rounded border border-sv-border p-3">
-            <h2 className="mb-2 text-sm font-semibold">Recent high-risk calls</h2>
+          <Panel title="Recent high-risk calls">
             {(data.highRiskCalls || []).length === 0 ? (
               <p className="text-xs text-sv-muted">No L3+ calls yet.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs" role="table">
+                <table className="w-full text-left text-xs text-sv-fg" role="table">
                   <thead>
                     <tr className="border-b border-sv-border text-sv-muted">
-                      <th className="py-1 pr-2">When</th>
-                      <th className="py-1 pr-2">Callee</th>
-                      <th className="py-1 pr-2">Level</th>
-                      <th className="py-1">Link</th>
+                      <th className="py-1 pr-2 font-medium">When</th>
+                      <th className="py-1 pr-2 font-medium">Callee</th>
+                      <th className="py-1 pr-2 font-medium">Level</th>
+                      <th className="py-1 font-medium">Link</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(data.highRiskCalls || []).map((c) => (
-                      <tr key={c.id} className="border-b border-sv-border/50">
-                        <td className="py-1.5 pr-2 font-mono text-[10px]">{c.startedAt}</td>
+                      <tr key={c.id} className="border-b border-sv-border/60">
+                        <td className="py-1.5 pr-2 font-mono text-[10px] text-sv-muted">{c.startedAt}</td>
                         <td className="py-1.5 pr-2">{c.calleeLabel}</td>
                         <td className="py-1.5 pr-2 font-mono">{c.peakLevel}</td>
                         <td className="py-1.5">
@@ -333,19 +334,19 @@ export function DashboardPage() {
                 </table>
               </div>
             )}
-          </section>
+          </Panel>
 
           {canKill ? (
-            <section className="rounded border border-red-500/40 bg-red-950/20 p-3">
-              <h2 className="mb-2 text-sm font-semibold text-red-100">Kill switch / emergency modes</h2>
+            <section className="rounded border border-risk-critical/40 bg-risk-critical/10 p-3">
+              <h2 className="mb-2 text-sm font-semibold text-risk-critical">Kill switch / emergency modes</h2>
               <p className="mb-2 text-xs text-sv-muted">
                 Requires password re-entry. Monitor-only auto-expires; suspend applies immediately to in-flight sessions.
               </p>
               <div className="flex flex-wrap items-end gap-2">
-                <label className="text-xs">
+                <label className="text-xs text-sv-fg">
                   Mode
                   <select
-                    className="ml-1 rounded border border-sv-border bg-sv-bg px-2 py-1"
+                    className="ml-1 rounded border border-sv-border bg-sv-panel px-2 py-1 text-sv-fg"
                     value={killMode}
                     onChange={(e) => setKillMode(e.target.value)}
                   >
@@ -353,11 +354,11 @@ export function DashboardPage() {
                     <option value="SUSPEND_MONITORING">Suspend monitoring</option>
                   </select>
                 </label>
-                <label className="text-xs">
+                <label className="text-xs text-sv-fg">
                   Password
                   <input
                     type="password"
-                    className="ml-1 rounded border border-sv-border bg-sv-bg px-2 py-1"
+                    className="ml-1 rounded border border-sv-border bg-sv-panel px-2 py-1 text-sv-fg"
                     value={killPw}
                     onChange={(e) => setKillPw(e.target.value)}
                     autoComplete="current-password"

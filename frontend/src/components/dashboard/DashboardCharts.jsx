@@ -164,7 +164,7 @@ export function VolumeGroupedChart({ kpis = {}, height = 160 }) {
                 y={pad.t + innerH - actH}
                 width={barW}
                 height={Math.max(actH, s.actions > 0 ? 2 : 0)}
-                fill="#a78bfa"
+                fill="#7c3aed"
                 rx="2"
               >
                 <title>{`Actions ${s.label}: ${s.actions}`}</title>
@@ -188,7 +188,7 @@ export function VolumeGroupedChart({ kpis = {}, height = 160 }) {
           <span className="inline-block h-2 w-2 rounded-sm bg-[#3b82f6]" /> Calls
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm bg-[#a78bfa]" /> Actions
+          <span className="inline-block h-2 w-2 rounded-sm bg-[#7c3aed]" /> Actions
         </span>
       </div>
     </div>
@@ -218,7 +218,7 @@ export function HorizontalBars({ rows = [], color = '#14b8a6', empty = 'No data'
             </span>
             <span className="shrink-0 text-sv-muted">{d.count}</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-sv-border/40">
+          <div className="h-2 overflow-hidden rounded-full bg-sv-elevated">
             <div
               className="h-full rounded-full transition-[width] duration-500"
               style={{ width: `${(d.count / max) * 100}%`, background: color }}
@@ -247,7 +247,7 @@ export function CoverageMeters({ phonePct = 0, authPct = 0 }) {
             <span className="text-sv-muted">{it.label}</span>
             <span className="font-mono text-sv-fg">{Math.round(it.pct)}%</span>
           </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-sv-border/40">
+          <div className="h-2.5 overflow-hidden rounded-full bg-sv-elevated">
             <div
               className="h-full rounded-full transition-[width] duration-700"
               style={{ width: `${Math.min(100, Math.max(0, it.pct))}%`, background: it.color }}
