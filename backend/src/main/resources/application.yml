@@ -28,12 +28,15 @@ spring:
     # Lab: V025 was edited after apply; skip validate so V026 can land. Re-enable after flyway repair.
     validate-on-migrate: false
   jpa:
+    database: postgresql
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: validate
     open-in-view: false
     show-sql: false
     properties:
       hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           time_zone: UTC
   servlet:
