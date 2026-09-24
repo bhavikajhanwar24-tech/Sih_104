@@ -14,7 +14,12 @@ spring:
     password: ${DB_APP_PASSWORD:changeme_app}
     driver-class-name: org.postgresql.Driver
     hikari:
-      connection-timeout: 300000
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: ${DB_POOL_MIN_IDLE:1}
+      idle-timeout: 30000
+      max-lifetime: 60000
+      connection-timeout: 30000
+      leak-detection-threshold: 20000
   mvc:
     async:
       request-timeout: 300s
