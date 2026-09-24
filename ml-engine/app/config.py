@@ -14,6 +14,12 @@ if not os.environ.get("SENTINELVOICE_ML_LIGHTWEIGHT_MODE") and os.environ.get("M
     os.environ["SENTINELVOICE_ML_LIGHTWEIGHT_MODE"] = os.environ["ML_LIGHTWEIGHT_MODE"]
 if not os.environ.get("SENTINELVOICE_ML_SPEAKER_WARMUP_ON_STARTUP") and os.environ.get("SPEAKER_WARMUP_ON_STARTUP"):
     os.environ["SENTINELVOICE_ML_SPEAKER_WARMUP_ON_STARTUP"] = os.environ["SPEAKER_WARMUP_ON_STARTUP"]
+if not os.environ.get("SENTINELVOICE_ML_JAVA_INGEST_WS") and os.environ.get("JAVA_INGEST_WS"):
+    os.environ["SENTINELVOICE_ML_JAVA_INGEST_WS"] = os.environ["JAVA_INGEST_WS"]
+if not os.environ.get("SENTINELVOICE_ML_JAVA_DECISION_HTTP") and os.environ.get("JAVA_DECISION_HTTP"):
+    os.environ["SENTINELVOICE_ML_JAVA_DECISION_HTTP"] = os.environ["JAVA_DECISION_HTTP"]
+if not os.environ.get("SENTINELVOICE_ML_EMIT_ENABLED") and os.environ.get("EMIT_ENABLED"):
+    os.environ["SENTINELVOICE_ML_EMIT_ENABLED"] = os.environ["EMIT_ENABLED"]
 
 
 class Settings(BaseSettings):
