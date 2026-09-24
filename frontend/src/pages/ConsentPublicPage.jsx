@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { resolveApiUrl } from '../services/api';
 
 /**
  * Public OTP-less consent acceptance (F15). No auth cookie required.
@@ -15,7 +16,7 @@ export function ConsentPublicPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/v2/public/consent/${encodeURIComponent(token)}`);
+        const res = await fetch(resolveApiUrl(`/api/v2/public/consent/${encodeURIComponent(token)}`));
         if (!res.ok) throw new Error('Link invalid or expired');
         const json = await res.json();
         if (!cancelled) setPreview(json);
@@ -32,7 +33,7 @@ export function ConsentPublicPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v2/public/consent/${encodeURIComponent(token)}/accept`, {
+      const res = await fetch(resolveApiUrl(`/api/v2/public/consent/${encodeURIComponent(token)}/accept`), {
         method: 'POST',
       });
       if (!res.ok) {

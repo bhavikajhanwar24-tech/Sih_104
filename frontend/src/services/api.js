@@ -39,6 +39,26 @@ function readXsrfCookie() {
 }
 
 /**
+ * Resolves API URL with optional VITE_API_BASE_URL prefix.
+ * If url already has http/https, returns as is.
+ * @param {string} url
+ * @returns {string}
+ */
+export function resolveApiUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('//')) {
+    return url;
+  }
+  const base = import.meta.env.VITE_API_BASE_URL;
+  if (base && typeof base === 'string' && base.trim()) {
+    const cleanBase = base.replace(/\/+$/, '');
+    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    return `${cleanBase}${cleanPath}`;
+  }
+  return url;
+}
+
+/**
  * Ensure CSRF token is available (GET /api/v2/auth/csrf).
  * @returns {Promise<void>}
  */
@@ -48,7 +68,7 @@ export async function ensureCsrf() {
     csrfToken = fromCookie;
     return;
   }
-  const res = await fetch('/api/v2/auth/csrf', {
+  const res = await fetch(resolveApiUrl('/api/v2/auth/csrf'), {
     method: 'GET',
     credentials: 'include',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -90,7 +110,7 @@ async function refreshSession() {
       const headers = new Headers();
       const token = csrfToken || readXsrfCookie();
       if (token) headers.set(csrfHeaderName, token);
-      const res = await fetch('/api/v2/auth/refresh', {
+      const res = await fetch(resolveApiUrl('/api/v2/auth/refresh'), {
         method: 'POST',
         credentials: 'include',
         headers,
@@ -165,10 +185,11 @@ export async function apiFetch(input, init = {}) {
     headers.set(csrfHeaderName, token);
   }
 
+  const targetUrl = resolveApiUrl(input);
   const { signal, cleanup } = withTimeout(userSignal, timeoutMs);
   let res;
   try {
-    res = await fetch(input, {
+    res = await fetch(targetUrl, {
       ...rest,
       headers,
       credentials: 'include',
@@ -200,7 +221,7 @@ export async function apiFetch(input, init = {}) {
       if (retryToken) retryHeaders.set(csrfHeaderName, retryToken);
       const retry = withTimeout(userSignal, timeoutMs);
       try {
-        res = await fetch(input, {
+        res = await fetch(targetUrl, {
           ...rest,
           headers: retryHeaders,
           credentials: 'include',

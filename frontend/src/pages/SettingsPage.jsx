@@ -98,13 +98,16 @@ export function SettingsPage() {
   const degraded = Boolean(health?.degraded);
   const ollama = health?.ollama || {};
   const openaiCompat = health?.openaiCompat || {};
+  const groq = health?.groq || {};
   const warmup = health?.warmup || {};
   const model =
     activeProvider === 'ollama'
       ? health?.ollamaModel || health?.model || '—'
-      : activeProvider === 'openai_compat'
-        ? health?.model || '—'
-        : 'mock';
+      : activeProvider === 'groq'
+        ? groq.model || health?.model || 'openai/gpt-oss-120b'
+        : activeProvider === 'openai_compat'
+          ? health?.model || '—'
+          : 'mock';
   const latencyParts = [];
   if (health?.p50LatencyMs != null) latencyParts.push(`p50 ${Math.round(health.p50LatencyMs)} ms`);
   if (health?.p95LatencyMs != null) latencyParts.push(`p95 ${Math.round(health.p95LatencyMs)} ms`);
@@ -116,6 +119,9 @@ export function SettingsPage() {
   let ollamaWarning = 'Using MOCK provider (Ollama unreachable)';
   if (degraded && ollama.reachable && !ollama.modelPresent) {
     ollamaWarning = 'Using MOCK provider (Ollama model not pulled)';
+  }
+  if (activeProvider === 'groq') {
+    ollamaWarning = 'Ollama is down — using Groq openai/gpt-oss-120b';
   }
 
   return (
@@ -463,6 +469,7 @@ export function SettingsPage() {
                   {activeProvider}
                   {activeProvider === 'mock' ? <Badge tone="warn">demo mock</Badge> : null}
                   {activeProvider === 'ollama' ? <Badge tone="success">ollama</Badge> : null}
+                  {activeProvider === 'groq' ? <Badge tone="success">groq</Badge> : null}
                   {activeProvider === 'openai_compat' ? <Badge tone="success">openai</Badge> : null}
                 </dd>
                 <dt className="text-sv-muted">Ollama</dt>
@@ -472,6 +479,14 @@ export function SettingsPage() {
                       ? 'reachable · model present'
                       : 'reachable · model missing'
                     : `unreachable${ollama.error ? ` (${ollama.error})` : ''}`}
+                </dd>
+                <dt className="text-sv-muted">Groq fallback</dt>
+                <dd className="text-sv-fg">
+                  {!groq.enabled
+                    ? 'off (set GROQ_API_KEY)'
+                    : groq.reachable === false
+                      ? 'key set · unreachable'
+                      : 'key set · used if Ollama is down'}
                 </dd>
                 <dt className="text-sv-muted">OpenAI-compat</dt>
                 <dd className="text-sv-fg">

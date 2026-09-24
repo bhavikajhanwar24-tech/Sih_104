@@ -52,6 +52,32 @@ def test_runtime_never_uses_external_even_if_flagged():
     asyncio.run(_run())
 
 
+def test_groq_used_when_ollama_down():
+    async def _run():
+        gw = LlmGateway()
+        gw._force_mock = False
+        gw._groq_key = "gsk_test"
+        gw._groq_url = "https://api.groq.com/openai"
+        gw._groq_model = "openai/gpt-oss-120b"
+        from app.llm_gateway import gateway as gw_mod
+
+        async def no_ollama(_url, _model):
+            return False
+
+        gw_mod.probe_ollama = no_ollama  # type: ignore[method-assign]
+        import app.llm_gateway.gateway as g
+        original = g.probe_ollama
+        g.probe_ollama = no_ollama
+        try:
+            provider = await gw.select_provider(task="policy_compile", allow_external_llm=False)
+            assert provider.name == "groq"
+            assert provider.model == "openai/gpt-oss-120b"
+        finally:
+            g.probe_ollama = original
+
+    asyncio.run(_run())
+
+
 def test_backpressure_when_queue_full():
     async def _run():
         gw = LlmGateway()

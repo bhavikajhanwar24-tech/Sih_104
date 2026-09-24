@@ -74,9 +74,7 @@ services:
       start_period: 20s
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    build: ./backend
     container_name: sentinelvoice-backend
     restart: unless-stopped
     depends_on:
@@ -126,6 +124,9 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       LLM_GATEWAY_CONCURRENCY: ${LLM_GATEWAY_CONCURRENCY:-1}
       LLM_FORCE_MOCK: ${LLM_FORCE_MOCK:-false}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai}
       SENTINELVOICE_ML_SERVICE_TOKEN: ${ML_SERVICE_TOKEN}
     volumes:
       - ./ml-engine/models:/app/models:ro

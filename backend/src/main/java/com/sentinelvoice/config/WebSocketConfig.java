@@ -27,13 +27,36 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSoc
 
     private final FeatureFrameSocketHandler featureFrameSocketHandler;
     private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
+    private final com.sentinelvoice.security.AuthProperties authProperties;
 
     public WebSocketConfig(
             FeatureFrameSocketHandler featureFrameSocketHandler,
-            JwtHandshakeInterceptor jwtHandshakeInterceptor
+            JwtHandshakeInterceptor jwtHandshakeInterceptor,
+            com.sentinelvoice.security.AuthProperties authProperties
     ) {
         this.featureFrameSocketHandler = featureFrameSocketHandler;
         this.jwtHandshakeInterceptor = jwtHandshakeInterceptor;
+        this.authProperties = authProperties;
+    }
+
+    private String[] resolveAllowedOrigins() {
+        java.util.LinkedHashSet<String> patterns = new java.util.LinkedHashSet<>(java.util.List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://localhost:*",
+                "https://127.0.0.1:*",
+                "https://*.vercel.app"
+        ));
+        String configured = authProperties.corsOrigins();
+        if (configured != null && !configured.isBlank()) {
+            for (String origin : configured.split(",")) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty()) {
+                    patterns.add(trimmed);
+                }
+            }
+        }
+        return patterns.toArray(new String[0]);
     }
 
     @Override
@@ -44,12 +67,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSoc
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        String[] patterns = resolveAllowedOrigins();
         registry.addEndpoint(STOMP_ENDPOINT)
                 .addInterceptors(jwtHandshakeInterceptor)
-                .setAllowedOriginPatterns(ALLOWED_ORIGIN_PATTERNS);
+                .setAllowedOriginPatterns(patterns);
         registry.addEndpoint(STOMP_ENDPOINT)
                 .addInterceptors(jwtHandshakeInterceptor)
-                .setAllowedOriginPatterns(ALLOWED_ORIGIN_PATTERNS)
+                .setAllowedOriginPatterns(patterns)
                 .withSockJS();
     }
 

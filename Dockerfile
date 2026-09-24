@@ -1,13 +1,16 @@
-# Multi-stage build for SentinelVoice Backend (Java 21 / Maven 3.9)
-FROM maven:3.9-eclipse-temurin-21 AS build
+# =============================================================================
+# SentinelVoice Backend — Root Dockerfile
+# Optimized for Render Web Services & Container Deployments
+# =============================================================================
 
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 
-# Copy Maven descriptor and source
-COPY pom.xml .
-COPY src ./src
+# Copy Maven POM and source files
+COPY backend/pom.xml .
+COPY backend/src ./src
 
-# Build JAR skipping unit tests for fast cloud deployment build
+# Build production JAR without test overhead
 RUN mvn -B clean package -DskipTests
 
 # Runtime Stage
@@ -20,7 +23,7 @@ WORKDIR /app
 
 COPY --from=build /build/target/*.jar /app/app.jar
 
-# Render dynamically binds port using $PORT
+# Render dynamic port support
 ENV PORT=8081
 EXPOSE 8080 8081 10000
 

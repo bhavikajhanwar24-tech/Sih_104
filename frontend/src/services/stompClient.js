@@ -56,13 +56,20 @@ export function setStompAuthHeader(header) {
 }
 
 /**
- * STOMP broker URL (ws / wss). Override with VITE_STOMP_URL
- * (e.g. ws://localhost:8080/ws-sentinel to bypass the Vite proxy).
+ * STOMP broker URL (ws / wss). Override with VITE_STOMP_URL or auto-derived from VITE_API_BASE_URL.
  * @returns {string}
  */
 export function brokerUrl() {
   if (import.meta.env.VITE_STOMP_URL) {
     return String(import.meta.env.VITE_STOMP_URL);
+  }
+  if (import.meta.env.VITE_API_BASE_URL) {
+    const apiBase = String(import.meta.env.VITE_API_BASE_URL).trim();
+    if (apiBase.startsWith('http')) {
+      const wsProto = apiBase.startsWith('https:') ? 'wss:' : 'ws:';
+      const host = apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      return `${wsProto}//${host}/ws-sentinel`;
+    }
   }
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${window.location.host}/ws-sentinel`;

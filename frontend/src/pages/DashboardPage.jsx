@@ -2,7 +2,7 @@
  * F14 — Tenant admin dashboard (server aggregates).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext.jsx';
 import { apiJson } from '@/services/api.js';
 import { Badge, Button, EmptyState } from '@/ui';
@@ -37,6 +37,7 @@ function Panel({ title, children, className = '' }) {
 export function DashboardPage() {
   const { hasPermission, me } = useAuth();
   const { push } = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,6 +47,7 @@ export function DashboardPage() {
 
   const canRead = hasPermission('dashboard:read');
   const canKill = hasPermission('governance:kill') || hasPermission('calls:kill');
+  const canAnalytics = hasPermission('analytics:read');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -410,6 +412,12 @@ export function DashboardPage() {
                 </Button>
               </div>
             </section>
+          ) : null}
+
+          {canAnalytics ? (
+            <div className="flex justify-center border-t border-sv-border pt-4">
+              <Button onClick={() => navigate('/app/analytics')}>Check analytics</Button>
+            </div>
           ) : null}
         </div>
       )}

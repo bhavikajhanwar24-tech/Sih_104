@@ -1,0 +1,46 @@
+# Render Blueprint for SentinelVoice
+# Deploy by connecting repo to Render -> Blueprints -> New Blueprint Instance
+version: "1"
+
+services:
+  # Decision Plane (Spring Boot 3 / Java 21)
+  - type: web
+    name: sentinelvoice-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PORT
+        value: 8081
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAME_SITE
+        value: "None"
+      # JWT secret (min 32 bytes)
+      - key: JWT_SECRET
+        generateValue: true
+      # AES-GCM encryption key for tenant integration credentials
+      - key: APP_ENCRYPTION_KEY
+        generateValue: true
+      # ML Engine communication shared secret
+      - key: ML_SERVICE_TOKEN
+        generateValue: true
+      # Allowed Vercel / frontend origins (comma-separated). Subdomains *.vercel.app are also auto-allowed.
+      - key: SENTINELVOICE_CORS_ORIGINS
+        value: "https://localhost:5173"
+      # Database connection (Use Supabase Session Pooler or Render Postgres)
+      # Supabase Example: jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require&options=-c%20TimeZone%3DUTC
+      - key: DB_URL
+        sync: false
+      - key: DB_APP_USER
+        value: sv_app
+      - key: DB_APP_PASSWORD
+        sync: false
+      - key: DB_OWNER_USER
+        value: sv_owner
+      - key: DB_OWNER_PASSWORD
+        sync: false
+      - key: LAB_MODE
+        value: "false"

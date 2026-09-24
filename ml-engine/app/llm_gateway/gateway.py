@@ -12,6 +12,7 @@ import httpx
 from jsonschema import Draft202012Validator
 
 from app.llm_gateway.providers import (
+    GroqProvider,
     LlmProvider,
     MockProvider,
     OllamaProvider,
@@ -83,6 +84,10 @@ class LlmGateway:
         self._openai_url = os.getenv("LLM_OPENAI_COMPAT_BASE_URL", "")
         self._openai_key = os.getenv("LLM_OPENAI_COMPAT_API_KEY", "")
         self._openai_model = os.getenv("LLM_OPENAI_COMPAT_MODEL", "gpt-4o-mini")
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        self._groq_key = groq_key
+        self._groq_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai").rstrip("/")
+        self._groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         self._force_mock = os.getenv("LLM_FORCE_MOCK", "false").lower() in {"1", "true", "yes"}
         self._warmup: dict[str, Any] = {
             "status": "pending",
@@ -121,21 +126,28 @@ class LlmGateway:
             finally:
                 self._queue.task_done()
 
+    def _groq_provider(self) -> OpenAICompatibleProvider:
+        return GroqProvider(self._groq_url, self._groq_key, self._groq_model)
+
+    def _groq_ready(self) -> bool:
+        return bool(self._groq_key)
+
     async def select_provider(self, *, task: str, allow_external_llm: bool) -> LlmProvider:
         if self._force_mock:
             return MockProvider()
-        if task == "runtime_intent":
-            if await probe_ollama(self._ollama_url, self._ollama_model):
-                return self._ollama_provider()
-            return MockProvider()
-        if allow_external_llm and self._openai_enabled and self._openai_url:
-            return OpenAICompatibleProvider(self._openai_url, self._openai_key, self._openai_model)
         if await probe_ollama(self._ollama_url, self._ollama_model):
             return self._ollama_provider()
+        # Ollama down: Groq if a key is configured (policy compile and runtime).
+        if self._groq_ready():
+            return self._groq_provider()
+        if allow_external_llm and self._openai_enabled and self._openai_url:
+            return OpenAICompatibleProvider(self._openai_url, self._openai_key, self._openai_model)
+        if task == "runtime_intent":
+            return MockProvider()
         # Never silently mock policy_compile — demos must set LLM_FORCE_MOCK=true explicitly
         if task == "policy_compile":
             raise RuntimeError(
-                "NO_LLM_PROVIDER: Ollama unreachable for policy_compile "
+                "NO_LLM_PROVIDER: Ollama unreachable and no GROQ_API_KEY "
                 "(set LLM_FORCE_MOCK=true for offline mock demos)"
             )
         return MockProvider()
@@ -530,11 +542,16 @@ class LlmGateway:
         openai_reachable: bool | None = None
         if self._openai_enabled:
             openai_reachable = await probe_openai_compat(self._openai_url, self._openai_key)
+        groq_reachable: bool | None = None
+        if self._groq_ready():
+            groq_reachable = await probe_openai_compat(self._groq_url, self._groq_key)
 
         if self._force_mock:
             active = "mock"
         elif ollama["reachable"] and ollama["modelPresent"]:
             active = "ollama"
+        elif self._groq_ready() and groq_reachable is not False:
+            active = "groq"
         elif self._openai_enabled and openai_reachable:
             active = "openai_compat"
         else:
@@ -550,6 +567,11 @@ class LlmGateway:
                 "modelPresent": ollama["modelPresent"],
                 "error": ollama["error"],
             },
+            "groq": {
+                "enabled": self._groq_ready(),
+                "reachable": groq_reachable,
+                "model": self._groq_model,
+            },
             "openaiCompat": {
                 "enabled": self._openai_enabled,
                 "reachable": openai_reachable,
@@ -557,8 +579,11 @@ class LlmGateway:
             "activeProvider": active,
             "degraded": degraded,
             "provider": active,
-            "model": self._ollama_model if active == "ollama" else (
-                self._openai_model if active == "openai_compat" else "mock"
+            "model": (
+                self._ollama_model if active == "ollama"
+                else self._groq_model if active == "groq"
+                else self._openai_model if active == "openai_compat"
+                else "mock"
             ),
         }
 

@@ -310,6 +310,10 @@ def model_name_matches(listed: str | None, configured: str) -> bool:
     return False
 
 
+class GroqProvider(OpenAICompatibleProvider):
+    name = "groq"
+
+
 async def probe_ollama(base_url: str, model: str) -> bool:
     """True when the daemon is up and the configured model is present (usable)."""
     detail = await probe_ollama_detail(base_url, model)

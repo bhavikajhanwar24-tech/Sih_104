@@ -72,6 +72,13 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         CookieCsrfTokenRepository csrfRepo = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepo.setCookiePath("/");
+        if (authProperties.cookieSecure()) {
+            csrfRepo.setCookieCustomizer(c -> c.secure(true).sameSite(
+                    authProperties.cookieSameSite() != null && !authProperties.cookieSameSite().isBlank() 
+                            ? authProperties.cookieSameSite() 
+                            : "None"
+            ));
+        }
         CsrfTokenRequestAttributeHandler requestHandler = new CsrfTokenRequestAttributeHandler();
         requestHandler.setCsrfRequestAttributeName(null);
 
@@ -126,17 +133,32 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        List<String> origins = Arrays.stream(authProperties.corsOrigins().split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
+        java.util.LinkedHashSet<String> patterns = new java.util.LinkedHashSet<>(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://localhost:*",
+                "https://127.0.0.1:*",
+                "https://*.vercel.app"
+        ));
+        
+        String configured = authProperties.corsOrigins();
         String envOverride = environment.getProperty("SENTINELVOICE_CORS_ORIGINS");
         if (envOverride != null && !envOverride.isBlank()) {
-            origins = Arrays.stream(envOverride.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+            configured = envOverride;
         }
-        config.setAllowedOrigins(origins);
+        if (configured != null && !configured.isBlank()) {
+            for (String origin : configured.split(",")) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty()) {
+                    patterns.add(trimmed);
+                }
+            }
+        }
+        
+        config.setAllowedOriginPatterns(new java.util.ArrayList<>(patterns));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("Set-Cookie", "X-XSRF-TOKEN", "Content-Disposition", "Authorization"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

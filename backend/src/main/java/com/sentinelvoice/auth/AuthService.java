@@ -277,10 +277,14 @@ public class AuthService {
     }
 
     private ResponseCookie baseCookie(String name, String value, Duration maxAge) {
+        String sameSite = authProperties.cookieSameSite();
+        if (sameSite == null || sameSite.isBlank()) {
+            sameSite = authProperties.cookieSecure() ? "None" : "Lax";
+        }
         ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(authProperties.cookieSecure())
-                .sameSite("Lax")
+                .sameSite(sameSite)
                 .path("/")
                 .maxAge(maxAge);
         if (authProperties.cookieDomain() != null && !authProperties.cookieDomain().isBlank()) {

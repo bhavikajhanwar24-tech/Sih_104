@@ -9,6 +9,7 @@ public record AuthProperties(
         long refreshTokenTtlSeconds,
         boolean cookieSecure,
         String cookieDomain,
+        String cookieSameSite,
         String corsOrigins
 ) {
     public AuthProperties {
