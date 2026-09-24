@@ -49,6 +49,7 @@ Keep entries short (one line reason where possible).
 | 2026-09-23 | F17 integrations migration renumbered V025→V028 (F15 already occupied V025–V027 on this branch) | Avoid Flyway version clash on merge |
 | 2026-09-23 | F16 session_labels + analytics MVs; fairness from directory tags only (never voice); L3 suggestion → fusion DRAFT | F16 — labelled metrics / fairness / threshold UI |
 | 2026-09-23 | F18 demo seed/reset (`is_demo`); JSON scenarios + `/app/lab`; delete v1 YAML/TrajectoryRunner inject | F18 — demo tenants + real-audio lab |
+| 2026-09-24 | Vite binds `0.0.0.0`; `sv.ps1` auto-syncs LAN IP into `.env` (`SIP_*`, CORS); STOMP origins follow CORS list | Stack reachable on current LAN IP without hand edits |
 
 ## New dependencies
 

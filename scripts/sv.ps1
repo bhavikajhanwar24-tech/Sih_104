@@ -4,7 +4,7 @@ param(
     [Parameter(Position = 0)]
     [ValidateSet(
         'help', 'ensure-antispoof', 'backend', 'ml', 'frontend', 'asterisk',
-        'dev', 'demo', 'test', 'eval', 'codec-study', 'clean', 'health'
+        'dev', 'demo', 'test', 'eval', 'codec-study', 'clean', 'health', 'sync-ip'
     )]
     [string]$Target = 'help'
 )
@@ -101,8 +101,93 @@ function Start-Detached([string]$Name, [string]$WorkDir, [string]$FilePath, [str
     return $p
 }
 
+$script:LanIpChanged = $false
+$script:LanIp = $null
+
+function Get-LanIpv4 {
+    $candidates = Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object {
+            $_.IPAddress -notlike '127.*' -and
+            $_.IPAddress -notlike '169.254.*' -and
+            $_.PrefixOrigin -ne 'WellKnown'
+        }
+    # Prefer the interface that owns the default route (skips WSL / Hyper-V vEthernet).
+    $routed = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } |
+        ForEach-Object { $_.IPv4Address.IPAddress }
+    $pick = $candidates | Where-Object { $routed -contains $_.IPAddress } | Select-Object -First 1
+    if (-not $pick) {
+        $pick = $candidates | Where-Object { $_.InterfaceAlias -match 'Wi-?Fi|Ethernet|WLAN|LAN' } |
+            Select-Object -First 1
+    }
+    return $pick
+}
+
+function Get-NetworkCidr([string]$Ip, [int]$Prefix) {
+    $bytes = [System.Net.IPAddress]::Parse($Ip).GetAddressBytes()
+    [Array]::Reverse($bytes)
+    $addr = [BitConverter]::ToUInt32($bytes, 0)
+    $mask = [uint32]([math]::Pow(2, 32) - [math]::Pow(2, 32 - $Prefix))
+    $net = [BitConverter]::GetBytes([uint32]($addr -band $mask))
+    [Array]::Reverse($net)
+    return ('{0}/{1}' -f ([System.Net.IPAddress]::new($net)).ToString(), $Prefix)
+}
+
+# Rewrite IP-dependent .env keys so SIP, CORS and the LAN URL follow the current network.
+function Sync-LanIp {
+    if ($null -ne $script:LanIp) { return }
+    $envFile = Join-Path $Root '.env'
+    if (-not (Test-Path $envFile)) { return }
+    $pick = Get-LanIpv4
+    if (-not $pick) {
+        Write-Sv 'lan-ip: no LAN IPv4 found - leaving .env unchanged'
+        $script:LanIp = ''
+        return
+    }
+    $ip = $pick.IPAddress
+    $script:LanIp = $ip
+    $cidr = Get-NetworkCidr $ip $pick.PrefixLength
+    $cors = "http://127.0.0.1:5173,http://localhost:5173,http://${ip}:5173"
+    $wanted = [ordered]@{
+        SIP_EXTERNAL_IP            = $ip
+        SIP_LOCAL_NET              = $cidr
+        SENTINELVOICE_CORS_ORIGINS = $cors
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.AddRange([string[]](Get-Content $envFile))
+    $seen = @{}
+    $changed = @()
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        foreach ($key in $wanted.Keys) {
+            if ($lines[$i] -match "^\s*$key\s*=(.*)$") {
+                $seen[$key] = $true
+                if ($Matches[1].Trim() -ne $wanted[$key]) {
+                    $changed += "$key=$($wanted[$key]) (was $($Matches[1].Trim()))"
+                    $lines[$i] = "$key=$($wanted[$key])"
+                }
+            }
+        }
+    }
+    foreach ($key in $wanted.Keys) {
+        if (-not $seen[$key]) {
+            $lines.Add("$key=$($wanted[$key])")
+            $changed += "$key=$($wanted[$key]) (added)"
+        }
+    }
+
+    if ($changed.Count -gt 0) {
+        # No BOM: docker compose and the Java DotEnv loader read this file too.
+        [System.IO.File]::WriteAllLines($envFile, $lines, [System.Text.UTF8Encoding]::new($false))
+        $script:LanIpChanged = ($changed | Where-Object { $_ -like 'SIP_*' }).Count -gt 0
+        $changed | ForEach-Object { Write-Sv "lan-ip: $_" }
+    } else {
+        Write-Sv "lan-ip: $ip ($cidr) already in .env"
+    }
+}
+
 # Load repo-root .env into this process so detached children inherit secrets.
 function Import-DotEnv {
+    Sync-LanIp
     $envFile = Join-Path $Root '.env'
     if (-not (Test-Path $envFile)) {
         Write-Sv "warn: no .env at $envFile - backend/ml may fail without JWT_SECRET / DB_*"
@@ -142,6 +227,7 @@ function Invoke-Help {
     Write-Host '  dev               Media -> Inference -> Decision -> Presentation + health waits'
     Write-Host '  demo              preflight + docker compose up --build + seed'
     Write-Host '  health            probe plane health endpoints'
+    Write-Host '  sync-ip           write current LAN IPv4 into .env (SIP_*, CORS)'
     Write-Host '  test              run per-plane test suites (explicit if missing)'
     Write-Host '  eval              ML benchmark suite'
     Write-Host '  codec-study       codec robustness study'
@@ -155,12 +241,17 @@ function Invoke-EnsureAntispoof {
 }
 
 function Invoke-Asterisk {
+    Sync-LanIp
     Push-Location $Root
     try {
         # docker writes progress to stderr; do not treat that as a terminating error
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        docker compose up -d asterisk 2>&1 | ForEach-Object { Write-Host $_ }
+        # pjsip.conf is rendered from SIP_EXTERNAL_IP at container start, so a new IP needs a recreate.
+        $upArgs = @('compose', 'up', '-d')
+        if ($script:LanIpChanged) { $upArgs += '--force-recreate' }
+        $upArgs += 'asterisk'
+        docker @upArgs 2>&1 | ForEach-Object { Write-Host $_ }
         $ErrorActionPreference = $prev
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Write-Sv 'asterisk: docker compose up -d asterisk OK'
@@ -201,7 +292,7 @@ function Invoke-Frontend {
     if (-not $Npm) { throw 'npm not found on PATH' }
     Push-Location (Join-Path $Root 'frontend')
     try {
-        & $Npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+        & $Npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
     } finally {
         Pop-Location
     }
@@ -259,12 +350,13 @@ function Invoke-Dev {
 
     if (-not $Npm) { throw 'npm not found on PATH' }
     Start-Detached 'frontend' (Join-Path $Root 'frontend') $Npm @(
-        'run', 'dev', '--', '--host', '127.0.0.1', '--port', '5173', '--strictPort'
+        'run', 'dev', '--', '--host', '0.0.0.0', '--port', '5173', '--strictPort'
     ) | Out-Null
     Wait-Http 'http://127.0.0.1:5173/' 90 'frontend'
 
     Invoke-Health
     Write-Sv 'dev ready - open http://127.0.0.1:5173/'
+    if ($script:LanIp) { Write-Sv "LAN: http://$($script:LanIp):5173/  (softphones register to $($script:LanIp):5060)" }
     Write-Sv 'logs under .sv-run/*.log - stop with: make clean  (or .\make.cmd clean)'
 }
 
@@ -366,6 +458,7 @@ switch ($Target) {
     'dev' { Invoke-Dev }
     'demo' { Invoke-Demo }
     'health' { Invoke-Health }
+    'sync-ip' { Sync-LanIp }
     'clean' { Invoke-Clean }
     'test' { Invoke-Test }
     'eval' { Invoke-Eval }

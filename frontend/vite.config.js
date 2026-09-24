@@ -28,7 +28,8 @@ export default defineConfig({
     port: 5173,
     // Fail loudly if 5173 is taken — never silently drift to 5174 (CORS trap).
     strictPort: true,
-    host: '127.0.0.1',
+    // All interfaces so phones/laptops on the LAN can open http://<SIP_EXTERNAL_IP>:5173.
+    host: '0.0.0.0',
       proxy: {
       '/api': {
         // Prefer 127.0.0.1 — on Windows `localhost` can resolve to ::1 and miss
