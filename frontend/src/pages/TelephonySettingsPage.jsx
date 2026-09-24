@@ -33,15 +33,13 @@ export function TelephonySettingsPage() {
       const [h, t, e, d] = await Promise.all([
         apiJson('/api/v2/telephony/asterisk/health', {
           skipErrorToast: true,
-          timeoutMs: 6_000,
         }).catch(() => ({
           realtimeReachable: false,
         })),
-        apiJson('/api/v2/telephony/trunks', { timeoutMs: 8_000 }),
-        apiJson('/api/v2/telephony/endpoints', { timeoutMs: 6_000 }),
+        apiJson('/api/v2/telephony/trunks'),
+        apiJson('/api/v2/telephony/endpoints'),
         apiJson('/api/v2/telephony/softphone-defaults', {
           skipErrorToast: true,
-          timeoutMs: 4_000,
         }).catch(() => ({})),
       ]);
       setHealth(h);

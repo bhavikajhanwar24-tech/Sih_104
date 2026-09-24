@@ -653,6 +653,7 @@ public class PolicySetRepository {
         m.put("plainEnglish", com.sentinelvoice.policy.dsl.ConditionEnglish.render(when, then, applies));
         m.put("firesWhen", com.sentinelvoice.policy.dsl.ConditionEnglish.firesWhen(when));
         m.put("doesNotFireWhen", com.sentinelvoice.policy.dsl.ConditionEnglish.doesNotFireWhen(when));
+        com.sentinelvoice.policy.compile.RuleSourceAttributor.polishForDisplay(m);
         return m;
     }
 

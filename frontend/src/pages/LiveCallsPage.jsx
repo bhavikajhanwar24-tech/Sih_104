@@ -14,7 +14,6 @@ import { Badge, Button, EmptyState } from '@/ui';
 import { useToast } from '@/ui/Toast.jsx';
 
 const POLL_MS = 2500;
-const POLL_TIMEOUT_MS = 60_000;
 const L3_ALERT_KEY = 'sv-l3-mute';
 
 function playL3Alert() {
@@ -157,7 +156,6 @@ export function LiveCallsPage() {
     try {
       const data = await apiJson('/api/v2/calls?limit=80&activeOnly=true', {
         skipErrorToast: true,
-        timeoutMs: POLL_TIMEOUT_MS,
       });
       const next = (Array.isArray(data.items) ? data.items : []).map((r) => mergeRow({ ...r }));
       setItems(next);

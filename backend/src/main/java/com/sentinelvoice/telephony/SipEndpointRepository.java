@@ -1,10 +1,14 @@
 package com.sentinelvoice.telephony;
 
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -168,6 +172,45 @@ public class SipEndpointRepository {
                 extension
         );
         return rows.stream().findFirst();
+    }
+
+    /**
+     * Extension lookup scoped to one tenant. Binds {@code app.tenant_id} on the borrowed
+     * connection for RLS (internal callers have no tenant context) and restores it afterwards.
+     */
+    public Optional<TelephonyModels.ExtensionResolveResult> resolveExtensionInTenant(UUID tenantId, String extension) {
+        return jdbc.execute((ConnectionCallback<Optional<TelephonyModels.ExtensionResolveResult>>) con -> {
+            String previous;
+            try (Statement st = con.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT current_setting('app.tenant_id', true)")) {
+                previous = rs.next() ? rs.getString(1) : null;
+            }
+            setTenantSetting(con, tenantId.toString());
+            try (PreparedStatement ps = con.prepareStatement(
+                    """
+                    SELECT tenant_id, employee_id, id AS endpoint_id, username, extension, status
+                    FROM sip_endpoints
+                    WHERE tenant_id = ? AND extension = ?
+                      AND status IN ('ACTIVE', 'LAB_ATTACKER')
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """)) {
+                ps.setObject(1, tenantId);
+                ps.setString(2, extension);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? Optional.of(mapResolve(rs)) : Optional.empty();
+                }
+            } finally {
+                setTenantSetting(con, previous == null ? "" : previous);
+            }
+        });
+    }
+
+    private static void setTenantSetting(Connection con, String value) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("SELECT set_config('app.tenant_id', ?, false)")) {
+            ps.setString(1, value);
+            ps.execute();
+        }
     }
 
     public Optional<TelephonyModels.ExtensionResolveResult> resolveUsernameCrossTenant(String username) {

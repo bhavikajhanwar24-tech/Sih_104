@@ -26,7 +26,7 @@ export function SettingsPage() {
     try {
       const [s, h] = await Promise.all([
         apiJson('/api/v2/settings'),
-        apiJson('/api/v2/settings/llm-health', { skipErrorToast: true, timeoutMs: 5_000 }).catch(() => ({
+        apiJson('/api/v2/settings/llm-health', { skipErrorToast: true }).catch(() => ({
           ok: false,
           gateway: 'down',
           activeProvider: 'mock',

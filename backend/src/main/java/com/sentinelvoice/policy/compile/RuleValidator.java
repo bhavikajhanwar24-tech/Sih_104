@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -26,16 +25,23 @@ public final class RuleValidator {
     private static final Pattern SMART_DOUBLE = Pattern.compile("[\u201C\u201D\u201E\u201F\u2033\u2036«»]");
     private static final Pattern DASHES = Pattern.compile("[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]");
 
-    private static final Pattern DEFINITION_SCOPE = Pattern.compile(
-            "(?i)\\b(definitions?|for the purposes of|this (policy|document|section) applies|"
-                    + "scope of this|hereinafter|means the following|glossary)\\b"
-    );
-
     private static final Pattern OBLIGATION = Pattern.compile(
             "(?i)\\b(must|shall|must not|shall not|prohibited|not permitted|forbidden|"
                     + "required|require|block|lock|halt|terminate|end the (call|interaction|session)|"
                     + "approval|approve|verify|verification|authenticate|"
                     + "above|below|exceeds|exceed|less than|greater than|limit)\\b"
+    );
+
+    private static final Pattern STRONG_OBLIGATION = Pattern.compile(
+            "(?i)\\b(must|shall|never|prohibited|not permitted|forbidden|required|high[- ]risk)\\b"
+    );
+
+    private static final Pattern MONEY_MOVEMENT = Pattern.compile(
+            "(?i)\\b(wire|transfers?|payments?|pay|remit\\w*|neft|rtgs|imps|swift|funds?|disburse\\w*)\\b"
+    );
+
+    private static final Pattern PAYEE_CHANGE = Pattern.compile(
+            "(?i)\\b(vendor|beneficiar\\w*|payee|bank account|account details|bank details)\\b"
     );
 
     private static final Pattern HALT = Pattern.compile(
@@ -97,135 +103,81 @@ public final class RuleValidator {
     public record EditValidation(boolean ok, List<String> errors, List<Map<String, Object>> warnings) {
     }
 
+    /**
+     * Only the LLM may reject a proposed rule (decision=REJECT: not important / already covered).
+     * Every deterministic check repairs the rule or adds a non-blocking warning instead, except
+     * when nothing enforceable is left (no usable condition at all).
+     */
     public static Result validate(Map<String, Object> proposed, String chunkText, boolean injection) {
         List<Map<String, Object>> warnings = new ArrayList<>();
         Map<String, Object> rule = new LinkedHashMap<>(proposed);
         String ruleId = String.valueOf(rule.getOrDefault("ruleId", "?"));
 
-        // Grounding: general / definition / scope clauses must never yield rules
-        if (chunkText != null && !chunkText.isBlank()) {
-            if (DEFINITION_SCOPE.matcher(chunkText).find() && !OBLIGATION.matcher(chunkText).find()) {
-                return reject(rule, warnings, ruleId, "UNGBOUNDED_CLAUSE",
-                        "Chunk looks like a definition/scope clause with no obligation or threshold");
-            }
-            if (!OBLIGATION.matcher(chunkText).find() && !ChunkPrefilter.isCandidate(chunkText)) {
-                return reject(rule, warnings, ruleId, "UNGBOUNDED_CLAUSE",
-                        "Chunk contains no obligation, prohibition, or threshold language");
-            }
+        if (chunkText != null && !chunkText.isBlank()
+                && !OBLIGATION.matcher(chunkText).find() && !ChunkPrefilter.isCandidate(chunkText)) {
+            warnings.add(warn("SOFT_CLAUSE",
+                    "Clause has no must/shall/threshold wording — kept because the LLM judged it relevant"));
         }
 
         Map<String, Object> source = asMap(rule.get("source"));
-        Object clauseRef = source.get("clauseRef");
-        if (clauseRef == null || String.valueOf(clauseRef).isBlank()) {
-            return reject(rule, warnings, ruleId, "MISSING_CLAUSE_REF",
-                    "source.clauseRef is required — pick a source chunk in the document viewer");
-        }
-
         String quote = source.get("quote") == null ? "" : String.valueOf(source.get("quote"));
-        if (quote.isBlank() || !containsNormalised(chunkText, quote)) {
-            log.info(
-                    "rule_validation_reject ruleId={} check=HALLUCINATED_QUOTE quoteLen={} chunkLen={}",
-                    ruleId,
-                    quote.length(),
-                    chunkText == null ? 0 : chunkText.length()
-            );
-            return reject(rule, warnings, ruleId, "HALLUCINATED_QUOTE",
-                    "Quote does not appear in the source chunk (after normalisation)");
+        if ((quote.isBlank() || !containsNormalised(chunkText, quote))
+                && chunkText != null && !chunkText.isBlank()) {
+            quote = clipQuote(chunkText);
+            source.put("quote", quote);
+            warnings.add(warn("QUOTE_REPAIRED", "Quote re-taken from the source chunk"));
         }
         if (quote.length() > 200) {
-            source.put("quote", quote.substring(0, 200));
-            rule.put("source", source);
+            quote = quote.substring(0, 200);
+            source.put("quote", quote);
         }
+        rule.put("source", source);
 
-        Map<String, Object> when = asMap(rule.get("when"));
-        if (when.isEmpty()) {
-            return reject(rule, warnings, ruleId, "EMPTY_WHEN", "when condition is empty");
+        Map<String, Object> when = repairWhen(asMap(rule.get("when")), warnings);
+        if (chunkText != null && !chunkText.isBlank()) {
+            when = groundInClause(when, chunkText, warnings);
         }
-
+        rule.put("when", when);
         List<Map<String, Object>> leaves = ConditionEnglish.collectLeaves(when);
         if (leaves.isEmpty()) {
-            return reject(rule, warnings, ruleId, "EMPTY_WHEN", "when has no leaf conditions");
+            return reject(rule, warnings, ruleId, "EMPTY_WHEN", "No usable condition to enforce");
         }
 
-        // Single non-discriminating fact
-        if (leaves.size() == 1) {
-            String only = String.valueOf(leaves.get(0).get("fact"));
-            if (FactCatalogue.isNonDiscriminating(only)) {
-                return reject(rule, warnings, ruleId, "NON_DISCRIMINATING",
-                        "Condition is a single non-discriminating fact: " + only);
-            }
-        }
-
-        for (Map<String, Object> leaf : leaves) {
-            String fact = String.valueOf(leaf.get("fact"));
-            String op = String.valueOf(leaf.get("op"));
-            Object value = leaf.get("value");
-            if (!FactCatalogue.isKnown(fact)) {
-                log.info("rule_validation_reject ruleId={} check=UNKNOWN_FACT fact={}", ruleId, fact);
-                return reject(rule, warnings, ruleId, "UNKNOWN_FACT", "Unknown fact path: " + fact);
-            }
-            Optional<String> typeErr = FactCatalogue.validateValue(fact, op, value);
-            if (typeErr.isPresent()) {
-                log.info("rule_validation_reject ruleId={} check=INVALID_VALUE msg={}", ruleId, typeErr.get());
-                return reject(rule, warnings, ruleId, "INVALID_VALUE", typeErr.get());
-            }
-        }
-
-        // Number verification — every numeric literal must equal a number found in the chunk
-        for (Object num : ConditionEnglish.collectNumericLiterals(when)) {
-            if (!(num instanceof Number n)) {
-                continue;
-            }
-            if (!SourceNumberParser.containsNumber(chunkText, n)) {
-                log.info(
-                        "rule_validation_reject ruleId={} check=VALUE_NOT_IN_SOURCE value={} chunkNums={}",
-                        ruleId,
-                        n,
-                        SourceNumberParser.extractNumbers(chunkText)
-                );
-                return reject(
-                        rule,
-                        warnings,
-                        ruleId,
-                        "VALUE_NOT_IN_SOURCE",
-                        "Numeric literal " + n + " does not equal any number found in the cited chunk"
-                );
-            }
-        }
-
-        // Thresholds that cite session/time facts must appear as numbers in the clause
-        for (Map<String, Object> leaf : leaves) {
-            String fact = String.valueOf(leaf.get("fact"));
-            if (("session.durationSec".equals(fact) || "time.hourLocal".equals(fact)
-                    || "ask.urgencyLevel".equals(fact) || "caller.authorityLimitInr".equals(fact)
-                    || "ask.amountInr".equals(fact))
-                    && leaf.get("value") instanceof Number n
-                    && !SourceNumberParser.containsNumber(chunkText, n)) {
-                return reject(
-                        rule,
-                        warnings,
-                        ruleId,
-                        "VALUE_NOT_IN_SOURCE",
-                        "Threshold for " + fact + "=" + n + " is not grounded in the chunk"
-                );
-            }
+        if (leaves.size() == 1 && FactCatalogue.isNonDiscriminating(String.valueOf(leaves.get(0).get("fact")))) {
+            warnings.add(warn("BROAD_CONDITION",
+                    "Condition uses a single broad fact (" + leaves.get(0).get("fact") + ") — may fire often"));
         }
 
         Map<String, Object> then = asMap(rule.get("then"));
-        Object minLevelObj = then.get("minLevel");
-        if (!(minLevelObj instanceof Number minNum)) {
-            return reject(rule, warnings, ruleId, "INVALID_LEVEL", "minLevel must be an integer 1..4");
-        }
-        int minLevel = minNum.intValue();
+        int floor = levelFloor(chunkText, quote);
+        int minLevel = then.get("minLevel") instanceof Number minNum ? minNum.intValue() : 0;
         if (minLevel <= 0) {
-            log.info("rule_validation_reject ruleId={} check=MIN_LEVEL_ZERO", ruleId);
-            return reject(rule, warnings, ruleId, "INVALID_LEVEL", "minLevel 0 has no effect and is rejected");
+            minLevel = Math.max(floor, 2);
+            warnings.add(warn("LEVEL_ADJUSTED", "Missing/zero minLevel set to " + minLevel));
         }
         if (minLevel > 4) {
             minLevel = 4;
         }
 
-        int floor = levelFloor(chunkText, quote);
+        String decision = String.valueOf(rule.getOrDefault("decision", "ACCEPT")).toUpperCase(Locale.ROOT);
+        String reason = String.valueOf(rule.getOrDefault("rejectReason", "NOT_IMPORTANT")).toUpperCase(Locale.ROOT);
+        if ("REJECT".equals(decision) && !"ALREADY_COVERED".equals(reason)
+                && chunkText != null && STRONG_OBLIGATION.matcher(chunkText).find()) {
+            // Small local models mislabel clear must/never clauses as unimportant — keep them
+            warnings.add(warn("LLM_SUGGESTED_REJECT",
+                    "LLM suggested this is not important, but the clause uses mandatory wording — kept"));
+            decision = "ACCEPT";
+        }
+        if ("REJECT".equals(decision)) {
+            then.put("minLevel", minLevel);
+            rule.put("then", then);
+            return "ALREADY_COVERED".equals(reason)
+                    ? reject(rule, warnings, ruleId, "LLM_ALREADY_COVERED",
+                            "LLM: already covered by another rule")
+                    : reject(rule, warnings, ruleId, "LLM_NOT_IMPORTANT",
+                            "LLM: clause is not important enough to enforce");
+        }
+
         int cap = levelCap(chunkText, quote);
         // Floor first (raise), then cap (clamp down). Both may emit LEVEL_ADJUSTED.
         if (minLevel < floor) {
@@ -272,6 +224,177 @@ public final class RuleValidator {
     }
 
     /**
+     * Fix a condition tree instead of rejecting it: off-catalogue enum values are mapped to the
+     * closest enum (or OTHER), scalar IN values are wrapped, and leaves that still cannot be
+     * evaluated (unknown fact / unusable value) are dropped. Returns an empty map when nothing
+     * usable remains.
+     */
+    public static Map<String, Object> repairWhen(Map<String, Object> when, List<Map<String, Object>> warnings) {
+        if (when == null || when.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Object repaired = repairNode(when, warnings);
+        return repaired instanceof Map<?, ?> ? asMap(repaired) : new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object repairNode(Object node, List<Map<String, Object>> warnings) {
+        if (!(node instanceof Map<?, ?> raw)) {
+            return null;
+        }
+        Map<String, Object> n = new LinkedHashMap<>((Map<String, Object>) raw);
+        for (String key : List.of("all", "any")) {
+            if (n.get(key) instanceof List<?> kids) {
+                List<Object> kept = new ArrayList<>();
+                for (Object kid : kids) {
+                    Object r = repairNode(kid, warnings);
+                    if (r != null) {
+                        kept.add(r);
+                    }
+                }
+                if (kept.isEmpty()) {
+                    return null;
+                }
+                if (kept.size() == 1) {
+                    return kept.get(0);
+                }
+                n.put(key, kept);
+                return n;
+            }
+        }
+        if (n.containsKey("not")) {
+            Object r = repairNode(n.get("not"), warnings);
+            if (r == null) {
+                return null;
+            }
+            n.put("not", r);
+            return n;
+        }
+        if (n.containsKey("fact")) {
+            return repairLeaf(n, warnings);
+        }
+        return null;
+    }
+
+    private static Map<String, Object> repairLeaf(Map<String, Object> leaf, List<Map<String, Object>> warnings) {
+        String fact = String.valueOf(leaf.get("fact"));
+        String op = leaf.get("op") == null ? "EQ" : String.valueOf(leaf.get("op")).toUpperCase(Locale.ROOT);
+        leaf.put("op", op);
+        if (!FactCatalogue.isKnown(fact)) {
+            warnings.add(warn("CONDITION_DROPPED", "Dropped condition on unknown fact " + fact));
+            return null;
+        }
+        Object value = leaf.get("value");
+        if (("IN".equals(op) || "NOT_IN".equals(op)) && value != null && !(value instanceof List<?>)) {
+            value = List.of(value);
+            leaf.put("value", value);
+        }
+        if (FactCatalogue.validateValue(fact, op, value).isEmpty()) {
+            return leaf;
+        }
+        Object fixed = coerceValue(fact, value);
+        if (fixed != null && FactCatalogue.validateValue(fact, op, fixed).isEmpty()) {
+            warnings.add(warn("VALUE_NORMALISED",
+                    fact + " value " + value + " mapped to " + fixed));
+            leaf.put("value", fixed);
+            return leaf;
+        }
+        warnings.add(warn("CONDITION_DROPPED",
+                "Dropped condition " + fact + " " + op + " " + value + " (value not usable)"));
+        return null;
+    }
+
+    /**
+     * Remove conditions the clause does not support: numeric thresholds whose number never
+     * appears in the clause are dropped, and a WIRE_TRANSFER ask type on a clause that never
+     * mentions moving money is re-mapped (payee/bank-detail wording → BENEFICIARY_CHANGE).
+     */
+    static Map<String, Object> groundInClause(
+            Map<String, Object> when, String chunkText, List<Map<String, Object>> warnings
+    ) {
+        Object grounded = groundNode(when, chunkText, warnings);
+        return grounded instanceof Map<?, ?> ? asMap(grounded) : new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object groundNode(Object node, String chunkText, List<Map<String, Object>> warnings) {
+        if (!(node instanceof Map<?, ?> raw)) {
+            return null;
+        }
+        Map<String, Object> n = new LinkedHashMap<>((Map<String, Object>) raw);
+        for (String key : List.of("all", "any")) {
+            if (n.get(key) instanceof List<?> kids) {
+                List<Object> kept = new ArrayList<>();
+                for (Object kid : kids) {
+                    Object r = groundNode(kid, chunkText, warnings);
+                    if (r != null) {
+                        kept.add(r);
+                    }
+                }
+                if (kept.isEmpty()) {
+                    return null;
+                }
+                if (kept.size() == 1) {
+                    return kept.get(0);
+                }
+                n.put(key, kept);
+                return n;
+            }
+        }
+        if (n.containsKey("not")) {
+            Object r = groundNode(n.get("not"), chunkText, warnings);
+            if (r == null) {
+                return null;
+            }
+            n.put("not", r);
+            return n;
+        }
+        if (!n.containsKey("fact")) {
+            return n;
+        }
+        String fact = String.valueOf(n.get("fact"));
+        Object value = n.get("value");
+        boolean pmHour = "time.hourLocal".equals(fact) && value instanceof Number h && h.intValue() > 12
+                && SourceNumberParser.containsNumber(chunkText, h.intValue() - 12);
+        if (value instanceof Number num && !pmHour && !SourceNumberParser.containsNumber(chunkText, num)) {
+            warnings.add(warn("NUMBER_DROPPED",
+                    "Dropped " + fact + " " + n.get("op") + " " + num + " — that number is not in the clause"));
+            return null;
+        }
+        if ("ask.type".equals(fact) && "WIRE_TRANSFER".equals(String.valueOf(value))
+                && !MONEY_MOVEMENT.matcher(chunkText).find()) {
+            String mapped = PAYEE_CHANGE.matcher(chunkText).find() ? "BENEFICIARY_CHANGE" : "OTHER";
+            warnings.add(warn("VALUE_NORMALISED",
+                    "ask.type WIRE_TRANSFER mapped to " + mapped + " — clause does not mention moving money"));
+            n.put("value", mapped);
+        }
+        return n;
+    }
+
+    private static Object coerceValue(String fact, Object value) {
+        if (value instanceof List<?> list) {
+            List<String> out = new ArrayList<>();
+            for (Object item : list) {
+                FactCatalogue.coerceEnumValue(fact, item).ifPresent(v -> {
+                    if (!out.contains(v)) {
+                        out.add(v);
+                    }
+                });
+            }
+            return out.isEmpty() ? null : out;
+        }
+        return FactCatalogue.coerceEnumValue(fact, value).orElse(null);
+    }
+
+    private static String clipQuote(String chunkText) {
+        String s = WS.matcher(chunkText.strip()).replaceAll(" ");
+        if (s.length() <= 200) {
+            return s;
+        }
+        return s.substring(0, 200).replaceAll("\\s+\\S*$", "").strip();
+    }
+
+    /**
      * Validate a manual edit payload — used by API and surfaced to the UI.
      * {@code chunkText} must be the cited source chunk(s); {@code quote} is the rule's source.quote.
      */
@@ -291,12 +414,9 @@ public final class RuleValidator {
                 || String.valueOf(source.get("clauseRef")).isBlank()) {
             errors.add("source.clauseRef is required — pick a source chunk in the document viewer");
         }
-        if (quote.isBlank()) {
-            errors.add("quote not found in source");
-            warnings.add(warn("HALLUCINATED_QUOTE", "quote not found in source"));
-        } else if (chunkText == null || chunkText.isBlank() || !containsNormalised(chunkText, quote)) {
-            errors.add("quote not found in source");
-            warnings.add(warn("HALLUCINATED_QUOTE", "quote not found in source"));
+        if (!quote.isBlank() && chunkText != null && !chunkText.isBlank()
+                && !containsNormalised(chunkText, quote)) {
+            warnings.add(warn("QUOTE_UNVERIFIED", "Quote was not found verbatim in the source clause"));
         }
         if (when == null || when.isEmpty()) {
             errors.add("Condition (when) is required");
@@ -307,7 +427,8 @@ public final class RuleValidator {
             errors.add("Condition has no leaf facts");
         }
         if (leaves.size() == 1 && FactCatalogue.isNonDiscriminating(String.valueOf(leaves.get(0).get("fact")))) {
-            errors.add("A single non-discriminating fact is not allowed");
+            warnings.add(warn("BROAD_CONDITION",
+                    "Condition uses a single broad fact (" + leaves.get(0).get("fact") + ") — may fire often"));
         }
         for (Map<String, Object> leaf : leaves) {
             String fact = String.valueOf(leaf.get("fact"));
@@ -317,14 +438,8 @@ public final class RuleValidator {
             err.ifPresent(errors::add);
             if (chunkText != null && value instanceof Number n
                     && !SourceNumberParser.containsNumber(chunkText, n)) {
-                errors.add(
-                        "Numeric value " + n + " for " + fact
-                                + " is not in the source clause (Indian/Western formats checked)"
-                );
-                warnings.add(warn(
-                        "VALUE_NOT_IN_SOURCE",
-                        "Numeric literal " + n + " not found in source"
-                ));
+                warnings.add(warn("NUMBER_UNVERIFIED",
+                        "Number " + n + " for " + fact + " was not found verbatim in the clause"));
             }
         }
         if (then != null) {
@@ -335,21 +450,10 @@ public final class RuleValidator {
                 int minLevel = n.intValue();
                 int floor = levelFloor(chunkText, quote);
                 int cap = levelCap(chunkText, quote);
-                if (minLevel < floor) {
+                if (minLevel < floor || minLevel > cap) {
                     warnings.add(warn("LEVEL_ADJUSTED",
-                            "minLevel " + minLevel + " is below floor " + floor
+                            "minLevel " + minLevel + " is outside the level suggested by the clause wording"
                                     + " (floor=" + floor + ", cap=" + cap + ")"));
-                    errors.add("minLevel " + minLevel + " is below clause floor " + floor
-                            + " (credential never-share/ask ≥3, must-not-accept unverified ≥3,"
-                            + " approval/verification ≥2)");
-                }
-                if (minLevel > cap) {
-                    warnings.add(warn("LEVEL_ADJUSTED",
-                            "minLevel " + minLevel + " would be clamped to " + cap
-                                    + " based on clause language (floor=" + floor + ", cap=" + cap + ")"));
-                    // Surface as error on edit so Save does not persist an over-cap level silently
-                    errors.add("minLevel " + minLevel + " exceeds clause cap " + cap
-                            + " (advice/verify ≤2, block ≤3, halt/terminate only for 4)");
                 }
             }
         }
@@ -382,7 +486,8 @@ public final class RuleValidator {
             errors.add("Condition has no leaf facts");
         }
         if (leaves.size() == 1 && FactCatalogue.isNonDiscriminating(String.valueOf(leaves.get(0).get("fact")))) {
-            errors.add("A single non-discriminating fact is not allowed");
+            warnings.add(warn("BROAD_CONDITION",
+                    "Condition uses a single broad fact (" + leaves.get(0).get("fact") + ") — may fire often"));
         }
         for (Map<String, Object> leaf : leaves) {
             String fact = String.valueOf(leaf.get("fact"));

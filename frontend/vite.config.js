@@ -35,14 +35,14 @@ export default defineConfig({
         // services bound only on IPv4.
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,
-        timeout: 60_000,
-        proxyTimeout: 60_000,
+        timeout: 300_000,
+        proxyTimeout: 300_000,
       },
       '/ws-sentinel': {
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,
         ws: true,
-        timeout: 60_000,
+        timeout: 300_000,
       },
       // Narrow prefix — MUST NOT be '/ws' or it can steal /ws-sentinel traffic.
       '/ws/ingest': {
@@ -55,8 +55,8 @@ export default defineConfig({
       '/engine': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        timeout: 30_000,
-        proxyTimeout: 30_000,
+        timeout: 300_000,
+        proxyTimeout: 300_000,
         rewrite: (p) => p.replace(/^\/engine/, ''),
       },
     },

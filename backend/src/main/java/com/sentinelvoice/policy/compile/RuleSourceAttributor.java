@@ -58,7 +58,14 @@ public final class RuleSourceAttributor {
 
         String clauseRef = resolveClauseRefDisplay(chunk);
         String quote = selectQuote(chunk.getText(), when, keywords, rule.get("modality"));
-        String title = generateTitle(when, rule.get("modality"), quote, asMap(rule.get("then")));
+        String llmTitle = cleanText(rule.remove("llmTitle"), 90);
+        String llmSummary = cleanText(rule.remove("llmSummary"), 600);
+        String title = isUsableTitle(llmTitle, quote)
+                ? capitalize(llmTitle)
+                : generateTitle(when, rule.get("modality"), quote, asMap(rule.get("then")));
+        rule.put("description", buildSummary(
+                isUsableSummary(llmSummary, title) ? llmSummary : null,
+                when, asMap(rule.get("then")), clauseRef, quote));
         String ruleId = deterministicRuleId(documentId, clauseRef, when);
 
         Map<String, Object> source = new LinkedHashMap<>();
@@ -111,6 +118,15 @@ public final class RuleSourceAttributor {
         Map<String, Object> attributed = attribute(body, documentId, chunk);
         attributed.put("status", status);
         attributed.put("origin", origin);
+        String quote = String.valueOf(asMap(attributed.get("source")).getOrDefault("quote", ""));
+        String existingTitle = cleanText(existing.get("title"), 90);
+        if (isUsableTitle(existingTitle, quote)) {
+            attributed.put("title", existingTitle);
+        }
+        String existingDesc = cleanText(existing.get("description"), 900);
+        if (isUsableSummary(existingDesc, existingTitle)) {
+            attributed.put("description", existingDesc);
+        }
         if (warnings != null) {
             attributed.put("warnings", warnings);
         }
@@ -191,27 +207,210 @@ public final class RuleSourceAttributor {
             Map<String, Object> then
     ) {
         String action = firstActionType(when);
-        String actionLabel = humanAction(action);
-        String modalityWord = modalityLabel(modality, quote);
-        Long amount = firstAmount(when);
-
-        if (actionLabel != null && amount != null) {
-            return capitalize(modalityWord + " for " + actionLabel + " above " + formatInr(amount));
+        String topic = actionTopic(action);
+        if (topic == null) {
+            topic = topicFromQuote(quote);
         }
-        if (actionLabel != null) {
-            return capitalize(modalityWord + " for " + actionLabel);
-        }
-        if (quote != null && !quote.isBlank()) {
-            String q = quote.strip();
-            int cut = Math.min(72, q.length());
-            String head = q.substring(0, cut).strip();
-            if (cut < q.length()) {
-                head = head.replaceAll("\\s+\\S*$", "") + "…";
-            }
-            return head;
+        if (topic == null) {
+            topic = topicFromFacts(when);
         }
         int level = then != null && then.get("minLevel") instanceof Number n ? n.intValue() : 2;
-        return "Policy rule (level " + level + ")";
+        if (topic == null) {
+            return "Level " + level + " call control: " + levelLabel(level).toLowerCase(Locale.ROOT);
+        }
+        Long amount = firstAmount(when);
+        if (amount != null) {
+            topic = topic + " above " + formatInr(amount);
+        }
+        String approver = approverFromQuote(quote);
+        String title = switch (modalityLabel(modality, quote)) {
+            case "Dual approval" -> "Dual approval required for " + topic;
+            case "Halt" -> "End the call on " + topic;
+            case "Prohibition" -> capitalize(topic) + " prohibited";
+            case "Verification" -> "Verify caller before " + topic;
+            case "Approval" -> (approver == null ? "Approval" : approver + " approval") + " required for " + topic;
+            default -> "Mandatory controls for " + topic;
+        };
+        return capitalize(title);
+    }
+
+    /** Operator-facing paragraph: what the clause requires, when the rule fires, and the level it raises. */
+    public static String buildSummary(
+            String llmSummary,
+            Map<String, Object> when,
+            Map<String, Object> then,
+            String clauseRef,
+            String quote
+    ) {
+        int level = then != null && then.get("minLevel") instanceof Number n ? n.intValue() : 2;
+        StringBuilder sb = new StringBuilder();
+        if (llmSummary != null && !llmSummary.isBlank()) {
+            String s = capitalize(llmSummary.strip());
+            sb.append(s.matches("(?s).*[.!?]$") ? s : s + ".");
+        } else if (quote != null && !quote.isBlank()) {
+            String q = quote.strip().replaceAll("[.;:,]+$", "");
+            sb.append("Clause ").append(clauseRef == null ? "" : clauseRef).append(" of the policy states: \u201C")
+                    .append(q).append(".\u201D");
+        }
+        String fires = when == null || when.isEmpty() ? null : ConditionEnglish.firesWhen(when);
+        if (fires != null && fires.startsWith("fires when ")
+                && !sb.toString().toLowerCase(Locale.ROOT).contains("fires when")) {
+            sb.append(" This rule fires when ").append(fires.substring("fires when ".length()).strip()).append('.');
+        }
+        if (!sb.toString().toLowerCase(Locale.ROOT).contains("level " + level)) {
+            sb.append(" When it fires, the call is raised to at least level ").append(level)
+                    .append(" (").append(levelLabel(level)).append("): ").append(levelAction(level)).append('.');
+        }
+        return sb.toString().strip();
+    }
+
+    /** Replace echoed / fragment titles and summaries on read so existing drafts display properly. */
+    public static void polishForDisplay(Map<String, Object> rule) {
+        if (rule == null) {
+            return;
+        }
+        Map<String, Object> when = asMap(rule.get("when"));
+        Map<String, Object> then = asMap(rule.get("then"));
+        Map<String, Object> source = asMap(rule.get("source"));
+        String quote = source.get("quote") == null ? "" : String.valueOf(source.get("quote"));
+        String clauseRef = source.get("clauseRef") == null ? "" : String.valueOf(source.get("clauseRef"));
+        String title = cleanText(rule.get("title"), 90);
+        if (!isUsableTitle(title, quote)) {
+            title = generateTitle(when, rule.get("modality"), quote, then);
+            rule.put("title", title);
+        }
+        String desc = cleanText(rule.get("description"), 900);
+        if (desc != null && desc.startsWith("Clause ") && desc.contains(": ")
+                && !desc.toLowerCase(Locale.ROOT).contains("level ")) {
+            desc = null;
+        }
+        if (isUsableSummary(desc, title)) {
+            rule.put("description", buildSummary(desc, when, then, clauseRef, quote));
+        } else {
+            rule.put("description", buildSummary(null, when, then, clauseRef, quote));
+        }
+    }
+
+    public static String levelLabel(int level) {
+        return switch (level) {
+            case 1 -> "Advise";
+            case 2 -> "Verify";
+            case 3 -> "Block";
+            case 4 -> "Halt call";
+            default -> level >= 4 ? "Halt call" : "Advise";
+        };
+    }
+
+    private static String levelAction(int level) {
+        return switch (level) {
+            case 1 -> "the agent sees an on-screen advisory";
+            case 2 -> "the agent must verify the caller through an independent channel before acting";
+            case 3 -> "the request is blocked and must not be completed on this call";
+            default -> level >= 4 ? "the call is halted immediately" : "the agent sees an on-screen advisory";
+        };
+    }
+
+    private static final Pattern PROMPT_ECHO = Pattern.compile(
+            "(?i)(4-10 words|naming the action|taken from this clause|condition tree|minlevel|plain sentences"
+                    + "|1-2 |2-3 sentences|catalogue|schemaversion|untrusted|in your own words|headline"
+                    + "|staff must or must not|what is required or forbidden|for whom, and when|\\bjson\\b"
+                    + "|these instructions|clause's own words|subject and required action|restat(es|ing) the clause"
+                    + "|names the clause subject|who must do what"
+                    + "|\\(condition|then \\(|^when \\()"
+    );
+
+    private static final String[][] QUOTE_TOPICS = {
+            {"exception", "policy exceptions"},
+            {"\\botp\\b|one[- ]time (password|code)", "OTP sharing"},
+            {"\\bpin\\b", "PIN sharing"},
+            {"password|credential|log-?in details", "credential requests"},
+            {"beneficiar|payee|vendor (bank|account)|bank (account )?details|account details", "beneficiary or bank detail changes"},
+            {"gift card", "gift card requests"},
+            {"remote access|anydesk|teamviewer|screen[- ]shar", "remote access requests"},
+            {"call[- ]?back", "callback verification"},
+            {"wire|payment|fund transfer|transfer of funds|remit|disburse", "payments and fund transfers"},
+            {"impersonat|claims? to be|posing as|chief executive|\\bceo\\b|\\bcfo\\b", "executive impersonation"},
+            {"confidential|secrecy|secret|do not (tell|inform)", "secrecy requests"},
+            {"urgent|urgency|immediately|pressure", "urgent caller requests"},
+            {"customer (data|information)|personal data|account information|\\bkyc\\b", "customer data disclosure"},
+            {"identity|identif|authenticat", "caller identity checks"},
+            {"report|escalat|incident", "incident escalation"},
+            {"record|retain|retention|audit trail", "record keeping"},
+            {"train", "staff training"},
+    };
+
+    private static String actionTopic(String action) {
+        if (action == null) {
+            return null;
+        }
+        return switch (action) {
+            case "WIRE_TRANSFER" -> "wire transfers";
+            case "PASSWORD_RESET" -> "password resets";
+            case "ACCOUNT_LOOKUP" -> "account lookups";
+            case "BENEFICIARY_CHANGE" -> "beneficiary changes";
+            case "OTP_SHARE" -> "OTP sharing";
+            case "PIN_SHARE" -> "PIN sharing";
+            case "CALLBACK" -> "callback requests";
+            case "INFORMATION" -> "information requests";
+            default -> null;
+        };
+    }
+
+    private static String topicFromQuote(String quote) {
+        if (quote == null || quote.isBlank()) {
+            return null;
+        }
+        String q = quote.toLowerCase(Locale.ROOT);
+        for (String[] t : QUOTE_TOPICS) {
+            if (Pattern.compile(t[0]).matcher(q).find()) {
+                return t[1];
+            }
+        }
+        return null;
+    }
+
+    private static String topicFromFacts(Map<String, Object> when) {
+        for (Map<String, Object> leaf : ConditionEnglish.collectLeaves(when)) {
+            String fact = String.valueOf(leaf.get("fact"));
+            if (fact.contains("sharesCredential")) {
+                return "credential sharing";
+            }
+            if (fact.contains("authorityClaimed")) {
+                return "claimed-authority requests";
+            }
+            if (fact.contains("urgency")) {
+                return "urgent caller requests";
+            }
+            if (fact.contains("beneficiary")) {
+                return "beneficiary changes";
+            }
+            if (fact.contains("amount")) {
+                return "high-value payments";
+            }
+        }
+        return null;
+    }
+
+    private static final Pattern APPROVER = Pattern.compile(
+            "\\b(CRO|CFO|CEO|CISO|COO|CTO|Compliance Officer|Risk Officer|Branch Manager|Treasury Head)\\b"
+    );
+
+    private static String approverFromQuote(String quote) {
+        if (quote == null) {
+            return null;
+        }
+        Matcher m = APPROVER.matcher(quote);
+        return m.find() ? m.group(1) : null;
+    }
+
+    public static boolean isUsableSummary(String summary, String title) {
+        if (summary == null || summary.length() < 30 || summary.split("\\s+").length < 6) {
+            return false;
+        }
+        if (PROMPT_ECHO.matcher(summary).find()) {
+            return false;
+        }
+        return title == null || !summary.strip().equalsIgnoreCase(title.strip());
     }
 
     public static String deterministicRuleId(UUID documentId, String clauseRef, Map<String, Object> when) {
@@ -242,6 +441,49 @@ public final class RuleSourceAttributor {
     }
 
     // --- helpers ---
+
+    private static final Set<String> GENERIC_TITLES = Set.of(
+            "rule", "policy rule", "title", "obligation", "prohibition", "policy", "new rule", "rule title"
+    );
+
+    private static String cleanText(Object raw, int max) {
+        if (raw == null) {
+            return null;
+        }
+        String s = String.valueOf(raw).strip()
+                .replaceAll("^[\"'“”‘’]+|[\"'“”‘’]+$", "")
+                .replaceAll("\\s+", " ")
+                .strip();
+        if (s.isEmpty() || "null".equalsIgnoreCase(s)) {
+            return null;
+        }
+        return s.length() <= max ? s : clip(s, max);
+    }
+
+    public static boolean isUsableTitle(String title, String quote) {
+        if (title == null || title.length() < 6 || !title.matches("(?s).*[A-Za-z]{3,}.*")) {
+            return false;
+        }
+        if (PROMPT_ECHO.matcher(title).find() || title.endsWith("…") || title.endsWith("...")) {
+            return false;
+        }
+        String t = title.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]", "").replaceAll("\\s+", " ").strip();
+        if (GENERIC_TITLES.contains(t) || t.startsWith("policy rule")) {
+            return false;
+        }
+        int words = t.split(" ").length;
+        if (words < 3 || words > 12) {
+            return false;
+        }
+        // A verbatim run of the clause is a sentence fragment, not a title
+        if (quote != null && words >= 6) {
+            String q = quote.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]", "").replaceAll("\\s+", " ");
+            if (q.contains(t)) {
+                return false;
+            }
+        }
+        return !t.matches(".*\\b(a|an|the|for|of|to|and|or|with|by|in|on)$");
+    }
 
     private static List<String> splitSentences(String text) {
         List<String> out = new ArrayList<>();
@@ -369,23 +611,6 @@ public final class RuleSourceAttributor {
             }
         }
         return null;
-    }
-
-    private static String humanAction(String action) {
-        if (action == null) {
-            return null;
-        }
-        return switch (action.toUpperCase(Locale.ROOT)) {
-            case "WIRE_TRANSFER" -> "wire transfer";
-            case "PASSWORD_RESET" -> "password reset";
-            case "ACCOUNT_LOOKUP" -> "account lookup";
-            case "BENEFICIARY_CHANGE" -> "beneficiary change";
-            case "OTP_SHARE" -> "OTP share";
-            case "PIN_SHARE" -> "PIN share";
-            case "CALLBACK" -> "callback";
-            case "INFORMATION" -> "information request";
-            default -> action.toLowerCase(Locale.ROOT).replace('_', ' ');
-        };
     }
 
     private static String modalityLabel(Object modality, String quote) {

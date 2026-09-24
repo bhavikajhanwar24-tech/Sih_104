@@ -24,8 +24,8 @@ from app.llm_gateway.providers import (
 logger = logging.getLogger("sentinelvoice.ml.llm_gateway")
 
 TASK_LIMITS = {
-    # 90s per policy chunk for small local models on CPU/GPU
-    "policy_compile": {"timeout_ms": 90_000, "max_tokens": 2048, "priority": 1},
+    # Just under the backend's 5-minute read timeout so the gateway reports TIMEOUT first
+    "policy_compile": {"timeout_ms": 290_000, "max_tokens": 1024, "priority": 1},
     # Wait for Ollama to finish — never abort a live call judgment early.
     # Concurrency=1 queues the next request until this one returns.
     "runtime_intent": {"timeout_ms": 180_000, "max_tokens": 256, "priority": 0},

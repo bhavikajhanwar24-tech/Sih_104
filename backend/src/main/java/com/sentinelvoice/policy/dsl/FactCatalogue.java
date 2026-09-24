@@ -182,6 +182,55 @@ public final class FactCatalogue {
         };
     }
 
+    /**
+     * Map a free-text value onto the fact's enum: exact (case-insensitive) → substring →
+     * best token overlap → OTHER when the enum has it. Empty when the fact has no enum
+     * or nothing reasonable matches.
+     */
+    public static Optional<String> coerceEnumValue(String factPath, Object value) {
+        FactDef def = BY_PATH.get(factPath);
+        if (def == null || !def.hasEnum() || value == null) {
+            return Optional.empty();
+        }
+        String raw = String.valueOf(value).strip();
+        if (raw.isEmpty()) {
+            return Optional.empty();
+        }
+        for (String e : def.enumValues()) {
+            if (e.equalsIgnoreCase(raw)) {
+                return Optional.of(e);
+            }
+        }
+        String norm = raw.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_").replaceAll("^_+|_+$", "");
+        for (String e : def.enumValues()) {
+            if (!"OTHER".equals(e) && (norm.contains(e) || e.contains(norm))) {
+                return Optional.of(e);
+            }
+        }
+        Set<String> tokens = Set.of(norm.split("_"));
+        String best = null;
+        int bestHits = 0;
+        for (String e : def.enumValues()) {
+            if ("OTHER".equals(e)) {
+                continue;
+            }
+            int hits = 0;
+            for (String t : e.split("_")) {
+                if (t.length() >= 3 && tokens.contains(t)) {
+                    hits++;
+                }
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = e;
+            }
+        }
+        if (best != null) {
+            return Optional.of(best);
+        }
+        return def.enumValues().contains("OTHER") ? Optional.of("OTHER") : Optional.empty();
+    }
+
     /** Facts likely relevant to a clause (for a shorter LLM prompt). */
     public static List<FactDef> subsetForClause(String chunkText) {
         String lower = chunkText == null ? "" : chunkText.toLowerCase(Locale.ROOT);
@@ -193,7 +242,7 @@ public final class FactCatalogue {
         }
         if (out.isEmpty()) {
             // Always include core ask facts so the model has something constrained
-            for (String p : List.of("ask.type", "ask.amountInr", "ask.sharesCredential", "ask.beneficiaryKnown")) {
+            for (String p : List.of("ask.type", "ask.sharesCredential", "ask.authorityClaimed", "ask.urgencyLevel")) {
                 find(p).ifPresent(out::add);
             }
         }
@@ -202,9 +251,15 @@ public final class FactCatalogue {
 
     private static boolean relevant(String path, String lower) {
         if (path.startsWith("ask.")) {
-            if (path.contains("amount") || path.contains("beneficiary") || path.equals("ask.type")) {
-                return lower.matches("(?s).*(wire|transfer|payment|beneficiary|inr|rupee|amount|lakh|crore).*")
-                        || lower.matches("(?s).*(must|shall|prohibited|not permitted).*");
+            if (path.equals("ask.type")) {
+                return true;
+            }
+            if (path.contains("amount")) {
+                // Only offer amount facts when the clause actually states an amount
+                return lower.matches("(?s).*(inr|rs\\.|rupee|₹|lakh|crore|\\d{1,3}(,\\d{2,3})+|\\d{4,}).*");
+            }
+            if (path.contains("beneficiary")) {
+                return lower.matches("(?s).*(beneficiar|payee|vendor|bank account|account details|wire|transfer).*");
             }
             if (path.contains("Credential") || path.contains("secrecy") || path.contains("urgency")
                     || path.contains("authority") || path.contains("channel")) {
@@ -277,49 +332,63 @@ public final class FactCatalogue {
                 ),
                 "value", Map.of("description", "Scalar matching the fact type/enum")
         ));
+        leaf.put("required", List.of("fact", "op", "value"));
 
         Map<String, Object> thenObj = new LinkedHashMap<>();
         thenObj.put("type", "object");
         thenObj.put("properties", Map.of(
-                "minLevel", Map.of("type", "integer", "minimum", 1, "maximum", 4),
-                "scoreBoost", Map.of("type", "number"),
-                "reasonCode", Map.of("type", "string"),
-                "advice", Map.of("type", "string")
+                "minLevel", Map.of("type", "integer", "minimum", 1, "maximum", 4)
         ));
         thenObj.put("required", List.of("minLevel"));
 
+        // Fixed {all:[leaf...]} shape: without it small models invent unreadable condition
+        // objects that are then dropped as placeholders.
         Map<String, Object> whenRequired = new LinkedHashMap<>();
         whenRequired.put("type", "object");
-        whenRequired.put("description", "Condition tree: {all:[...]}, {any:[...]}, {not:{...}}, or a leaf {fact,op,value}");
-        whenRequired.put("minProperties", 1);
+        whenRequired.put("properties", Map.of(
+                "all", Map.of("type", "array", "minItems", 1, "maxItems", 4, "items", leaf)
+        ));
+        whenRequired.put("required", List.of("all"));
 
         Map<String, Object> rule = new LinkedHashMap<>();
         rule.put("type", "object");
         Map<String, Object> ruleProps = new LinkedHashMap<>();
-        // Meaning only — title/source/ids are attached in Java from the chunk
+        // Meaning only — source/ids are attached in Java from the chunk
         ruleProps.put("when", whenRequired);
         ruleProps.put("then", thenObj);
-        ruleProps.put("appliesTo", Map.of("type", "object"));
         ruleProps.put("modality", Map.of(
                 "type", "string",
-                "description", "must|must_not|never|requires|verify|approval|halt"
+                "enum", List.of("must", "must_not", "never", "requires", "verify", "approval", "halt")
         ));
         ruleProps.put("keywords", Map.of(
                 "type", "array",
+                "maxItems", 4,
                 "items", Map.of(
                         "type", "object",
-                        "properties", Map.of(
-                                "term", Map.of("type", "string"),
-                                "category", Map.of("type", "string"),
-                                "lang", Map.of("type", "string"),
-                                "weight", Map.of("type", "number")
-                        )
+                        "properties", Map.of("term", Map.of("type", "string")),
+                        "required", List.of("term")
                 )
         ));
-        ruleProps.put("policyFact", Map.of("type", "string"));
+        ruleProps.put("title", Map.of(
+                "type", "string",
+                "description", "Specific 4-10 word rule name, e.g. 'Block OTP sharing over phone'"
+        ));
+        ruleProps.put("summary", Map.of(
+                "type", "string",
+                "description", "One or two plain-English sentences: what is required/forbidden and when"
+        ));
+        ruleProps.put("decision", Map.of(
+                "type", "string",
+                "enum", List.of("ACCEPT", "REJECT"),
+                "description", "REJECT only if clearly unimportant or already covered; otherwise ACCEPT"
+        ));
+        ruleProps.put("rejectReason", Map.of(
+                "type", "string",
+                "enum", List.of("NOT_IMPORTANT", "ALREADY_COVERED")
+        ));
         rule.put("properties", ruleProps);
-        rule.put("required", List.of("when", "then"));
-        rule.put("$comment", "Do not emit title, source, clauseRef, quote, ruleId, documentId, or chunkId");
+        rule.put("required", List.of("when", "then", "title", "summary", "decision"));
+        rule.put("$comment", "Do not emit source, clauseRef, quote, ruleId, documentId, or chunkId");
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("type", "object");
@@ -327,7 +396,7 @@ public final class FactCatalogue {
         root.put("required", List.of("rules"));
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("schemaVersion", Map.of("type", "string"));
-        props.put("rules", Map.of("type", "array", "items", rule));
+        props.put("rules", Map.of("type", "array", "maxItems", 3, "items", rule));
         root.put("properties", props);
         root.put("$defs", Map.of("ConditionLeaf", leaf));
         return root;

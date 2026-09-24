@@ -13,8 +13,9 @@ let refreshFlight = null;
 /** @type {((err: ApiError) => void) | null} */
 let onApiError = null;
 
-/** Default abort — remote Supabase can be slow; hung Ollama must not freeze UI forever. */
-const DEFAULT_TIMEOUT_MS = 25_000;
+/** Single request limit for every API call (PDF compile + remote Supabase can be slow). */
+export const REQUEST_TIMEOUT_MS = 300_000;
+const DEFAULT_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
 
 /**
  * @param {(err: ApiError) => void | null} handler
@@ -50,7 +51,7 @@ export async function ensureCsrf() {
   const res = await fetch('/api/v2/auth/csrf', {
     method: 'GET',
     credentials: 'include',
-    signal: AbortSignal.timeout(12_000),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) return;
   const data = await res.json().catch(() => ({}));
@@ -93,7 +94,7 @@ async function refreshSession() {
         method: 'POST',
         credentials: 'include',
         headers,
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (res.ok) {
         csrfToken = readXsrfCookie() || csrfToken;

@@ -152,6 +152,11 @@ public class PolicySetService {
             status = "EDITED";
         }
 
+        List<Map<String, Object>> repairWarnings = new ArrayList<>();
+        Map<String, Object> repairedWhen = RuleValidator.repairWhen(asMap(body.get("when")), repairWarnings);
+        if (!repairedWhen.isEmpty()) {
+            body.put("when", repairedWhen);
+        }
         @SuppressWarnings("unchecked")
         Map<String, Object> when = (Map<String, Object>) body.get("when");
         Set<String> unknown = ConditionEnglish.collectFacts(when).stream()
@@ -189,8 +194,14 @@ public class PolicySetService {
                     || "NON_DISCRIMINATING".equals(c)
                     || "MISSING_CLAUSE_REF".equals(c)
                     || "UNGBOUNDED_CLAUSE".equals(c)
-                    || "INVALID_LEVEL".equals(c);
+                    || "INVALID_LEVEL".equals(c)
+                    || "LLM_NOT_IMPORTANT".equals(c)
+                    || "LLM_ALREADY_COVERED".equals(c)
+                    || "QUOTE_UNVERIFIED".equals(c)
+                    || "NUMBER_UNVERIFIED".equals(c)
+                    || "BROAD_CONDITION".equals(c);
         });
+        warnings.addAll(repairWarnings);
         warnings.addAll(editCheck.warnings());
         body.put("warnings", warnings);
 

@@ -112,7 +112,7 @@ function EmployeesTab({ canWrite, push }) {
       const [data, deps, eps] = await Promise.all([
         apiJson(`/api/v2/directory/employees?${params}`),
         apiJson('/api/v2/directory/departments'),
-        apiJson('/api/v2/telephony/endpoints', { skipErrorToast: true, timeoutMs: 4_000 }).catch(
+        apiJson('/api/v2/telephony/endpoints', { skipErrorToast: true }).catch(
           () => [],
         ),
       ]);

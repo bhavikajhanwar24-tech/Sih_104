@@ -434,8 +434,10 @@ public class LiveRulesService {
         List<Map<String, Object>> checklist = new ArrayList<>();
 
         long proposed = rules.stream().filter(r -> "PROPOSED".equals(String.valueOf(r.get("status")))).count();
-        checklist.add(item("all_reviewed", proposed == 0,
-                proposed == 0 ? "No PROPOSED rules" : proposed + " PROPOSED rule(s) remain"));
+        // Informational: runtime only loads ACCEPTED/EDITED, so PROPOSED rules never go live.
+        checklist.add(item("all_reviewed", true,
+                proposed == 0 ? "No PROPOSED rules"
+                        : proposed + " PROPOSED rule(s) not included — only accepted rules are submitted"));
 
         boolean validatorsPass = true;
         List<String> validatorFails = new ArrayList<>();

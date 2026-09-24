@@ -56,8 +56,7 @@ public class TelephonyResolveService {
             String extension,
             String callerUsername
     ) {
-        Optional<TelephonyModels.ExtensionResolveResult> callee = resolveExtension(extension);
-        if (callee.isEmpty()) {
+        if (extension == null || extension.isBlank()) {
             return Optional.empty();
         }
         if (callerUsername == null || callerUsername.isBlank()) {
@@ -68,10 +67,18 @@ public class TelephonyResolveService {
         if (caller.isEmpty()) {
             return Optional.empty();
         }
-        if (!caller.get().tenantId().equals(callee.get().tenantId())) {
+        return resolveExtensionInTenant(caller.get().tenantId(), extension);
+    }
+
+    /**
+     * Extension blocks can overlap between tenants (seeded fixtures vs ordinal allocation),
+     * so dial-time lookups must be scoped to the caller's tenant.
+     */
+    public Optional<TelephonyModels.ExtensionResolveResult> resolveExtensionInTenant(UUID tenantId, String extension) {
+        if (tenantId == null || extension == null || extension.isBlank()) {
             return Optional.empty();
         }
-        return callee;
+        return endpointRepository.resolveExtensionInTenant(tenantId, phoneNormaliser.extensionDigits(extension));
     }
 
     @Transactional(readOnly = true)

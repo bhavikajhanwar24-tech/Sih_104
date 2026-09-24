@@ -26,7 +26,6 @@ export function ChangeHistoryPage() {
       if (area.trim()) params.set('area', area.trim());
       const data = await apiJson(`/api/v2/governance/changes?${params}`, {
         skipErrorToast: true,
-        timeoutMs: 30_000,
       });
       setItems(data.items || []);
     } catch (err) {

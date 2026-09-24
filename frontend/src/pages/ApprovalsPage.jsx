@@ -27,7 +27,6 @@ export function ApprovalsPage() {
     try {
       const data = await apiJson('/api/v2/governance/approvals', {
         skipErrorToast: true,
-        timeoutMs: 30_000,
       });
       setItems(data.items || []);
     } catch (err) {

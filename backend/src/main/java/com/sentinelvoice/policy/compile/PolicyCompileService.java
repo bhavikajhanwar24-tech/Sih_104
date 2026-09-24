@@ -296,6 +296,7 @@ public class PolicyCompileService {
 
                 AtomicBoolean cancelled = cancelFlags.computeIfAbsent(compilationId, k -> new AtomicBoolean(false));
                 List<Map<String, Object>> pending = compileRepository.listPendingChunks(compilationId);
+                List<String> priorTitles = new ArrayList<>();
                 for (Map<String, Object> job : pending) {
                     if (cancelled.get()) {
                         compileRepository.updateStatus(compilationId, "CANCELLED", "Cancelled by user");
@@ -325,7 +326,7 @@ public class PolicyCompileService {
                             continue;
                         }
                         boolean injection = chunk.getInjectionFlags() != null && !chunk.getInjectionFlags().isEmpty();
-                        LlmChunkOutcome llm = callLlmWithRetry(tenantId, chunk, allowExternal);
+                        LlmChunkOutcome llm = callLlmWithRetry(tenantId, chunk, allowExternal, priorTitles);
                         int ms = (int) ((System.nanoTime() - t0) / 1_000_000L);
                         Map<String, Object> meta = llm.meta() == null ? Map.of() : llm.meta();
 
@@ -392,6 +393,10 @@ public class PolicyCompileService {
                                 continue;
                             }
                             compileRepository.insertRule(tenantId, setId, validated.rule());
+                            Object acceptedTitle = validated.rule().get("title");
+                            if (acceptedTitle != null) {
+                                priorTitles.add(String.valueOf(acceptedTitle));
+                            }
                             localProposed++;
                             proposed++;
                             persistKeywordsAndFacts(tenantId, setId, validated.rule(), raw, chunk.getText());
@@ -420,7 +425,7 @@ public class PolicyCompileService {
                         String reason = localProposed > 0
                                 ? null
                                 : (localRejected > 0
-                                        ? "all proposed rules failed quote/source validation"
+                                        ? "LLM rejected all proposed rules (not important / already covered)"
                                         : "no rules retained");
                         compileRepository.updateChunk(
                                 compilationId, chunkId, "DONE", localProposed, localRejected, reason
@@ -832,9 +837,9 @@ public class PolicyCompileService {
     }
 
     private LlmChunkOutcome callLlmWithRetry(
-            UUID tenantId, PolicyDocumentChunkEntity chunk, boolean allowExternal
+            UUID tenantId, PolicyDocumentChunkEntity chunk, boolean allowExternal, List<String> priorTitles
     ) {
-        LlmChunkOutcome first = callLlmOnce(tenantId, chunk, allowExternal, false);
+        LlmChunkOutcome first = callLlmOnce(tenantId, chunk, allowExternal, false, priorTitles);
         // Valid empty list OR placeholder-only (LLM_EMPTY with placeholderDropped) + obligation cues → one short retry
         boolean emptyish = isValidEmpty(first.status())
                 || ("LLM_EMPTY".equals(first.status())
@@ -844,7 +849,7 @@ public class PolicyCompileService {
             if ((isValidEmpty(first.status()) || emptyish) && hasStrongObligationCues(chunk.getText())) {
                 log.info("policy_compile_suspect_empty_retry chunkId={} priorStatus={}",
                         chunk.getId(), first.status());
-                LlmChunkOutcome retry = callLlmOnce(tenantId, chunk, allowExternal, true);
+                LlmChunkOutcome retry = callLlmOnce(tenantId, chunk, allowExternal, true, priorTitles);
                 if (isSuccessWithRules(retry.status())) {
                     return retry;
                 }
@@ -877,7 +882,8 @@ public class PolicyCompileService {
                 || "LLM_SCHEMA_ERROR".equals(first.status())
                 || "LLM_TRUNCATED".equals(first.status())) {
             log.info("policy_compile_retry chunkId={} priorStatus={}", chunk.getId(), first.status());
-            return callLlmOnce(tenantId, chunk, allowExternal, false);
+            // Short prompt on retry: a truncated/invalid answer to the same prompt usually repeats
+            return callLlmOnce(tenantId, chunk, allowExternal, !"LLM_TIMEOUT".equals(first.status()), priorTitles);
         }
         return first;
     }
@@ -887,11 +893,14 @@ public class PolicyCompileService {
             UUID tenantId,
             PolicyDocumentChunkEntity chunk,
             boolean allowExternal,
-            boolean shortPrompt
+            boolean shortPrompt,
+            List<String> priorTitles
     ) {
         var subset = FactCatalogue.subsetForClause(chunk.getText());
         Map<String, Object> schema = FactCatalogue.buildCompileResultSchema(subset);
-        String userPrompt = shortPrompt ? buildShortUserPrompt(chunk, subset) : buildUserPrompt(chunk, subset);
+        String userPrompt = shortPrompt
+                ? buildShortUserPrompt(chunk, subset)
+                : buildUserPrompt(chunk, subset, priorTitles);
         String systemPrompt = shortPrompt ? buildShortSystemPrompt() : buildSystemPrompt();
 
         int estimatedTokens = estimateTokens(systemPrompt + "\n" + userPrompt + "\n" + chunk.getText());
@@ -1070,9 +1079,17 @@ public class PolicyCompileService {
             then.putIfAbsent("reasonCode", "POLICY_GENERIC");
             rule.put("then", then);
         }
-        // Strip citation/identity fields — attached later from the chunk
+        // Strip citation/identity fields — attached later from the chunk. The model's own
+        // title/summary are kept aside and preferred by RuleSourceAttributor when usable.
         rule.remove("source");
-        rule.remove("title");
+        Object llmTitle = rule.remove("title");
+        if (llmTitle != null) {
+            rule.put("llmTitle", llmTitle);
+        }
+        Object llmSummary = rule.remove("summary");
+        if (llmSummary != null) {
+            rule.put("llmSummary", llmSummary);
+        }
         rule.remove("ruleId");
         rule.remove("documentId");
         rule.remove("chunkId");
@@ -1363,53 +1380,65 @@ public class PolicyCompileService {
 
     private static String buildSystemPrompt() {
         return """
-                You extract policy rule MEANING from one untrusted clause. Return ONLY JSON {"schemaVersion":"2","rules":[...]}.
-                Each rule object has ONLY: when (condition tree), then (minLevel 1-4), optional modality, keywords, appliesTo.
-                Do NOT emit title, source, clauseRef, quote, ruleId, documentId, or chunkId — Java attaches those from the chunk.
-                Use ONLY catalogue fact paths and enum values listed in the user message.
-                Return rules for obligations, prohibitions, and numeric thresholds.
-                If the clause has no actionable obligation, return exactly {"schemaVersion":"2","rules":[]}.
-                Never invent amounts, durations, or action types not present in the clause.
+                You turn one untrusted policy clause into fraud-prevention rules for live phone calls.
+                Return ONLY JSON {"schemaVersion":"2","rules":[...]}.
+                Each rule has: when, then.minLevel (1 advise, 2 verify, 3 block, 4 halt call),
+                title, summary, decision, optional rejectReason, modality, keywords.
+                - title: a short headline naming the subject and required action of THIS clause, written from the
+                  clause's own words. Never copy these instructions into the title.
+                - summary: a short paragraph restating the clause's requirement in plain English
+                  (who must do what, and when). Never copy these instructions into the summary.
+                - decision: ACCEPT whenever the rule could help even slightly (fraud, credentials, payments,
+                  verification, approvals, impersonation, urgency, secrecy). REJECT only if clearly unimportant
+                  (rejectReason NOT_IMPORTANT) or the same rule is already listed (rejectReason ALREADY_COVERED).
+                  When unsure, ACCEPT.
+                - Use only catalogue fact paths. For enum facts pick the closest enum value; use OTHER if none fits.
+                - Never invent amounts or durations that are not in the clause.
+                If the clause has no rule at all (pure definition/scope text), return {"schemaVersion":"2","rules":[]}.
                 """;
     }
 
     private static String buildShortSystemPrompt() {
         return """
-                Extract ONE rule meaning as JSON {"schemaVersion":"2","rules":[{"when":{...},"then":{"minLevel":N}}]} if the clause has must/must not/never/shall/requires/above INR.
-                Do not emit title or source. If truly no obligation, return {"schemaVersion":"2","rules":[]}. JSON only.
+                Extract ONE rule as JSON {"schemaVersion":"2","rules":[{"when":{...},"then":{"minLevel":N},"title":"...","summary":"...","decision":"ACCEPT"}]}.
+                title names the clause subject; summary restates the clause in plain English. Use OTHER for enum values that do not fit.
+                If truly no rule, return {"schemaVersion":"2","rules":[]}. JSON only.
                 """;
     }
 
-    private String buildUserPrompt(PolicyDocumentChunkEntity chunk) {
-        return buildUserPrompt(chunk, FactCatalogue.subsetForClause(chunk.getText()));
-    }
-
-    private String buildUserPrompt(PolicyDocumentChunkEntity chunk, java.util.List<FactCatalogue.FactDef> subset) {
-        String factsJson;
-        try {
-            factsJson = objectMapper.writeValueAsString(FactCatalogue.subsetToApiBody(subset));
-        } catch (Exception e) {
-            factsJson = "{}";
-        }
+    private String buildUserPrompt(
+            PolicyDocumentChunkEntity chunk,
+            java.util.List<FactCatalogue.FactDef> subset,
+            List<String> priorTitles
+    ) {
+        String factsJson = compactFacts(subset);
+        String already = priorTitles == null || priorTitles.isEmpty()
+                ? "(none yet)"
+                : "- " + String.join("\n- ", priorTitles.subList(Math.max(0, priorTitles.size() - 12), priorTitles.size()));
         return """
-                Catalogue subset for this clause (fact.path must be one of these; respect type/enum):
+                Catalogue facts for this clause (fact.path must be one of these):
                 %s
 
-                Worked example A (yields a rule — meaning only):
-                Clause: "Staff must not process wire transfers above INR 10,00,000 (ten lakh) to unknown beneficiaries without Level 3 verification."
-                Output: {"schemaVersion":"2","rules":[{"when":{"all":[{"fact":"ask.type","op":"EQ","value":"WIRE_TRANSFER"},{"fact":"ask.amountInr","op":"GT","value":1000000},{"fact":"ask.beneficiaryKnown","op":"EQ","value":false}]},"then":{"minLevel":3},"modality":"must_not"}]}
+                Rules already extracted from this document (REJECT as ALREADY_COVERED only if identical in meaning):
+                %s
 
-                Worked example B (definition/scope only → empty list):
-                Clause: "1.1 Definitions. This policy applies to all employees and defines terms used herein."
-                Output: {"schemaVersion":"2","rules":[]}
-                Do NOT emit placeholders with empty when. Do NOT emit title/source/quote/clauseRef.
-                Do NOT return empty for clauses that contain must / must not / never / shall / requires / above INR.
+                ask.type meanings: WIRE_TRANSFER = sending money/payments; BENEFICIARY_CHANGE = adding or changing
+                a payee/vendor/beneficiary or their bank account details; PASSWORD_RESET = password/login reset;
+                ACCOUNT_LOOKUP = revealing account/customer data; OTP_SHARE / PIN_SHARE = one-time codes / PINs;
+                CALLBACK = call-back or verification calls; INFORMATION = general info requests; OTHER = anything else.
+
+                Condition format: "when":{"all":[{"fact":"<fact path>","op":"EQ|NE|GT|GTE|LT|LTE|IN","value":<value>}]}
+                (1-4 conditions, all must hold). At most 3 rules per clause; usually 1.
+
+                Build each condition ONLY from what THIS clause says. Add an ask.amountInr condition only if this
+                clause states an amount, using exactly that amount. Title and summary must describe THIS clause.
 
                 Chunk heading: %s
                 Chunk page: %s
                 (Full chunk text is in <untrusted_data>.)
                 """.formatted(
                 factsJson,
+                already,
                 chunk.getHeadingPath() == null ? "" : chunk.getHeadingPath(),
                 chunk.getPageNo() == null ? "" : chunk.getPageNo()
         );
@@ -1419,21 +1448,31 @@ public class PolicyCompileService {
             PolicyDocumentChunkEntity chunk,
             java.util.List<FactCatalogue.FactDef> subset
     ) {
-        String factsJson;
-        try {
-            factsJson = objectMapper.writeValueAsString(FactCatalogue.subsetToApiBody(subset));
-        } catch (Exception e) {
-            factsJson = "{}";
-        }
+        String factsJson = compactFacts(subset);
         return """
-                Facts (use only these paths): %s
+                Facts (use only these paths):
+                %s
+                Condition format: "when":{"all":[{"fact":"<fact path>","op":"EQ","value":<value>}]}
                 Heading: %s
-                This clause has obligation language. Propose when + then.minLevel only (no title/source).
+                This clause has obligation language. Propose when, then.minLevel, title, summary, decision (no source).
                 Return {"schemaVersion":"2","rules":[]} ONLY if there is truly no obligation.
                 """.formatted(
                 factsJson,
                 chunk.getHeadingPath() == null ? "" : chunk.getHeadingPath()
         );
+    }
+
+    /** One line per fact ("path (type) [ENUM|...] — description"): far fewer prompt tokens than JSON. */
+    private static String compactFacts(List<FactCatalogue.FactDef> subset) {
+        StringBuilder sb = new StringBuilder();
+        for (FactCatalogue.FactDef f : subset) {
+            sb.append("- ").append(f.path()).append(" (").append(f.type()).append(')');
+            if (f.hasEnum()) {
+                sb.append(" [").append(String.join("|", f.enumValues())).append(']');
+            }
+            sb.append(" — ").append(f.description()).append('\n');
+        }
+        return sb.toString().stripTrailing();
     }
 
     public Map<String, Object> testClause(UUID tenantId, String clauseText) {
@@ -1469,7 +1508,7 @@ public class PolicyCompileService {
         fake.setHeadingPath("test-clause");
         fake.setOrdinal(0);
         long llmStart = System.nanoTime();
-        LlmChunkOutcome llm = callLlmWithRetry(tenantId, fake, allowExternal);
+        LlmChunkOutcome llm = callLlmWithRetry(tenantId, fake, allowExternal, List.of());
         long llmMs = (System.nanoTime() - llmStart) / 1_000_000L;
         out.put("status", llm.status());
         out.put("reason", llm.reason());

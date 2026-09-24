@@ -51,7 +51,6 @@ export function AppShell() {
         const { apiJson } = await import('@/services/api.js');
         const st = await apiJson('/api/v2/governance/emergency', {
           skipErrorToast: true,
-          timeoutMs: 12_000,
         });
         if (!cancelled) setEmergency(st);
       } catch {

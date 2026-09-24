@@ -58,16 +58,9 @@ public class CallLifecycleService {
         if (req == null || req.calleeExtension() == null || req.calleeExtension().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "calleeExtension required");
         }
-        TelephonyModels.ExtensionResolveResult callee = resolveService.resolveExtension(req.calleeExtension())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "callee extension not found"));
+        Optional<TelephonyModels.ExtensionResolveResult> caller = resolveCaller(req.callerUsername());
+        TelephonyModels.ExtensionResolveResult callee = resolveCallee(req.calleeExtension(), caller);
         UUID tenantId = callee.tenantId();
-        if (req.callerUsername() != null && !req.callerUsername().isBlank()) {
-            Optional<TelephonyModels.ExtensionResolveResult> caller =
-                    resolveService.resolveUsername(req.callerUsername());
-            if (caller.isEmpty() || !caller.get().tenantId().equals(tenantId)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "cross-tenant dial denied");
-            }
-        }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("event", "RINGING");
         payload.put("calleeExtension", callee.extension());
@@ -103,20 +96,15 @@ public class CallLifecycleService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "calleeExtension required");
         }
 
-        TelephonyModels.ExtensionResolveResult callee = resolveService.resolveExtension(req.calleeExtension())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "callee extension not found"));
+        Optional<TelephonyModels.ExtensionResolveResult> callerEp = resolveCaller(req.callerUsername());
+        TelephonyModels.ExtensionResolveResult callee = resolveCallee(req.calleeExtension(), callerEp);
 
         final UUID tenantId = callee.tenantId();
         final UUID svSession = req.svSessionUuid() == null ? UUID.randomUUID() : req.svSessionUuid();
 
         UUID resolvedCallerEmployeeId = null;
         String resolvedCallerNumber = req.callerNumber() == null ? "" : req.callerNumber().trim();
-        if (req.callerUsername() != null && !req.callerUsername().isBlank()) {
-            Optional<TelephonyModels.ExtensionResolveResult> callerEp =
-                    resolveService.resolveUsername(req.callerUsername());
-            if (callerEp.isEmpty() || !callerEp.get().tenantId().equals(tenantId)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "cross-tenant dial denied");
-            }
+        if (callerEp.isPresent()) {
             resolvedCallerEmployeeId = callerEp.get().employeeId();
             if (resolvedCallerNumber.isBlank()) {
                 resolvedCallerNumber = callerEp.get().extension();
@@ -297,6 +285,25 @@ public class CallLifecycleService {
             return "INBOUND";
         }
         return "OUTBOUND";
+    }
+
+    private Optional<TelephonyModels.ExtensionResolveResult> resolveCaller(String callerUsername) {
+        if (callerUsername == null || callerUsername.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(resolveService.resolveUsername(callerUsername)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "cross-tenant dial denied")));
+    }
+
+    private TelephonyModels.ExtensionResolveResult resolveCallee(
+            String calleeExtension,
+            Optional<TelephonyModels.ExtensionResolveResult> caller
+    ) {
+        Optional<TelephonyModels.ExtensionResolveResult> callee = caller.isPresent()
+                ? resolveService.resolveExtensionInTenant(caller.get().tenantId(), calleeExtension)
+                : resolveService.resolveExtension(calleeExtension);
+        return callee.orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "callee extension not found"));
     }
 
     public record StartRequest(

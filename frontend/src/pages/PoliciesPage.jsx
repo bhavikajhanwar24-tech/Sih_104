@@ -1895,7 +1895,6 @@ function LiveRulesTab({ canWrite, engineStatus, onEngineReload, onEngineStatus }
     try {
       const d = await apiJson('/api/v2/policy/live-rules', {
         skipErrorToast: true,
-        timeoutMs: 45_000,
       });
       setData(d);
       if (d?.engine) {

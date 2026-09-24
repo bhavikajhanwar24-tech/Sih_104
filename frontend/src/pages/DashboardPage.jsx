@@ -53,7 +53,6 @@ export function DashboardPage() {
     try {
       const snap = await apiJson('/api/v2/governance/dashboard', {
         skipErrorToast: true,
-        timeoutMs: 45_000,
       });
       setData(snap);
     } catch (err) {

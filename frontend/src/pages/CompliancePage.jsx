@@ -706,7 +706,6 @@ function DsrTab({ canWrite }) {
     const res = await apiFetch(`/api/v2/compliance/passports/${employeeId}/enrol`, {
       method: 'POST',
       body: fd,
-      timeoutMs: 60_000,
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

@@ -51,6 +51,27 @@ export function PolicyReviewPage() {
 
   const canWrite = hasPermission('policies:write');
 
+  const [liveKeys, setLiveKeys] = useState(() => new Set());
+
+  useEffect(() => {
+    apiJson('/api/v2/policy/live-rules')
+      .then((d) => {
+        const keys = new Set();
+        (d?.rules || []).forEach((r) => {
+          if (r.ruleId) keys.add(`id:${r.ruleId}`);
+          if (r.title) keys.add(`t:${String(r.title).trim().toLowerCase()}`);
+        });
+        setLiveKeys(keys);
+      })
+      .catch(() => {});
+  }, [setId]);
+
+  const isAlreadyLive = useCallback(
+    (r) => Boolean(r) && (liveKeys.has(`id:${r.ruleId}`)
+      || liveKeys.has(`t:${String(r.title || '').trim().toLowerCase()}`)),
+    [liveKeys]
+  );
+
   const load = useCallback(async (opts = {}) => {
     if (!setId) return;
     const soft = Boolean(opts.soft);
@@ -97,6 +118,12 @@ export function PolicyReviewPage() {
     [allRules]
   );
   const couldNotRule = diagnostics?.couldNotRule || [];
+  const compileActive = ['QUEUED', 'RUNNING'].includes(String(diagnostics?.compilationStatus || ''));
+  useEffect(() => {
+    if (!compileActive) return undefined;
+    const t = window.setInterval(() => load({ soft: true }), 5000);
+    return () => window.clearInterval(t);
+  }, [compileActive, load]);
   const ruleCount = allRules.length;
   const canSubmit = Boolean(set?.canSubmit);
   const preflight = set?.preflight || null;
@@ -517,6 +544,11 @@ export function PolicyReviewPage() {
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-sv-muted">
               Rules · {ruleCount} {ruleCount === 1 ? 'rule' : 'rules'}
             </h2>
+            {compileActive ? (
+              <p className="mb-2 text-xs text-sv-accent">
+                Compile running — new rules appear here as each clause is processed.
+              </p>
+            ) : null}
             {ruleCount === 0 ? (
               <EmptyRulesState
                 diagnostics={diagnostics}
@@ -673,6 +705,16 @@ export function PolicyReviewPage() {
                       : 'Edit to fix'}
                   </Button>
                 ) : null}
+                {selected.status === 'REJECTED' && canWrite && set.status === 'DRAFT'
+                  && hasCondition(selected.when) ? (
+                  <Button
+                    className="px-2 py-1 text-xs"
+                    disabled={busy || isAlreadyLive(selected)}
+                    onClick={() => setStatus('ACCEPTED')}
+                  >
+                    {isAlreadyLive(selected) ? 'Already live' : 'Accept anyway'}
+                  </Button>
+                ) : null}
                 {editError ? (
                   <p className="text-xs text-risk-critical" role="alert">
                     {editError}
@@ -680,8 +722,14 @@ export function PolicyReviewPage() {
                 ) : null}
                 {canWrite && set.status === 'DRAFT' && selected.status !== 'REJECTED' ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button className="px-2 py-1 text-xs" disabled={busy} onClick={() => setStatus('ACCEPTED')}>
-                      Accept
+                    <Button
+                      className="px-2 py-1 text-xs"
+                      disabled={busy || selected.status === 'ACCEPTED' || isAlreadyLive(selected)}
+                      onClick={() => setStatus('ACCEPTED')}
+                    >
+                      {isAlreadyLive(selected)
+                        ? 'Already live'
+                        : selected.status === 'ACCEPTED' ? 'Accepted' : 'Accept'}
                     </Button>
                     <Button className="px-2 py-1 text-xs" disabled={busy} onClick={() => setStatus('REJECTED')}>
                       Reject
@@ -916,6 +964,11 @@ function RuleCard({ rule, selected, onSelect, rejected, onEditToFix, editLabel, 
       <button type="button" className="w-full text-left" onClick={onSelect}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-sv-fg">{rule.title}</span>
+          {rule.then?.minLevel ? (
+            <Badge tone={SEVERITY_TONE[rule.severity] || 'neutral'}>
+              Trigger L{rule.then.minLevel} · {['', 'Advise', 'Verify', 'Block', 'Halt call'][rule.then.minLevel] || 'Halt call'}
+            </Badge>
+          ) : null}
           <Badge tone={SEVERITY_TONE[rule.severity] || 'neutral'}>{rule.severity}</Badge>
           <Badge tone={STATUS_TONE[rule.status] || 'neutral'}>{rule.status}</Badge>
           <OriginBadge origin={rule.origin} />
@@ -934,6 +987,7 @@ function RuleCard({ rule, selected, onSelect, rejected, onEditToFix, editLabel, 
             {clauseRef ? <span>{clauseRef}</span> : null}
           </p>
         ) : null}
+        {rule.description ? <p className="mt-1 text-sm text-sv-fg">{rule.description}</p> : null}
         <p className="mt-1 text-xs text-sv-muted">{rule.plainEnglish}</p>
         {rejectReason ? (
           <p className="mt-1 text-xs text-risk-critical">{rejectReason}</p>
@@ -993,18 +1047,6 @@ function validateWhenObject(when, facts) {
   if (!when || typeof when !== 'object') return 'Condition is required';
   const leaves = collectLeaves(when);
   if (leaves.length === 0) return 'Condition has no leaf facts';
-  const nonDisc = new Set([
-    'session.durationSec',
-    'time.hourLocal',
-    'time.isBusinessHours',
-    'voice.syntheticScore',
-    'voice.speakerMismatch',
-    'relationship.daysSinceLastContact',
-    'relationship.isFirstContact',
-  ]);
-  if (leaves.length === 1 && nonDisc.has(leaves[0].fact)) {
-    return 'A single non-discriminating fact is not allowed';
-  }
   const byPath = Object.fromEntries((facts || []).map((f) => [f.path, f]));
   for (const leaf of leaves) {
     if (leaf.op !== 'EXISTS') {
@@ -1014,9 +1056,7 @@ function validateWhenObject(when, facts) {
     }
     const def = byPath[leaf.fact];
     if (!def) return `Unknown fact: ${leaf.fact}`;
-    if (def.enum && def.enum.length && typeof leaf.value === 'string' && !def.enum.includes(leaf.value)) {
-      return `${leaf.fact} value "${leaf.value}" is not in catalogue enum`;
-    }
+    // Off-catalogue enum values are mapped to the closest value (or OTHER) by the backend.
     if (def.type === 'boolean' && typeof leaf.value !== 'boolean' && leaf.op !== 'EXISTS') {
       return `${leaf.fact} requires a boolean`;
     }

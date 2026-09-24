@@ -13,6 +13,11 @@ spring:
     username: ${DB_APP_USER:sv_app}
     password: ${DB_APP_PASSWORD:changeme_app}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 300000
+  mvc:
+    async:
+      request-timeout: 300s
   flyway:
     enabled: true
     # Local: sv_owner (BYPASSRLS). Supabase: project postgres role (see docs/v2/SUPABASE.md).
@@ -38,6 +43,8 @@ spring:
 
 server:
   port: 8081
+  tomcat:
+    connection-timeout: 300s
 
 management:
   endpoints:
@@ -79,8 +86,8 @@ sentinelvoice:
     base-url: ${LLM_GATEWAY_URL:http://127.0.0.1:8000}
     service-token: ${ML_SERVICE_TOKEN:}
     connect-timeout-ms: 2000
-    # policy_compile budget is 90s; leave headroom for gateway + repair retry
-    read-timeout-ms: 120000
+    # 5-minute request limit; ml-engine policy_compile budget stays just under it
+    read-timeout-ms: 300000
   policy-compile:
     # Default one document set per compile (UI can raise via compile-limits if configured higher)
     max-documents-per-compile: 1
