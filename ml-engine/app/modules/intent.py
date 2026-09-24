@@ -25,6 +25,7 @@ from typing import Any, Iterable, Optional
 import numpy as np
 import yaml
 
+from app.config import settings
 from app.modules import extractor as extractor_mod
 
 logger = logging.getLogger("sentinelvoice.ml.intent")
@@ -208,6 +209,8 @@ def _lexicon_scores(
 
 def _ensure_semantic() -> bool:
     global _st_model, _semantic_ready, _semantic_attempted, _canonical_emb
+    if settings.ml_lightweight_mode:
+        return False
     if _semantic_ready:
         return True
     if _semantic_attempted:

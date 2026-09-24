@@ -10,6 +10,10 @@ load_dotenv(_REPO_ROOT / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 if not os.environ.get("SENTINELVOICE_ML_SERVICE_TOKEN") and os.environ.get("ML_SERVICE_TOKEN"):
     os.environ["SENTINELVOICE_ML_SERVICE_TOKEN"] = os.environ["ML_SERVICE_TOKEN"]
+if not os.environ.get("SENTINELVOICE_ML_LIGHTWEIGHT_MODE") and os.environ.get("ML_LIGHTWEIGHT_MODE"):
+    os.environ["SENTINELVOICE_ML_LIGHTWEIGHT_MODE"] = os.environ["ML_LIGHTWEIGHT_MODE"]
+if not os.environ.get("SENTINELVOICE_ML_SPEAKER_WARMUP_ON_STARTUP") and os.environ.get("SPEAKER_WARMUP_ON_STARTUP"):
+    os.environ["SENTINELVOICE_ML_SPEAKER_WARMUP_ON_STARTUP"] = os.environ["SPEAKER_WARMUP_ON_STARTUP"]
 
 
 class Settings(BaseSettings):
@@ -52,7 +56,7 @@ class Settings(BaseSettings):
     breath_min_cumulative_speech_s: float = 15.0
 
     # Memory & Cloud Tier Optimization (For 512MB RAM free tiers e.g. Render)
-    ml_lightweight_mode: bool = False
+    ml_lightweight_mode: bool = True
     speaker_warmup_on_startup: bool = False
 
     # Speaker / Voice Passport (Context §10.5) — recalibrate on your data.
