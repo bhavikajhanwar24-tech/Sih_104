@@ -41,20 +41,23 @@ _emitter_task: asyncio.Task[None] | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _emitter_task
-    # ECAPA-TDNN singleton — load once; never per window (Context §10.5).
-    try:
-        from app.modules import speaker as speaker_mod
+    # ECAPA-TDNN singleton — lazy or warmup on startup
+    if settings.speaker_warmup_on_startup and not settings.ml_lightweight_mode:
+        try:
+            from app.modules import speaker as speaker_mod
 
-        info = speaker_mod.warmup()
-        logger.info(
-            "speaker_warmup ready=%s warmup_ms=%s embed_latency_ms=%s stride=%s",
-            info.get("ready"),
-            info.get("warmup_ms"),
-            info.get("embed_latency_ms"),
-            info.get("window_stride"),
-        )
-    except Exception:
-        logger.exception("speaker_warmup_failed — speaker features unavailable until fixed")
+            info = speaker_mod.warmup()
+            logger.info(
+                "speaker_warmup ready=%s warmup_ms=%s embed_latency_ms=%s stride=%s",
+                info.get("ready"),
+                info.get("warmup_ms"),
+                info.get("embed_latency_ms"),
+                info.get("window_stride"),
+            )
+        except Exception:
+            logger.exception("speaker_warmup_failed — speaker features unavailable until fixed")
+    else:
+        logger.info("speaker_warmup_skipped startup (lazy loading / lightweight mode enabled)")
 
     # Tier-1 anti-spoof LCNN + Platt calibration (Context §10.1).
     try:
@@ -72,7 +75,7 @@ async def lifespan(_app: FastAPI):
         logger.exception("antispoof_warmup_failed — spoofProbability unavailable until trained")
 
     # Slow-path ASR (faster-whisper) — load once; log size/device (Context §7.2).
-    if settings.asr_enabled:
+    if settings.asr_enabled and not settings.ml_lightweight_mode:
         try:
             from app.modules import asr as asr_mod
 
@@ -87,6 +90,8 @@ async def lifespan(_app: FastAPI):
             )
         except Exception:
             logger.exception("asr_warmup_failed — linguistic ASR unavailable until fixed")
+    else:
+        logger.info("asr_warmup_skipped startup (lightweight mode or asr_enabled=false)")
 
     try:
         from app.modules import intent as intent_mod

@@ -36,9 +36,10 @@ COPY pyproject.toml README.md ./
 # Expected layout: /app/models/antispoof/codec_aug.pt
 ENV SENTINELVOICE_ML_JAVA_DECISION_HTTP=http://backend:8080
 
-EXPOSE 8000
+ENV PORT=8000
+EXPOSE 8000 10000
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=60s \
-  CMD curl -sf http://127.0.0.1:8000/health || exit 1
+  CMD curl -sf http://127.0.0.1:${PORT:-8000}/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

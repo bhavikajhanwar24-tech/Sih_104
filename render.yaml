@@ -44,3 +44,36 @@ services:
         sync: false
       - key: LAB_MODE
         value: "false"
+
+  # Inference Plane / ML Engine (FastAPI / Python 3.11)
+  - type: web
+    name: sentinelvoice-ml-engine
+    runtime: docker
+    dockerfilePath: ./ml-engine/Dockerfile
+    dockerContext: ./ml-engine
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ML_LIGHTWEIGHT_MODE
+        value: "true"
+      - key: SENTINELVOICE_ML_SERVICE_TOKEN
+        fromService:
+          type: web
+          name: sentinelvoice-backend
+          envVarKey: ML_SERVICE_TOKEN
+      - key: SENTINELVOICE_ML_JAVA_DECISION_HTTP
+        fromService:
+          type: web
+          name: sentinelvoice-backend
+          property: host
+      # Groq Cloud API for LLM analysis in production
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: "openai/gpt-oss-120b"
+      - key: GROQ_BASE_URL
+        value: "https://api.groq.com/openai"
+      - key: LLM_FORCE_MOCK
+        value: "false"

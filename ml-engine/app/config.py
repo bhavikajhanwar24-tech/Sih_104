@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     min_voiced_seconds: float = 0.5
     breath_min_cumulative_speech_s: float = 15.0
 
+    # Memory & Cloud Tier Optimization (For 512MB RAM free tiers e.g. Render)
+    ml_lightweight_mode: bool = False
+    speaker_warmup_on_startup: bool = False
+
     # Speaker / Voice Passport (Context §10.5) — recalibrate on your data.
     # Channel mismatch shifts these sharply; enrol per channel profile.
     speaker_match_threshold: float = 0.70
