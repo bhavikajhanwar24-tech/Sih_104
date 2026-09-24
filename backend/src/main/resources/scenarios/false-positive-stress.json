@@ -1,0 +1,21 @@
+{
+  "id": "false-positive-stress",
+  "title": "False-positive stress — legit fast-talking senior",
+  "description": "Known senior officer speaking quickly; must not over-escalate.",
+  "channelProfile": "WEBRTC_WIDEBAND",
+  "attackerPersona": null,
+  "spoofedCli": null,
+  "claimedIdentity": "Vikram Singh",
+  "spokenScript": "Rahul quickly please check the payroll batch status for today. Everything is routine, call me on my mobile if stuck.",
+  "audio": { "source": "scenarios/audio/false-positive-stress.wav", "liveAllowed": true },
+  "caller": { "cli": "+91987651004", "trunkClass": "KNOWN_MOBILE", "claimedIdentity": "Vikram Singh", "claimedRole": "Ops Head", "employeeId": "E004", "name": "Vikram Singh" },
+  "callee": { "cli": "+91987651002", "employeeId": "E002", "name": "Rahul Mehta" },
+  "expectedPolicyRules": [],
+  "expectedFinalLevel": "LEVEL_2_SOFT_NUDGE",
+  "mustNotExceed": "LEVEL_3_STEP_UP_MFA",
+  "expectedTrajectory": [
+    { "tSec": 8, "risk": 0.28, "level": "LEVEL_1_SILENT", "corroboration": false },
+    { "tSec": 30, "risk": 0.36, "level": "LEVEL_2_SOFT_NUDGE", "corroboration": false }
+  ],
+  "teachingPoint": "Fast speech alone on a known CLI should not hit L3."
+}

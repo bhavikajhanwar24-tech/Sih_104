@@ -1,59 +1,41 @@
 package com.sentinelvoice.scenario;
 
-import com.sentinelvoice.model.Ask;
 import com.sentinelvoice.model.FeatureFrame;
-import com.sentinelvoice.model.LinguisticFamily;
 import com.sentinelvoice.scenario.model.Scenario;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Per-session scenario context seeds (asks / linguistic priors) applied when ASR has not
- * yet produced a linguistic block — same idea as seeded cross-channel BEC events.
+ * F18 — session metadata for lab runs. Does <strong>not</strong> inject fake FeatureFrames
+ * into the live pipeline (v1 ScenarioTrajectoryRunner removed).
  */
 @Service
 public class ScenarioSessionContext {
 
-    public record LinguisticSeed(
-            Ask ask,
-            double urgency,
-            double secrecy,
-            double authorityInvocation,
-            String claimedIdentity,
-            String claimedRole,
-            String language
-    ) {
-    }
-
-    private final ConcurrentHashMap<String, LinguisticSeed> bySession = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Map<String, Object>> bySession = new ConcurrentHashMap<>();
 
     public void bind(String sessionId, Scenario.TransactionSeed seed, Scenario scenario) {
-        if (sessionId == null || sessionId.isBlank() || seed == null || seed.amountInr() == null) {
+        if (sessionId == null || sessionId.isBlank()) {
             return;
         }
-        Ask ask = new Ask(
-                seed.type() != null ? seed.type() : "wire_transfer",
-                seed.amountInr(),
-                seed.currency() != null ? seed.currency() : "INR",
-                seed.beneficiaryHint(),
-                seed.deadline() != null ? seed.deadline() : "immediate"
-        );
-        String identity = scenario.caller() != null ? scenario.caller().claimedIdentity() : null;
-        String role = scenario.caller() != null ? scenario.caller().claimedRole() : null;
-        bySession.put(
-                sessionId,
-                new LinguisticSeed(
-                        ask,
-                        seed.urgency() != null ? seed.urgency() : 0.92,
-                        seed.secrecy() != null ? seed.secrecy() : 0.88,
-                        seed.authorityInvocation() != null ? seed.authorityInvocation() : 0.9,
-                        identity,
-                        role,
-                        seed.language() != null ? seed.language() : "en"
-                )
-        );
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("scenarioId", scenario == null ? null : scenario.id());
+        if (seed != null) {
+            meta.put("amountInr", seed.amountInr());
+            meta.put("currency", seed.currency());
+            meta.put("beneficiaryHint", seed.beneficiaryHint());
+            meta.put("askType", seed.askType() != null ? seed.askType() : seed.type());
+            meta.put("urgency", seed.urgency());
+            meta.put("secrecy", seed.secrecy());
+        }
+        if (scenario != null && scenario.caller() != null) {
+            meta.put("claimedIdentity", scenario.caller().claimedIdentity());
+            meta.put("claimedRole", scenario.caller().claimedRole());
+        }
+        bySession.put(sessionId, Map.copyOf(meta));
     }
 
     public void clear(String sessionId) {
@@ -62,63 +44,19 @@ public class ScenarioSessionContext {
         }
     }
 
+    /** Pass-through — real WAV / SIP audio must drive FeatureFrames. */
     public FeatureFrame enrich(FeatureFrame frame) {
-        if (frame == null || frame.sessionId() == null) {
-            return frame;
-        }
-        LinguisticSeed seed = bySession.get(frame.sessionId());
-        if (seed == null) {
-            return frame;
-        }
-        LinguisticFamily ling = frame.linguistic();
-        boolean hasAsk = ling != null && ling.available() && ling.ask() != null && ling.ask().amount() != null;
-        if (hasAsk) {
-            return frame;
-        }
-        LinguisticFamily seeded = new LinguisticFamily(
-                true,
-                0L,
-                seed.language(),
-                seed.urgency(),
-                seed.secrecy(),
-                seed.authorityInvocation(),
-                0.55,
-                true,
-                seed.ask(),
-                seed.claimedIdentity(),
-                seed.claimedRole(),
-                "[scenario-seeded ask — awaiting ASR]",
-                null
-        );
-        return new FeatureFrame(
-                frame.schema(),
-                frame.sessionId(),
-                frame.seq(),
-                frame.windowStartMs(),
-                frame.windowEndMs(),
-                frame.channelProfile(),
-                frame.speechPresent(),
-                frame.cumulativeSpeechMs(),
-                frame.voice(),
-                frame.channel(),
-                frame.prosody(),
-                frame.speaker(),
-                frame.watermark(),
-                seeded,
-                frame.latencyMs()
-        );
+        return frame;
     }
 
     public Map<String, Object> debug(String sessionId) {
-        LinguisticSeed seed = bySession.get(sessionId);
+        Map<String, Object> seed = bySession.get(sessionId);
         if (seed == null) {
             return Map.of("bound", false);
         }
-        return Map.of(
-                "bound", true,
-                "amount", seed.ask().amount() != null ? seed.ask().amount() : 0,
-                "urgency", seed.urgency(),
-                "secrecy", seed.secrecy()
-        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("bound", true);
+        out.putAll(seed);
+        return out;
     }
 }

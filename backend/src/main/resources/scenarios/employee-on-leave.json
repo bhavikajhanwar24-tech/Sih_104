@@ -1,0 +1,20 @@
+{
+  "id": "employee-on-leave",
+  "title": "Employee-on-leave impersonation",
+  "description": "Attacker claims to be an employee marked on leave.",
+  "channelProfile": "PSTN_NARROWBAND",
+  "attackerPersona": "Impersonator",
+  "spoofedCli": "+91980001111",
+  "claimedIdentity": "Demo User 12",
+  "spokenScript": "I am back early from leave. Please unlock my transfers and send the OTP to this number.",
+  "audio": { "source": "scenarios/audio/employee-on-leave.wav", "liveAllowed": true },
+  "caller": { "cli": "+91980001111", "trunkClass": "UNKNOWN", "claimedIdentity": "Demo User 12", "claimedRole": "Analyst" },
+  "callee": { "cli": "+91987651005", "employeeId": "E005", "name": "Sneha Patel" },
+  "expectedPolicyRules": ["Never share OTP on voice"],
+  "expectedFinalLevel": "LEVEL_3_STEP_UP_MFA",
+  "expectedTrajectory": [
+    { "tSec": 10, "risk": 0.4, "level": "LEVEL_2_SOFT_NUDGE", "corroboration": true },
+    { "tSec": 30, "risk": 0.58, "level": "LEVEL_3_STEP_UP_MFA", "corroboration": true }
+  ],
+  "teachingPoint": "Leave status + OTP ask should step up MFA."
+}

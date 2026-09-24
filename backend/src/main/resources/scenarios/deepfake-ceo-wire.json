@@ -1,0 +1,21 @@
+{
+  "id": "deepfake-ceo-wire",
+  "title": "Deepfake CFO wire from unknown number",
+  "description": "Unknown CLI claiming CFO, urgent large wire — expect L3/L4.",
+  "channelProfile": "PSTN_NARROWBAND",
+  "attackerPersona": "Deepfake CFO",
+  "spoofedCli": "+15551230999",
+  "claimedIdentity": "Priya Sharma",
+  "spokenScript": "This is Priya Sharma, CFO. Immediate wire of fifty lakh to the new vendor. Do not call anyone back. Secrecy is critical.",
+  "audio": { "source": "scenarios/audio/deepfake-ceo-wire.wav", "liveAllowed": true, "codecProfileHint": "PSTN_NARROWBAND" },
+  "caller": { "cli": "+15551230999", "trunkClass": "UNKNOWN", "claimedIdentity": "Priya Sharma", "claimedRole": "CFO", "name": "Unknown" },
+  "callee": { "cli": "+91987651002", "claimedIdentity": "Rahul Mehta", "claimedRole": "Treasury Clerk", "employeeId": "E002", "name": "Rahul Mehta" },
+  "expectedPolicyRules": ["Unknown CLI high-authority ask", "Wire >5L requires dual approval"],
+  "expectedFinalLevel": "LEVEL_4_AUTO_HOLD",
+  "expectedTrajectory": [
+    { "tSec": 8, "risk": 0.45, "level": "LEVEL_2_SOFT_NUDGE", "corroboration": true },
+    { "tSec": 20, "risk": 0.62, "level": "LEVEL_3_STEP_UP_MFA", "corroboration": true },
+    { "tSec": 40, "risk": 0.78, "level": "LEVEL_4_AUTO_HOLD", "corroboration": true }
+  ],
+  "teachingPoint": "Unknown CLI + secrecy + large wire should climb the ladder."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "otp-harvest",
+  "title": "OTP harvesting bank-official call",
+  "description": "Fake bank official asks employee for OTP.",
+  "channelProfile": "PSTN_NARROWBAND",
+  "attackerPersona": "Bank official",
+  "spoofedCli": "+912266550000",
+  "claimedIdentity": "Bank Fraud Desk",
+  "spokenScript": "This is the bank fraud desk. Please read the OTP you just received so we can cancel a fraudulent transaction.",
+  "audio": { "source": "scenarios/audio/otp-harvest.wav", "liveAllowed": true },
+  "caller": { "cli": "+912266550000", "trunkClass": "SPOOFED_BANK", "claimedIdentity": "Bank Fraud Desk" },
+  "callee": { "cli": "+91987651005", "employeeId": "E005", "name": "Sneha Patel" },
+  "expectedPolicyRules": ["Never share OTP on voice"],
+  "expectedFinalLevel": "LEVEL_4_AUTO_HOLD",
+  "expectedTrajectory": [
+    { "tSec": 5, "risk": 0.55, "level": "LEVEL_3_STEP_UP_MFA", "corroboration": true },
+    { "tSec": 20, "risk": 0.8, "level": "LEVEL_4_AUTO_HOLD", "corroboration": true }
+  ],
+  "teachingPoint": "OTP harvest language is a hard floor."
+}

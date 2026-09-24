@@ -8,6 +8,7 @@ const NAV = [
   { to: '/app/live', label: 'Live Calls', permission: 'calls:read', alertKey: 'live' },
   { to: '/app/history', label: 'Call History', permission: 'calls:read' },
   { to: '/app/analytics', label: 'Analytics', permission: 'analytics:read' },
+  { to: '/app/lab', label: 'Lab', permission: 'lab:robustness' },
   { to: '/app/directory', label: 'Directory', permission: 'directory:read' },
   { to: '/app/policies', label: 'Policies', permission: 'policies:read' },
   { to: '/app/approvals', label: 'Approvals', permission: 'approvals:read' },

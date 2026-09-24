@@ -1,0 +1,21 @@
+{
+  "id": "legit-cfo",
+  "title": "Legit CFO on known mobile",
+  "description": "Known CFO mobile, normal treasury request — stays L0/L1.",
+  "channelProfile": "PSTN_NARROWBAND",
+  "attackerPersona": null,
+  "spoofedCli": null,
+  "claimedIdentity": "Priya Sharma",
+  "spokenScript": "Hi Rahul, this is Priya. Please prepare the routine vendor payment for Acme as we discussed yesterday. No rush.",
+  "audio": { "source": "scenarios/audio/legit-cfo.wav", "liveAllowed": true, "codecProfileHint": "PSTN_NARROWBAND" },
+  "caller": { "cli": "+91987651001", "trunkClass": "KNOWN_MOBILE", "claimedIdentity": "Priya Sharma", "claimedRole": "CFO", "employeeId": "E001", "name": "Priya Sharma" },
+  "callee": { "cli": "+91987651002", "claimedIdentity": "Rahul Mehta", "claimedRole": "Treasury Clerk", "employeeId": "E002", "name": "Rahul Mehta" },
+  "expectedPolicyRules": [],
+  "expectedFinalLevel": "LEVEL_1_SILENT",
+  "mustNotExceed": "LEVEL_2_SOFT_NUDGE",
+  "expectedTrajectory": [
+    { "tSec": 5, "risk": 0.12, "level": "LEVEL_1_SILENT", "corroboration": false },
+    { "tSec": 25, "risk": 0.18, "level": "LEVEL_1_SILENT", "corroboration": false }
+  ],
+  "teachingPoint": "Directory-matched CLI + low linguistic urgency should not escalate."
+}

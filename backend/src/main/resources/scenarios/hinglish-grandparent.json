@@ -1,0 +1,21 @@
+{
+  "id": "hinglish-grandparent",
+  "title": "Hinglish grandparent urgency scam",
+  "description": "Customer-support line; Hinglish urgency / bail story.",
+  "channelProfile": "PSTN_NARROWBAND",
+  "attackerPersona": "Scammer",
+  "spoofedCli": "+91991112233",
+  "claimedIdentity": "Beta",
+  "spokenScript": "Namaste aunty, main beta bol raha hoon. Jaldi UPI karna padega warna police aa jayegi. Secret rakhna.",
+  "audio": { "source": "scenarios/audio/hinglish-grandparent.wav", "liveAllowed": true },
+  "caller": { "cli": "+91991112233", "trunkClass": "UNKNOWN", "claimedIdentity": "Beta" },
+  "callee": { "cli": "+91987651005", "employeeId": "E005", "name": "Sneha Patel" },
+  "expectedPolicyRules": [],
+  "expectedFinalLevel": "LEVEL_3_STEP_UP_MFA",
+  "seniorShield": true,
+  "expectedTrajectory": [
+    { "tSec": 12, "risk": 0.5, "level": "LEVEL_2_SOFT_NUDGE", "corroboration": true },
+    { "tSec": 35, "risk": 0.65, "level": "LEVEL_3_STEP_UP_MFA", "corroboration": true }
+  ],
+  "teachingPoint": "Urgency + secrecy in Hinglish still escalates on support lines."
+}

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CHANNEL_PROFILES } from '@/contracts';
 import { useSession } from '@/context/SessionContext.jsx';
-import { SEED_SCENARIOS } from '@/theme.js';
 import { Badge } from '@/components/ui/Badge.jsx';
 import { Card } from '@/components/ui/Card.jsx';
 import { Stat } from '@/components/ui/Stat.jsx';
@@ -13,8 +12,14 @@ const PROFILE_OPTIONS = [
   CHANNEL_PROFILES.PSTN_NARROWBAND,
 ];
 
+/** Live paths only — scripted fixtures live under /app/lab (F18). */
+const LIVE_MODES = Object.freeze([
+  { id: 'pstn-narrowband', title: 'Live SIP / AudioSocket' },
+  { id: 'live-browser', title: 'Browser mic (WebRTC)' },
+]);
+
 /**
- * Start/stop Decision Plane session, channel profile, scenario, elapsed timer.
+ * Start/stop Decision Plane session, channel profile, mode, elapsed timer.
  *
  * @param {Object} props
  * @param {string} [props.className]
@@ -78,14 +83,14 @@ export function SessionControl({ className = '' }) {
         </label>
 
         <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-sv-muted">
-          Scenario
+          Mode
           <select
             className="rounded border border-sv-border bg-sv-bg px-2 py-1.5 font-mono text-xs text-sv-fg disabled:opacity-50"
             value={scenarioId}
             disabled={isRunning || busy}
             onChange={(e) => setScenarioId(e.target.value)}
           >
-            {SEED_SCENARIOS.map((s) => (
+            {LIVE_MODES.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.title}
               </option>
@@ -113,7 +118,8 @@ export function SessionControl({ className = '' }) {
       {awaitingSip ? (
         <p className="mt-2 text-xs text-sv-muted">
           Dial <span className="font-mono text-sv-fg">1002</span> from the caller softphone — Analyst
-          attaches when the AudioSocket tap opens.
+          attaches when the AudioSocket tap opens. Scripted demos: use{' '}
+          <span className="font-mono">/app/lab</span>.
         </p>
       ) : null}
       {sessionError ? (
@@ -129,13 +135,9 @@ SessionControl.propTypes = {
   className: PropTypes.string,
 };
 
-/**
- * @param {number} ms
- * @returns {string}
- */
 function formatElapsed(ms) {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = String(Math.floor(total / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${m}:${s}`;
 }

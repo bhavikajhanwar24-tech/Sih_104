@@ -1,12 +1,14 @@
 package com.sentinelvoice.scenario.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.sentinelvoice.model.InterventionLevel;
 
 import java.util.List;
 
 /**
- * Parsed scenario fixture (Context §14 / P11.1). Bound from {@code scenarios/*.yaml}.
+ * F18 scenario fixture (JSON under classpath:/scenarios/).
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record Scenario(
         String id,
         String title,
@@ -24,13 +26,19 @@ public record Scenario(
         InterventionLevel mustNotExceed,
         Boolean seniorShield,
         ChallengeHint challenge,
-        String teachingPoint
+        String teachingPoint,
+        String attackerPersona,
+        String spoofedCli,
+        String claimedIdentity,
+        String spokenScript,
+        List<String> expectedPolicyRules
 ) {
     public Scenario {
         expectedTrajectory = expectedTrajectory == null ? List.of() : List.copyOf(expectedTrajectory);
         directoryOverrides = directoryOverrides == null ? List.of() : List.copyOf(directoryOverrides);
         relationshipEdges = relationshipEdges == null ? List.of() : List.copyOf(relationshipEdges);
         crossChannelEvents = crossChannelEvents == null ? List.of() : List.copyOf(crossChannelEvents);
+        expectedPolicyRules = expectedPolicyRules == null ? List.of() : List.copyOf(expectedPolicyRules);
     }
 
     public record TrajectoryPoint(
@@ -111,20 +119,23 @@ public record Scenario(
     ) {
     }
 
-    /**
-     * Optional wire/UPI ask for replay demos when ASR has not yet extracted linguistic.ask.
-     * Mirrors the scenario narrative (₹50L wire, UPI bail, …) — not a hardcoded risk score.
-     */
     public record TransactionSeed(
             Double amountInr,
             String currency,
-            String type,
             String beneficiaryHint,
+            String askType,
+            String type,
             String deadline,
             Double urgency,
             Double secrecy,
             Double authorityInvocation,
             String language
     ) {
+        public String effectiveAskType() {
+            if (askType != null && !askType.isBlank()) {
+                return askType;
+            }
+            return type;
+        }
     }
 }

@@ -251,12 +251,50 @@ public class AsteriskAriAdapter implements CallControlPort {
 
     @Override
     public Set<String> capabilities() {
-        return Set.of("HOLD", "UNHOLD", "WHISPER", "ANNOUNCE", "BRIDGE_SUPERVISOR", "TERMINATE");
+        return Set.of("HOLD", "UNHOLD", "WHISPER", "ANNOUNCE", "BRIDGE_SUPERVISOR", "TERMINATE", "ORIGINATE");
     }
 
     @Override
     public String adapterName() {
         return "asterisk-ari";
+    }
+
+    /**
+     * F18 lab — originate a PJSIP leg to {@code extension} into Stasis app {@code sentinel-lab},
+     * bind {@code sessionId}, and optionally play a sound on the channel.
+     *
+     * @return ARI channel id, or empty if ARI refused / unreachable
+     */
+    public Optional<String> originateLabCall(String sessionId, String extension, String callerId, String soundId) {
+        if (sessionId == null || sessionId.isBlank() || extension == null || extension.isBlank()) {
+            return Optional.empty();
+        }
+        String endpoint = extension.startsWith("PJSIP/") ? extension : "PJSIP/" + extension.trim();
+        try {
+            UriComponentsBuilder b = UriComponentsBuilder
+                    .fromHttpUrl(ariBaseUrl + "/channels")
+                    .queryParam("endpoint", endpoint)
+                    .queryParam("app", "sentinel-lab")
+                    .queryParam("appArgs", sessionId)
+                    .queryParam("callerId", callerId == null || callerId.isBlank() ? "Lab Simulator" : callerId);
+            ResponseEntity<Map> resp = exchangeUri(HttpMethod.POST, b.build(true).toUri(), null);
+            String channelId = extractId(resp.getBody(), null);
+            if (channelId != null) {
+                bindChannel(sessionId, channelId);
+                if (soundId != null && !soundId.isBlank()) {
+                    try {
+                        playOnChannel(channelId, "sound:" + soundId);
+                    } catch (Exception playEx) {
+                        log.warn("ari_lab_play_skip sessionId={} err={}", sessionId, playEx.toString());
+                    }
+                }
+                log.info("ari_lab_originate ok sessionId={} endpoint={} channelId={}", sessionId, endpoint, channelId);
+                return Optional.of(channelId);
+            }
+        } catch (Exception ex) {
+            log.warn("ari_lab_originate_failed sessionId={} endpoint={} err={}", sessionId, endpoint, ex.toString());
+        }
+        return Optional.empty();
     }
 
     private void playOnChannel(String channelId, String media) {

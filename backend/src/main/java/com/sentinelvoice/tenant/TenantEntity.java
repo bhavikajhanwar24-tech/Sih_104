@@ -31,6 +31,9 @@ public class TenantEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "is_demo", nullable = false)
+    private boolean demo;
+
     public UUID getId() {
         return id;
     }
@@ -85,5 +88,13 @@ public class TenantEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public boolean isDemo() {
+        return demo;
+    }
+
+    public void setDemo(boolean demo) {
+        this.demo = demo;
     }
 }

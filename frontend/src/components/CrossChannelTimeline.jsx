@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { SimulatedSignalBadge } from '@/components/SimulatedSignalBadge.jsx';
 import { apiFetch } from '@/services/api.js';
 import { riskRamp, palette } from '@/theme.js';
 
@@ -26,7 +25,7 @@ const CHANNEL_LABEL = Object.freeze({
  * @param {Object} props
  * @param {string | null | undefined} props.sessionId
  * @param {number} [props.callStartedAtMs]
- * @param {boolean} [props.fixtureSeeded] when true, events come from scenario YAML seeds
+ * @param {boolean} [props.fixtureSeeded] unused (F18: simulated badge only on /app/lab)
  * @param {string} [props.className]
  */
 export function CrossChannelTimeline({
@@ -140,7 +139,6 @@ export function CrossChannelTimeline({
           This attack started ~{formatHours(hoursAgo)} ago
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {fixtureSeeded ? <SimulatedSignalBadge /> : null}
           <p className="font-mono text-[10px] tabular-nums text-sv-muted">
             corr {score.toFixed(2)}
             {payload?.matchingCampaign ? (
