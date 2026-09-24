@@ -2,6 +2,9 @@ package com.sentinelvoice.security;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.Arrays;
+import java.util.List;
+
 @ConfigurationProperties(prefix = "sentinelvoice.auth")
 public record AuthProperties(
         String jwtSecret,
@@ -25,5 +28,12 @@ public record AuthProperties(
         if (jwtSecret == null) {
             jwtSecret = "";
         }
+    }
+
+    public List<String> corsOriginList() {
+        return Arrays.stream(corsOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 }
