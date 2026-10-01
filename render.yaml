@@ -35,11 +35,11 @@ services:
       - key: DB_URL
         sync: false
       - key: DB_APP_USER
-        value: sv_app
+        sync: false
       - key: DB_APP_PASSWORD
         sync: false
       - key: DB_OWNER_USER
-        value: sv_owner
+        sync: false
       - key: DB_OWNER_PASSWORD
         sync: false
       - key: ML_BASE_URL
