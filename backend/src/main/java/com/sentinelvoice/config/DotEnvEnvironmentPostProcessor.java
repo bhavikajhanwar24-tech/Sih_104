@@ -121,13 +121,15 @@ public class DotEnvEnvironmentPostProcessor implements EnvironmentPostProcessor 
         overrides.put("DB_URL", cleanUrl);
 
         // Resolve password
-        String pass = getFirstNonBlank(environment, "DB_OWNER_PASSWORD", "DB_APP_PASSWORD", "SUPABASE_DB_PASSWORD", "spring.datasource.password");
+        String pass = getFirstNonBlank(environment, "DB_OWNER_PASSWORD", "SUPABASE_DB_PASSWORD", "DB_APP_PASSWORD", "spring.datasource.password");
         if (passwordFromUrl != null && !passwordFromUrl.isBlank()) {
             pass = passwordFromUrl;
-        } else if (pass != null && ("changeme_owner".equals(pass) || "changeme_app".equals(pass))) {
-            String alt = getFirstNonBlank(environment, "SUPABASE_DB_PASSWORD", "DB_APP_PASSWORD");
-            if (alt != null && !alt.isBlank() && !"changeme_app".equals(alt)) {
+        } else if (pass == null || pass.isBlank() || "changeme_owner".equals(pass) || "changeme_app".equals(pass)) {
+            String alt = getFirstNonBlank(environment, "SUPABASE_DB_PASSWORD", "DB_OWNER_PASSWORD");
+            if (alt != null && !alt.isBlank() && !"changeme_owner".equals(alt) && !"changeme_app".equals(alt)) {
                 pass = alt;
+            } else {
+                pass = "ASdf!@34burger";
             }
         }
         if (pass != null && !pass.isBlank()) {
