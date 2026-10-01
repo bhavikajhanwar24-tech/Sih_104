@@ -27,8 +27,8 @@ spring:
     enabled: true
     # Local: sv_owner (BYPASSRLS). Supabase: project postgres role (see docs/v2/SUPABASE.md).
     url: ${DB_URL:jdbc:postgresql://127.0.0.1:15432/sentinelvoice?options=-c%20TimeZone%3DUTC}
-    user: ${DB_OWNER_USER:sv_owner}
-    password: ${DB_OWNER_PASSWORD:changeme_owner}
+    user: ${DB_OWNER_USER:${DB_APP_USER:sv_owner}}
+    password: ${DB_OWNER_PASSWORD:${DB_APP_PASSWORD:changeme_owner}}
     locations: classpath:db/migration
     # Lab: V025 was edited after apply; skip validate so V026 can land. Re-enable after flyway repair.
     validate-on-migrate: false
