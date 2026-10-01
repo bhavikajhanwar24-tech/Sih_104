@@ -97,6 +97,12 @@ public class SecurityConfig {
                                 "/api/v1/actuation/**",
                                 "/ws/features",
                                 "/ws/features/**",
+                                "/ws-sentinel",
+                                "/ws-sentinel/**",
+                                "/api/v2/docs",
+                                "/api/v2/docs/**",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
                                 "/actuator/health",
                                 "/actuator/info"
                         )
@@ -107,6 +113,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/api/v2/public/**").permitAll()
                         .requestMatchers("/api/v2/auth/login", "/api/v2/auth/refresh", "/api/v2/auth/csrf", "/api/v2/auth/logout").permitAll()
+                        .requestMatchers("/ws-sentinel", "/ws-sentinel/**").permitAll()
+                        .requestMatchers("/api/v2/docs", "/api/v2/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/ws/features", "/ws/features/**").permitAll()
                         .requestMatchers("/internal/v2/**").hasRole("ML_SERVICE")
                         .requestMatchers("/api/v1/session/**", "/api/v1/actuation/**").hasAnyRole("ML_SERVICE", "TENANT_ADMIN", "ANALYST", "AUDITOR", "POLICY_APPROVER")

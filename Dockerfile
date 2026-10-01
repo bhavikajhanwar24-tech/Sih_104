@@ -30,4 +30,4 @@ EXPOSE 8080 8081 10000
 HEALTHCHECK --interval=15s --timeout=5s --retries=8 --start-period=60s \
   CMD curl -sf http://127.0.0.1:${PORT:-8081}/actuator/health || exit 1
 
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/app.jar"]

@@ -325,7 +325,7 @@ export function DashboardPage() {
                     label: t.code || '—',
                     count: t.count,
                   }))}
-                  color="#dc2626"
+                  color="#7c3aed"
                   empty="No reason codes yet."
                 />
               </Panel>

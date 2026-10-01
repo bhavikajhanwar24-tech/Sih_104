@@ -42,6 +42,10 @@ services:
         value: sv_owner
       - key: DB_OWNER_PASSWORD
         sync: false
+      - key: ML_BASE_URL
+        sync: false
+      - key: LLM_GATEWAY_URL
+        sync: false
       - key: LAB_MODE
         value: "false"
 

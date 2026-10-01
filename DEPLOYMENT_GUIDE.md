@@ -77,9 +77,9 @@ flowchart TD
    - **Name**: `sentinelvoice-backend`
    - **Region**: Nearest to your database (e.g. Frankfurt, Singapore, Oregon)
    - **Branch**: `main`
-   - **Root Directory**: Leave blank (or `backend`)
+   - **Root Directory**: Leave blank (repo root)
    - **Runtime**: `Docker`
-   - **Dockerfile Path**: `./backend/Dockerfile` (or `./Dockerfile`)
+   - **Dockerfile Path**: `./Dockerfile` (or set Root Directory to `backend` and Dockerfile Path to `Dockerfile`)
    - **Instance Type**: `Free` or `Starter`
    - **Health Check Path**: `/actuator/health`
 
@@ -92,14 +92,14 @@ flowchart TD
 | `COOKIE_SAME_SITE` | `None` | Allows cross-origin cookies between Vercel & Render |
 | `JWT_SECRET` | *(Random 32+ char string)* | Key for signing JWT tokens |
 | `APP_ENCRYPTION_KEY` | *(Random 32+ char string)* | AES encryption key for integration secrets |
-| `ML_SERVICE_TOKEN` | *(Random 16+ char string)* | Internal service communication secret |
+| `ML_SERVICE_TOKEN` | *(Same token as ML Engine)* | Shared secret matching `SENTINELVOICE_ML_SERVICE_TOKEN` |
+| `ML_BASE_URL` | `https://your-ml-engine.onrender.com` | Deployed Render ML engine URL |
 | `SENTINELVOICE_CORS_ORIGINS` | `https://your-frontend-app.vercel.app` | Your Vercel frontend URL |
-| `DB_URL` | `jdbc:postgresql://...` | JDBC Connection URL |
+| `DB_URL` | `jdbc:postgresql://...` | JDBC Connection URL (e.g. Supabase session pooler) |
 | `DB_APP_USER` | `postgres` (or `sv_app`) | Database application user |
 | `DB_APP_PASSWORD` | `<your-db-password>` | Database application password |
 | `DB_OWNER_USER` | `postgres` (or `sv_owner`) | Flyway migration owner |
 | `DB_OWNER_PASSWORD` | `<your-db-password>` | Flyway migration password |
-| `GROQ_API_KEY` | *(Optional)* | For cloud LLM policy analysis |
 | `LAB_MODE` | `false` | Set to false for production |
 
 5. Click **Create Web Service**.

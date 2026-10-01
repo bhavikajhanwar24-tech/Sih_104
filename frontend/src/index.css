@@ -20,7 +20,7 @@
   --risk-clear: #10b981;
   --risk-watch: #f59e0b;
   --risk-elevated: #f97316;
-  --risk-critical: #ef4444;
+  --risk-critical: #7c3aed;
 }
 
 html[data-theme='light'] {
@@ -37,7 +37,7 @@ html[data-theme='light'] {
   --risk-clear: #059669;
   --risk-watch: #d97706;
   --risk-elevated: #ea580c;
-  --risk-critical: #dc2626;
+  --risk-critical: #6d28d9;
 }
 
 html,

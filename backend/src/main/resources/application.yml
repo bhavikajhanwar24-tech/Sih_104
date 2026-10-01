@@ -82,8 +82,8 @@ sentinelvoice:
     cookie-same-site: ${COOKIE_SAME_SITE:}
     cors-origins: ${SENTINELVOICE_CORS_ORIGINS:http://127.0.0.1:5173,http://localhost:5173}
   ml:
-    base-url: http://localhost:8000
-    websocket-url: ws://localhost:8000/ingest
+    base-url: ${SENTINELVOICE_ML_BASE_URL:${ML_BASE_URL:http://localhost:8000}}
+    websocket-url: ${SENTINELVOICE_ML_WEBSOCKET_URL:${ML_WEBSOCKET_URL:ws://localhost:8000/ingest}}
     connect-timeout-ms: 2000
     # Lab SIP path: rebase on backlog (see FeatureFrameIngestService); keep generous.
     frame-staleness-ms: 60000
@@ -92,7 +92,7 @@ sentinelvoice:
     service-token: ${ML_SERVICE_TOKEN:}
   llm-gateway:
     # F5 — Inference-plane FastAPI router (not the 500ms feature-frame loop)
-    base-url: ${LLM_GATEWAY_URL:http://127.0.0.1:8000}
+    base-url: ${LLM_GATEWAY_URL:${SENTINELVOICE_ML_BASE_URL:${ML_BASE_URL:http://127.0.0.1:8000}}}
     service-token: ${ML_SERVICE_TOKEN:}
     connect-timeout-ms: 2000
     # 5-minute request limit; ml-engine policy_compile budget stays just under it
@@ -170,6 +170,10 @@ sentinelvoice:
   public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8081}
   webhooks:
     poll-ms: 5000
+
+sentinel:
+  ml:
+    base-url: ${SENTINELVOICE_ML_BASE_URL:${ML_BASE_URL:http://127.0.0.1:8000}}
 
 # AuthZ lab users are registered in SecurityConfig (password: password).
 # Do not put bcrypt hashes with bare $ under sentinelvoice.* — Spring treats $ as placeholders

@@ -71,6 +71,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer, WebSoc
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         String[] patterns = resolveAllowedOrigins();
+        // Native WebSocket STOMP endpoint (used by @stomp/stompjs client in frontend)
+        registry.addEndpoint(STOMP_ENDPOINT)
+                .addInterceptors(jwtHandshakeInterceptor)
+                .setAllowedOriginPatterns(patterns);
+        // SockJS fallback STOMP endpoint
         registry.addEndpoint(STOMP_ENDPOINT)
                 .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns(patterns)
