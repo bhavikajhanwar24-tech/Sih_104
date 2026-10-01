@@ -177,9 +177,31 @@ public class DotEnvEnvironmentPostProcessor implements EnvironmentPostProcessor 
             overrides.put("DB_OWNER_USER", user);
         }
 
+        // Ensure JWT_SECRET is present and >= 32 bytes to prevent startup failures
+        String jwt = getFirstNonBlank(environment, "JWT_SECRET", "sentinelvoice.auth.jwt-secret");
+        if (jwt == null || jwt.getBytes(StandardCharsets.UTF_8).length < 32) {
+            String defaultJwt = "dev-only-change-me-sentinelvoice-jwt-32b";
+            overrides.put("JWT_SECRET", defaultJwt);
+            overrides.put("sentinelvoice.auth.jwt-secret", defaultJwt);
+        }
+
+        // Ensure ML_SERVICE_TOKEN is present and >= 16 chars
+        String mlToken = getFirstNonBlank(environment, "ML_SERVICE_TOKEN", "sentinelvoice.ml-service.service-token");
+        if (mlToken == null || mlToken.length() < 16) {
+            String defaultMl = "dev-ml-service-token-change-me";
+            overrides.put("ML_SERVICE_TOKEN", defaultMl);
+            overrides.put("sentinelvoice.ml-service.service-token", defaultMl);
+        }
+
+        // Ensure APP_ENCRYPTION_KEY is present
+        String encKey = getFirstNonBlank(environment, "APP_ENCRYPTION_KEY");
+        if (encKey == null || encKey.isBlank()) {
+            overrides.put("APP_ENCRYPTION_KEY", "dev-only-sentinelvoice-encryption-key-change-me");
+        }
+
         if (!overrides.isEmpty()) {
             environment.getPropertySources().addFirst(new MapPropertySource(DB_NORMALIZATION_SOURCE, overrides));
-            System.out.println("[sentinelvoice] normalized DB config for pooler: url=" + cleanUrl + ", user=" + user);
+            System.out.println("[sentinelvoice] normalized DB and auth config for cloud: url=" + cleanUrl + ", user=" + user);
         }
     }
 

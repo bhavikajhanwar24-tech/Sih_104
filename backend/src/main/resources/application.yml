@@ -67,14 +67,14 @@ logging:
   level:
     com.sentinelvoice: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [cid=%X{cid:-}] [%15.15t] %-40.40logger{39} : %m%n"
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [cid=%X{cid:-}] [%15.15t] %-40.40logger{39} : %m%n%rEx"
 
 # Risk weights / thresholds / intervention dwell live in PostgreSQL fusion_configs (F8).
 # Auth / ML / session / audit / identity / actuation / compliance remain infra YAML.
 sentinelvoice:
   auth:
     # Fail-fast if missing / short — set JWT_SECRET in env (see .env.example).
-    jwt-secret: ${JWT_SECRET:}
+    jwt-secret: ${JWT_SECRET:dev-only-change-me-sentinelvoice-jwt-32b}
     access-token-ttl-seconds: 900
     refresh-token-ttl-seconds: 1209600
     cookie-secure: ${COOKIE_SECURE:false}
@@ -89,7 +89,7 @@ sentinelvoice:
     frame-staleness-ms: 60000
   ml-service:
     # Shared secret for ml-engine → Java /ws/features (F3)
-    service-token: ${ML_SERVICE_TOKEN:}
+    service-token: ${ML_SERVICE_TOKEN:dev-ml-service-token-change-me}
   llm-gateway:
     # F5 — Inference-plane FastAPI router (not the 500ms feature-frame loop)
     base-url: ${LLM_GATEWAY_URL:${SENTINELVOICE_ML_BASE_URL:${ML_BASE_URL:http://127.0.0.1:8000}}}
