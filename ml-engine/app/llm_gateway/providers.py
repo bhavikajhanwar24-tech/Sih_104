@@ -108,6 +108,54 @@ class MockProvider(LlmProvider):
                     },
                 ],
             }
+        if isinstance(props, dict) and "askType" in props:
+            # Smart semantic reasoning for runtime_intent based on user prompt
+            u_lower = str(user).lower()
+            if any(k in u_lower for k in ("wire", "transfer", "lakh", "crore", "urgent", "confidential", "ceo", "board", "offshore")):
+                payload = {
+                    "askType": "WIRE_TRANSFER",
+                    "amountInr": 1500000,
+                    "urgencyLevel": 0.95,
+                    "secrecyRequested": True,
+                    "authorityClaimed": True,
+                    "claimedRole": "Corporate Treasury / Executive Office",
+                    "sharesCredential": False,
+                    "beneficiaryMentioned": True,
+                    "matchedRuleIds": ["R-wire-urgency", "POLICY_CONFIDENTIAL_PRESSURE", "R-ceo-fraud"],
+                    "thinking": "Utterance exhibits high-pressure financial coercion demanding an urgent offshore wire transfer with strict secrecy requested under executive CEO authority.",
+                    "confidence": 0.96,
+                    "ambiguity": 0.04,
+                }
+            elif any(k in u_lower for k in ("otp", "pin", "password", "card", "freeze", "block", "cvv", "bank")):
+                payload = {
+                    "askType": "OTP_SHARE",
+                    "amountInr": None,
+                    "urgencyLevel": 0.90,
+                    "secrecyRequested": False,
+                    "authorityClaimed": True,
+                    "claimedRole": "Bank Fraud Prevention Specialist",
+                    "sharesCredential": True,
+                    "beneficiaryMentioned": False,
+                    "matchedRuleIds": ["R-no-otp-over-phone", "POLICY_CREDENTIAL_SOLICITATION"],
+                    "thinking": "Caller is soliciting a one-time passcode (OTP) under the pretext of freezing an unauthorized transaction. Direct credential theft violation.",
+                    "confidence": 0.94,
+                    "ambiguity": 0.05,
+                }
+            else:
+                payload = {
+                    "askType": "INFO",
+                    "amountInr": None,
+                    "urgencyLevel": 0.12,
+                    "secrecyRequested": False,
+                    "authorityClaimed": False,
+                    "claimedRole": None,
+                    "sharesCredential": False,
+                    "beneficiaryMentioned": False,
+                    "matchedRuleIds": [],
+                    "thinking": "Routine operational conversation with normal business cadence. No credential or illicit payment solicitation detected.",
+                    "confidence": 0.91,
+                    "ambiguity": 0.08,
+                }
             return json.dumps(payload), {"prompt_tokens": 0, "completion_tokens": 0}
         payload = _minimal_from_schema(schema)
         return json.dumps(payload), {"prompt_tokens": 0, "completion_tokens": 0}
@@ -312,6 +360,43 @@ def model_name_matches(listed: str | None, configured: str) -> bool:
 
 class GroqProvider(OpenAICompatibleProvider):
     name = "groq"
+
+    async def complete(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float,
+        timeout_ms: int,
+        json_schema: dict[str, Any] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        try:
+            return await super().complete(
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout_ms=timeout_ms,
+                json_schema=json_schema,
+            )
+        except httpx.HTTPStatusError as ex:
+            if ex.response.status_code in (400, 404) and self.model != "llama-3.3-70b-versatile":
+                logger.warning(
+                    "groq_model_fallback model=%s failed (HTTP %s) — falling back to llama-3.3-70b-versatile",
+                    self.model,
+                    ex.response.status_code,
+                )
+                self.model = "llama-3.3-70b-versatile"
+                return await super().complete(
+                    system=system,
+                    user=user,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout_ms=timeout_ms,
+                    json_schema=json_schema,
+                )
+            raise
 
 
 async def probe_ollama(base_url: str, model: str) -> bool:

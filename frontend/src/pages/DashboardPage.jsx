@@ -14,6 +14,7 @@ import {
   LevelDonut,
   VolumeGroupedChart,
 } from '@/components/dashboard/DashboardCharts.jsx';
+import { LiveCallSimulator } from '@/components/dashboard/LiveCallSimulator.jsx';
 
 function Kpi({ label, value, hint }) {
   return (
@@ -154,6 +155,9 @@ export function DashboardPage() {
           ) : null}
         </div>
       </header>
+
+      {/* Interactive Built-in Mic Call Simulator for Demos (No Zoiper required) */}
+      <LiveCallSimulator onCallStarted={() => void load()} />
 
       {loading && !data ? (
         <p className="text-sm text-sv-muted">Loading dashboard…</p>

@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ensure-antispoof backend ml frontend asterisk dev demo test eval codec-study clean health
+.PHONY: help ensure-antispoof backend ml frontend asterisk dev demo test eval codec-study clean health all3
 
 SV_PS1 := scripts/sv.ps1
 
@@ -81,6 +81,14 @@ ifeq ($(SV),)
 	@exit 1
 else
 	@$(SV) dev
+endif
+
+all3:
+ifeq ($(SV),)
+	@echo "On Windows use: .\\make.cmd all3"
+	@exit 1
+else
+	@$(SV) all3
 endif
 
 demo:

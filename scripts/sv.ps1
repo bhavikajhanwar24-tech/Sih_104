@@ -4,7 +4,8 @@ param(
     [Parameter(Position = 0)]
     [ValidateSet(
         'help', 'ensure-antispoof', 'backend', 'ml', 'frontend', 'asterisk',
-        'dev', 'demo', 'test', 'eval', 'codec-study', 'clean', 'health', 'sync-ip'
+        'dev', 'demo', 'test', 'eval', 'codec-study', 'clean', 'health', 'sync-ip',
+        'all3', 'all', 'core'
     )]
     [string]$Target = 'help'
 )
@@ -253,8 +254,13 @@ function Invoke-Asterisk {
         $upArgs += 'asterisk'
         docker @upArgs 2>&1 | ForEach-Object { Write-Host $_ }
         $ErrorActionPreference = $prev
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Sv 'warn: Asterisk container skipped (Docker daemon not reachable).'
+            return
+        }
         Write-Sv 'asterisk: docker compose up -d asterisk OK'
+    } catch {
+        Write-Sv "warn: Asterisk container skipped: $_"
     } finally {
         Pop-Location
     }
@@ -360,6 +366,41 @@ function Invoke-Dev {
     Write-Sv 'logs under .sv-run/*.log - stop with: make clean  (or .\make.cmd clean)'
 }
 
+function Invoke-All3 {
+    Import-DotEnv
+    Write-Sv 'all3: ML Engine (:8000) -> Backend (:8081) -> Frontend (:5173)'
+    Invoke-EnsureAntispoof
+
+    # Stop prior managed procs so ports are free
+    foreach ($n in @('frontend', 'backend', 'ml')) { Stop-Saved $n }
+
+    $py = Resolve-Python
+    $uvicornArgs = @('-m', 'uvicorn', 'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000')
+    if (Test-Path $VenvUvicorn) {
+        Start-Detached 'ml' (Join-Path $Root 'ml-engine') $VenvUvicorn @(
+            'app.main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'
+        ) | Out-Null
+    } else {
+        Start-Detached 'ml' (Join-Path $Root 'ml-engine') $py $uvicornArgs | Out-Null
+    }
+    Wait-Http 'http://127.0.0.1:8000/health' 120 'ml-engine'
+
+    $mvn = Resolve-Maven
+    Start-Detached 'backend' (Join-Path $Root 'backend') $mvn @('spring-boot:run') | Out-Null
+    Wait-Http 'http://127.0.0.1:8081/actuator/health' 180 'backend'
+
+    if (-not $Npm) { throw 'npm not found on PATH' }
+    Start-Detached 'frontend' (Join-Path $Root 'frontend') $Npm @(
+        'run', 'dev', '--', '--host', '0.0.0.0', '--port', '5173', '--strictPort'
+    ) | Out-Null
+    Wait-Http 'http://127.0.0.1:5173/' 90 'frontend'
+
+    Invoke-Health
+    Write-Sv 'all3 ready - open http://127.0.0.1:5173/'
+    if ($script:LanIp) { Write-Sv "LAN: http://$($script:LanIp):5173/" }
+    Write-Sv 'logs under .sv-run/*.log - stop with: .\make.cmd clean'
+}
+
 function Invoke-Health {
     $checks = @(
         @{ Name = 'ml-engine'; Url = 'http://127.0.0.1:8000/health' },
@@ -463,4 +504,7 @@ switch ($Target) {
     'test' { Invoke-Test }
     'eval' { Invoke-Eval }
     'codec-study' { Invoke-CodecStudy }
+    'all3' { Invoke-All3 }
+    'all' { Invoke-All3 }
+    'core' { Invoke-All3 }
 }

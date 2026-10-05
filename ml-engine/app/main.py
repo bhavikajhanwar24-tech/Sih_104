@@ -8,6 +8,8 @@ from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from app import __version__
 from app.config import settings
@@ -140,6 +142,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="SentinelVoice Inference Plane", version=__version__, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(enrol_router)
 app.include_router(redteam_router)
 app.include_router(challenge_router)
@@ -315,6 +324,50 @@ async def push_pcm(sid: str, request: Request) -> dict[str, Any]:
         "samples": int(pcm.size),
         "seq": session.seq,
         "perturbed": bool(rt_cfg.enabled),
+    }
+
+
+class StageBSimulateRequest(BaseModel):
+    text: str
+    tenantId: str | None = None
+    force: bool = True
+
+
+@app.post("/session/{sid}/stage_b")
+async def simulate_stage_b(sid: str, body: StageBSimulateRequest) -> dict[str, Any]:
+    session = registry.get(sid)
+    if session is None:
+        tid = body.tenantId or "default"
+        session = registry.create(sid, tenant_id=tid)
+        await scheduler.start(sid)
+        await slow_path.start(sid)
+
+    from app.modules.stage_b import stage_b_runner, _GatewayAdapter
+    from app.modules.stage_a import run_stage_a
+    from app.modules import tenant_lexicon as _tl
+    from app.llm_gateway.gateway import gateway as llm_gateway
+
+    lexicon = _tl.get_lexicon(session.tenant_id)
+    stage_a = run_stage_a(body.text, lexicon=lexicon)
+
+    result = await stage_b_runner._run(
+        sid,
+        body.text,
+        stage_a=stage_a,
+        lexicon=lexicon,
+        gateway=_GatewayAdapter(llm_gateway),
+    )
+
+    session.slow_path_linguistic = result
+    session.force_emit = True
+    session.asr_state._rolling_raw = body.text
+    session.asr_state._rolling_redacted = body.text
+
+    return {
+        "ok": True,
+        "sessionId": sid,
+        "transcript": body.text,
+        "linguistic": result,
     }
 
 

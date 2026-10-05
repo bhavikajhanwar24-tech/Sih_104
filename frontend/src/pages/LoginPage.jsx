@@ -9,14 +9,23 @@ export function LoginPage() {
   const { push } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const presetSlug = location.state?.tenantSlug || '';
+  const queryParams = new URLSearchParams(location.search);
+  const presetSlug = location.state?.tenantSlug || queryParams.get('tenant') || '';
+  const presetEmail = location.state?.email || queryParams.get('email') || '';
+  const presetPassword = location.state?.password || queryParams.get('password') || '';
 
   const [tenantSlug, setTenantSlug] = useState(presetSlug);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(presetEmail);
+  const [password, setPassword] = useState(presetPassword);
   const [mfaCode, setMfaCode] = useState('');
   const [needMfa, setNeedMfa] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const fillDemoCreds = () => {
+    setTenantSlug('telco');
+    setEmail('admin@telco.com');
+    setPassword('asdfgh123456');
+  };
 
   if (!loading && isAuthenticated) {
     return <Navigate to="/app" replace />;
@@ -62,6 +71,26 @@ export function LoginPage() {
         <div className="space-y-4">
           {!needMfa ? (
             <>
+              <div className="rounded-lg border border-sv-accent/40 bg-sv-accent/10 p-3 text-xs text-sv-fg">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-mono font-semibold uppercase text-sv-accent flex items-center gap-1.5">
+                    <span className="flex h-2 w-2 rounded-full bg-sv-accent animate-pulse" />
+                    Demo Credentials
+                  </span>
+                  <button
+                    type="button"
+                    onClick={fillDemoCreds}
+                    className="rounded bg-sv-accent/20 px-2 py-0.5 font-mono text-[11px] font-bold text-sv-accent hover:bg-sv-accent/30 transition-colors"
+                  >
+                    ⚡ One-Click Auto-Fill
+                  </button>
+                </div>
+                <div className="font-mono text-[11px] text-sv-muted space-y-0.5">
+                  <div><span className="text-sv-fg font-medium">Tenant:</span> telco</div>
+                  <div><span className="text-sv-fg font-medium">Email:</span> admin@telco.com</div>
+                  <div><span className="text-sv-fg font-medium">Password:</span> asdfgh123456</div>
+                </div>
+              </div>
               <Input
                 label="Tenant slug"
                 value={tenantSlug}
@@ -100,12 +129,19 @@ export function LoginPage() {
             {busy ? 'Signing in…' : needMfa ? 'Verify' : 'Sign in'}
           </Button>
         </div>
-        <p className="mt-6 text-center text-xs text-sv-muted">
-          New organisation?{' '}
-          <Link className="text-sv-accent underline-offset-2 hover:underline" to="/register">
-            Register
-          </Link>
-        </p>
+        <div className="mt-6 flex flex-col items-center gap-2 text-center text-xs text-sv-muted">
+          <div>
+            New organisation?{' '}
+            <Link className="text-sv-accent underline-offset-2 hover:underline" to="/register">
+              Register
+            </Link>
+          </div>
+          <div>
+            <Link className="text-sv-muted/80 hover:text-sv-fg underline-offset-2 hover:underline" to="/">
+              ← Back to SentinelVoice Home
+            </Link>
+          </div>
+        </div>
       </form>
     </div>
   );

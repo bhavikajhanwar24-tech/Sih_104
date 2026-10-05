@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/AppShell.jsx';
 import { ToastProvider } from '@/ui/Toast.jsx';
 import { LoginPage } from '@/pages/LoginPage.jsx';
 import { RegisterPage } from '@/pages/RegisterPage.jsx';
+import { LandingPage } from '@/pages/LandingPage.jsx';
 
 const UsersPage = lazy(() =>
   import('@/pages/UsersPage.jsx').then((m) => ({ default: m.UsersPage })),
@@ -94,7 +95,7 @@ export default function App() {
         <AuthProvider>
           <Suspense fallback={<RouteFallback />}>
             <Routes>
-              <Route path="/" element={<Navigate to="/app" replace />} />
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/consent/:token" element={<ConsentPublicPage />} />
