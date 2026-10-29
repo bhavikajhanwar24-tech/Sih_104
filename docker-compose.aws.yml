@@ -18,11 +18,11 @@ services:
     environment:
       POSTGRES_DB: sentinelvoice
       POSTGRES_USER: sv_bootstrap
-      # Must match infra/postgres/init/01-roles.sql and app.env passwords.
+      # Must match infra/aws/postgres-init/01-roles.sql and app.env passwords.
       POSTGRES_PASSWORD: changeme_bootstrap
     volumes:
       - sv_pgdata:/var/lib/postgresql/data
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/aws/postgres-init:/docker-entrypoint-initdb.d:ro
     mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sv_bootstrap -d sentinelvoice"]
@@ -45,7 +45,11 @@ services:
       # frontend/nginx.conf proxies to backend:8080. Host 8080 is Jenkins.
       PORT: "8080"
       SERVER_PORT: "8080"
-      DB_URL: jdbc:postgresql://postgres:5432/sentinelvoice?options=-c%20TimeZone%3DUTC
+      # Credentials in the URL: DotEnvEnvironmentPostProcessor replaces changeme_* passwords
+      # given separately with the Supabase fallback.
+      DB_URL: jdbc:postgresql://sv_owner:changeme_owner@postgres:5432/sentinelvoice?options=-c%20TimeZone%3DUTC
+      DB_OWNER_USER: sv_owner
+      DB_APP_USER: sv_owner
       USE_SUPABASE: "false"
       SENTINELVOICE_ML_BASE_URL: http://ml-engine:8000
       SENTINELVOICE_ML_WEBSOCKET_URL: ws://ml-engine:8000/ingest

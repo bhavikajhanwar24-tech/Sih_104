@@ -25,3 +25,8 @@ docker compose -f docker-compose.aws.yml build ml-engine
 docker compose -f docker-compose.aws.yml up -d --remove-orphans
 
 bash /opt/sentinelvoice/infra/aws/healthcheck.sh
+
+docker compose -f docker-compose.aws.yml exec -T postgres \
+  psql -U sv_bootstrap -d sentinelvoice -v ON_ERROR_STOP=1 \
+  -c "REVOKE sv_asterisk FROM sv_owner;" \
+  -c "ALTER ROLE sv_owner NOCREATEROLE;"
