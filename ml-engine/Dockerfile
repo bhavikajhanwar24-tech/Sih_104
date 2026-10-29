@@ -13,6 +13,9 @@ COPY app ./app
 COPY training ./training
 COPY scripts ./scripts
 
+# CPU wheels: the default PyPI torch pulls several GB of CUDA libraries.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} "torch>=2.1,<3" "torchaudio>=2.1,<3"
 RUN pip install --no-cache-dir .
 
 FROM python:3.11-slim

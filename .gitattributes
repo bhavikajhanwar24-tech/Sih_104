@@ -1,0 +1,6 @@
+infra/aws/**/*.sh text eol=lf
+infra/aws/terraform/user-data.sh.tpl text eol=lf
+infra/aws/**/*.yml text eol=lf
+infra/aws/**/*.yaml text eol=lf
+docker-compose.aws.yml text eol=lf
+Jenkinsfile text eol=lf

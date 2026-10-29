@@ -1,0 +1,110 @@
+# App stack for one small AWS instance. Jenkins is a separate compose file so a
+# deploy does not restart the controller that is running the deploy.
+# Secrets are injected from /opt/sentinelvoice-secrets/app.env (not committed).
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *default-logging
+    image: postgres:16
+    container_name: sentinelvoice-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentinelvoice
+      POSTGRES_USER: sv_bootstrap
+      # Must match infra/postgres/init/01-roles.sql and app.env passwords.
+      POSTGRES_PASSWORD: changeme_bootstrap
+    volumes:
+      - sv_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sv_bootstrap -d sentinelvoice"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  backend:
+    <<: *default-logging
+    build: ./backend
+    container_name: sentinelvoice-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - /opt/sentinelvoice-secrets/app.env
+    environment:
+      # frontend/nginx.conf proxies to backend:8080. Host 8080 is Jenkins.
+      PORT: "8080"
+      SERVER_PORT: "8080"
+      DB_URL: jdbc:postgresql://postgres:5432/sentinelvoice?options=-c%20TimeZone%3DUTC
+      USE_SUPABASE: "false"
+      SENTINELVOICE_ML_BASE_URL: http://ml-engine:8000
+      SENTINELVOICE_ML_WEBSOCKET_URL: ws://ml-engine:8000/ingest
+      LLM_FORCE_MOCK: "true"
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  ml-engine:
+    <<: *default-logging
+    build: ./ml-engine
+    container_name: sentinelvoice-ml-engine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - /opt/sentinelvoice-secrets/app.env
+    environment:
+      SENTINELVOICE_ML_JAVA_INGEST_WS: ws://backend:8080/ws/features
+      SENTINELVOICE_ML_JAVA_DECISION_HTTP: http://backend:8080
+      SENTINELVOICE_ML_JAVA_PASSPORT_URL: http://backend:8080/api/v1/passport/register
+      SENTINELVOICE_ML_LIGHTWEIGHT_MODE: "true"
+      SENTINELVOICE_ML_ASR_ENABLED: "false"
+      LLM_FORCE_MOCK: "true"
+      OLLAMA_BASE_URL: http://127.0.0.1:9
+    volumes:
+      - ./ml-engine/models:/app/models:ro
+    mem_limit: 1400m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+  frontend:
+    <<: *default-logging
+    build: ./frontend
+    container_name: sentinelvoice-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      ml-engine:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  sv_pgdata:

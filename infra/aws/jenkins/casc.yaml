@@ -1,0 +1,40 @@
+jenkins:
+  systemMessage: "SentinelVoice — open sentinelvoice-deploy and click Build Now."
+  numExecutors: 1
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+jobs:
+  - script: |
+      pipelineJob('sentinelvoice-deploy') {
+        description('Pull main and rebuild the app. Does not restart Jenkins.')
+        definition {
+          cps {
+            sandbox(true)
+            script('''
+              pipeline {
+                agent any
+                options {
+                  timestamps()
+                  disableConcurrentBuilds()
+                }
+                stages {
+                  stage('Deploy') {
+                    steps {
+                      sh 'bash /opt/sentinelvoice/infra/aws/deploy.sh'
+                    }
+                  }
+                }
+              }
+            ''')
+          }
+        }
+      }

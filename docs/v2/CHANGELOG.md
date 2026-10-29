@@ -94,4 +94,5 @@ Keep entries short (one line reason where possible).
 | 2026-09-23 | F15 | Consent, notice, retention, DSR, encrypted passports; `/app/compliance` |
 | 2026-09-23 | F16 | session_labels, analytics overview/rules/fairness, L3 suggestion→draft, `/app/analytics` |
 | 2026-09-23 | F18 | Demo seed/reset, Demo Bank + Demo Insurer, lab simulator `/app/lab`, `DEMO_SCRIPT.md` |
+| 2026-10-29 | Ops | AWS free-plan path: Terraform one EC2, Docker Compose app, Jenkins deploy job (`infra/aws/README.md`) |
 

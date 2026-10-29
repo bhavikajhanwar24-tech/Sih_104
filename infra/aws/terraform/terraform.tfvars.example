@@ -1,0 +1,6 @@
+aws_region    = "ap-south-1"
+instance_type = "t3.small"
+# Your public IP from https://checkip.amazonaws.com — keep the /32.
+admin_cidr = "203.0.113.10/32"
+# Name of a key pair that already exists in this region. Leave "" to use Session Manager only.
+key_name = ""

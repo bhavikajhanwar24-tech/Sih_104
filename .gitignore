@@ -83,6 +83,16 @@ tools/*.zip
 # Local detached process PIDs (make.cmd / sv.ps1)
 .sv-run/
 
+# Terraform (infra/aws/terraform)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!infra/aws/terraform/terraform.tfvars.example
+crash.log
+override.tf
+override.tf.json
+
 # Local → Supabase dump artefacts (may contain tenant data)
 .sv-run/supabase-dump/
 **/supabase-dump/
