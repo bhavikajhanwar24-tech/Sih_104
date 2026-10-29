@@ -64,6 +64,7 @@ resource "aws_route_table_association" "public" {
 resource "aws_security_group" "this" {
   name        = "sentinelvoice"
   description = "App on 80. Jenkins and SSH only from admin_cidr."
+  # AWS cannot change a group description in place; keep the original text.
   vpc_id      = aws_vpc.this.id
 
   ingress {
@@ -79,7 +80,7 @@ resource "aws_security_group" "this" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
+    cidr_blocks = var.admin_cidrs
   }
 
   dynamic "ingress" {
@@ -89,7 +90,7 @@ resource "aws_security_group" "this" {
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
-      cidr_blocks = [var.admin_cidr]
+      cidr_blocks = var.admin_cidrs
     }
   }
 

@@ -12,7 +12,7 @@ New AWS free accounts (opened on or after 15 July 2025) get credits, not a year 
 4. `aws configure` with that access key and region `ap-south-1`.
 5. In EC2 → Key pairs (region Mumbai), create a key pair named `sentinelvoice` and keep the `.pem` file.
 6. Push this repo to GitHub `main` **before** `terraform apply`. First boot clones `main`.
-7. Find your public IP (`https://checkip.amazonaws.com`). Copy `terraform.tfvars.example` to `terraform.tfvars` and set `admin_cidr` to that IP with `/32`, and `key_name` to `sentinelvoice`.
+7. Find your public IP at both `https://checkip.amazonaws.com` and `https://api.ipify.org`. Campus and office networks often show two different IPs; list both. Copy `terraform.tfvars.example` to `terraform.tfvars` and set `admin_cidrs` to those IPs with `/32`, and `key_name` to `sentinelvoice`.
 8. From `infra/aws/terraform`:
 
 ```bash
@@ -34,7 +34,7 @@ Later code changes: push to `main`, then click **Build Now** again.
 aws ec2 stop-instances --instance-ids <id from terraform output>
 ```
 
-Start again with `aws ec2 start-instances`. A stop/start can change the public IP. Update `SENTINELVOICE_CORS_ORIGINS` in `/opt/sentinelvoice-secrets/app.env`, then run the Jenkins job again. Jenkins stays on port 8080, which is open only to `admin_cidr`. If your IP changes, update the security group.
+Start again with `aws ec2 start-instances`. A stop/start can change the public IP. Update `SENTINELVOICE_CORS_ORIGINS` in `/opt/sentinelvoice-secrets/app.env`, then run the Jenkins job again. Jenkins stays on port 8080, which is open only to `admin_cidrs`. If your IP changes, update `admin_cidrs` and run `terraform apply`.
 
 ## If the build is killed
 

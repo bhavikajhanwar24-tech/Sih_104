@@ -21,13 +21,13 @@ variable "instance_type" {
   }
 }
 
-variable "admin_cidr" {
-  description = "Your current public IP with /32. SSH and Jenkins allow only this address."
-  type        = string
+variable "admin_cidrs" {
+  description = "Your public IPs with /32. Networks that NAT through several IPs need each one. SSH and Jenkins allow only these."
+  type        = list(string)
 
   validation {
-    condition     = var.admin_cidr != "0.0.0.0/0" && can(cidrhost(var.admin_cidr, 0))
-    error_message = "Set your own public IP, for example 203.0.113.10/32. Do not use 0.0.0.0/0."
+    condition     = length(var.admin_cidrs) > 0 && alltrue([for c in var.admin_cidrs : c != "0.0.0.0/0" && can(cidrhost(c, 0))])
+    error_message = "Set your own public IPs, for example [\"203.0.113.10/32\"]. Do not use 0.0.0.0/0."
   }
 }
 
